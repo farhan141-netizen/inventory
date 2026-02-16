@@ -8,13 +8,11 @@ import uuid
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def load_from_sheet(worksheet_name, default_cols=None):
-    """Safely load data and ensure headers exist if the sheet is empty"""
+    """Safely load data and ensure default columns exist if sheet is new"""
     try:
         df = conn.read(worksheet=worksheet_name, ttl="2s")
-        # If sheet has no columns, force the default ones
-        if df is None or df.empty or len(df.columns) < 2:
-            if default_cols:
-                return pd.DataFrame(columns=default_cols)
+        if df.empty and default_cols:
+            return pd.DataFrame(columns=default_cols)
         return df
     except Exception:
         if default_cols:
@@ -72,7 +70,7 @@ def apply_transaction(item_name, day_num, qty, is_undo=False):
         current_val = pd.to_numeric(df.at[idx, col_name], errors='coerce')
         df.at[idx, col_name] = (0 if pd.isna(current_val) else current_val) + qty
         
-        # --- LOG LOGIC ---
+        # Log Logic
         if not is_undo:
             new_log = pd.DataFrame([{
                 "LogID": str(uuid.uuid4())[:8],
@@ -82,8 +80,8 @@ def apply_transaction(item_name, day_num, qty, is_undo=False):
                 "Day": day_num,
                 "Status": "Active"
             }])
-            # Force headers if sheet is new
-            logs_df = load_from_sheet("activity_logs", default_cols=["LogID", "Timestamp", "Item", "Qty", "Day", "Status"])
+            log_cols = ["LogID", "Timestamp", "Item", "Qty", "Day", "Status"]
+            logs_df = load_from_sheet("activity_logs", default_cols=log_cols)
             updated_logs = pd.concat([logs_df, new_log], ignore_index=True)
             save_to_sheet(updated_logs, "activity_logs")
         
@@ -95,9 +93,8 @@ def apply_transaction(item_name, day_num, qty, is_undo=False):
     return False
 
 def undo_entry(log_id):
-    logs = load_from_sheet("activity_logs", default_cols=["LogID", "Timestamp", "Item", "Qty", "Day", "Status"])
-    # Ensure LogID column exists before checking values
-    if "LogID" in logs.columns and log_id in logs["LogID"].values:
+    logs = load_from_sheet("activity_logs")
+    if log_id in logs["LogID"].values:
         idx = logs[logs["LogID"] == log_id].index[0]
         if logs.at[idx, "Status"] == "Undone":
             st.warning("This item is already undone.")
@@ -113,13 +110,14 @@ def undo_entry(log_id):
             st.success(f"Successfully reversed {qty} for {item}")
             st.rerun()
 
-# --- APP START ---
+# --- DATA INITIALIZATION ---
 if 'inventory' not in st.session_state:
     st.session_state.inventory = load_from_sheet("persistent_inventory")
 
 st.title("📦 Warehouse Pro Management (Cloud)")
 tab_ops, tab_req, tab_sup = st.tabs(["📊 Inventory Operations", "🚚 Requisitions", "📞 Supplier Directory"])
 
+# --- TAB 1: OPERATIONS ---
 with tab_ops:
     st.subheader("📥 Daily Receipt Portal")
     if not st.session_state.inventory.empty:
@@ -137,18 +135,18 @@ with tab_ops:
     
     with col_history:
         st.subheader("📜 Recent Activity (Undo)")
-        logs = load_from_sheet("activity_logs", default_cols=["LogID", "Timestamp", "Item", "Qty", "Day", "Status"])
-        if not logs.empty and "LogID" in logs.columns:
+        logs = load_from_sheet("activity_logs")
+        if not logs.empty:
             for _, row in logs.iloc[::-1].head(10).iterrows():
                 is_undone = row['Status'] == "Undone"
                 status_text = " (REVERSED)" if is_undone else ""
                 with st.container():
                     st.markdown(f"""<div class='log-entry'>
-                        <b>{row['Item']}</b>: {row['Qty']} {status_text}<br>
+                        <b>{row['Item']}</b>: {'+' if row['Qty'] > 0 else ''}{row['Qty']} {status_text}<br>
                         <small>Day {row['Day']} | {row['Timestamp']}</small>
                         </div>""", unsafe_allow_html=True)
                     if not is_undone:
-                        if st.button(f"Undo Entry {row['LogID']}", key=f"undo_{row['LogID']}"):
+                        if st.button(f"Undo Entry {row['LogID']}", key=f"btn_{row['LogID']}"):
                             undo_entry(row['LogID'])
         else: st.info("No logs found.")
 
@@ -157,9 +155,7 @@ with tab_ops:
         if not st.session_state.inventory.empty:
             df = st.session_state.inventory
             summary_cols = ["Product Name", "UOM", "Opening Stock", "Total Received", "Closing Stock", "Consumption"]
-            # Ensure columns exist in df before showing editor
-            valid_cols = [c for c in summary_cols if c in df.columns]
-            edited_df = st.data_editor(df[valid_cols], use_container_width=True, disabled=["Product Name", "UOM", "Total Received", "Closing Stock"])
+            edited_df = st.data_editor(df[summary_cols], use_container_width=True, disabled=["Product Name", "UOM", "Total Received", "Closing Stock"])
             if st.button("💾 Save Table Changes"):
                 df.update(edited_df)
                 for item in df["Product Name"]: df = recalculate_item(df, item)
@@ -167,7 +163,7 @@ with tab_ops:
                 st.success("Cloud Updated!")
                 st.rerun()
 
-# --- OTHER TABS ---
+# --- TAB 2: REQUISITIONS ---
 with tab_req:
     st.subheader("🚚 Pending Store Requisitions")
     orders_df = load_from_sheet("orders_db")
@@ -178,19 +174,40 @@ with tab_req:
             st.rerun()
     else: st.info("No pending requests.")
 
+# --- TAB 3: SUPPLIER DIRECTORY ---
 with tab_sup:
-    st.subheader("📞 Supplier Directory")
-    meta_df = load_from_sheet("product_metadata", default_cols=["Product Name", "Supplier", "Contact", "Lead Time"])
-    edited_meta = st.data_editor(meta_df, num_rows="dynamic", use_container_width=True)
+    st.subheader("📞 Supplier & Product Directory")
+    meta_cols = ["Product Name", "Category", "Supplier", "Contact", "Email", "Min Stock", "Price"]
+    meta_df = load_from_sheet("product_metadata", default_cols=meta_cols)
+    
+    search = st.text_input("🔍 Search Directory (Item or Supplier)").lower()
+    if search:
+        filtered = meta_df[
+            meta_df["Product Name"].str.lower().str.contains(search, na=False) | 
+            meta_df["Supplier"].str.lower().str.contains(search, na=False)
+        ]
+    else:
+        filtered = meta_df
+
+    edited_meta = st.data_editor(filtered, num_rows="dynamic", use_container_width=True)
+    
     if st.button("💾 Save Directory Changes"):
-        save_to_sheet(edited_meta, "product_metadata")
+        # If filtered, we need to merge changes back to the original meta_df
+        if search:
+            meta_df.update(edited_meta)
+            save_to_sheet(meta_df, "product_metadata")
+        else:
+            save_to_sheet(edited_meta, "product_metadata")
         st.success("Directory Updated!")
+        st.rerun()
 
 # --- SIDEBAR ---
 with st.sidebar:
     st.header("Cloud Data Control")
+    
+    # 1. Inventory Sync
     st.subheader("1. Master Inventory Sync")
-    inv_file = st.file_uploader("Upload Master File", type=["csv", "xlsx"])
+    inv_file = st.file_uploader("Upload Inventory Master", type=["csv", "xlsx"], key="inv_up")
     if inv_file:
         try:
             raw_df = pd.read_excel(inv_file, skiprows=4, header=None) if inv_file.name.endswith('.xlsx') else pd.read_csv(inv_file, skiprows=4, header=None)
@@ -203,12 +220,42 @@ with st.sidebar:
             new_df["Consumption"] = 0
             new_df["Closing Stock"] = new_df["Opening Stock"]
             new_df = new_df.dropna(subset=["Product Name"])
-            if st.button("🚀 Push to Cloud"):
+            st.write(f"Items found: {len(new_df)}")
+            if st.button("🚀 Push Inventory to Cloud"):
                 save_to_sheet(new_df, "persistent_inventory")
-                st.success("Synced!")
+                st.success("Master Inventory Overwritten!")
                 st.rerun()
         except Exception as e: st.error(f"Error: {e}")
 
-    if st.button("🗑️ Reset Cache"):
+    st.divider()
+
+    # 2. Bulk Supplier Sync (Requested Feature)
+    st.subheader("2. Bulk Supplier Directory Sync")
+    meta_file = st.file_uploader("Upload Product Metadata", type=["csv", "xlsx"], key="meta_up")
+    if meta_file:
+        try:
+            if meta_file.name.endswith('.xlsx'):
+                new_meta = pd.read_excel(meta_file)
+            else:
+                new_meta = pd.read_csv(meta_file)
+            
+            st.write("Preview of Uploaded Data:")
+            st.dataframe(new_meta.head(5))
+            
+            if st.button("🚀 Push Directory to Cloud"):
+                # Ensure it matches the required schema
+                required_cols = ["Product Name", "Category", "Supplier", "Contact", "Email", "Min Stock", "Price"]
+                # Fill missing required columns with empty values if they don't exist in upload
+                for col in required_cols:
+                    if col not in new_meta.columns:
+                        new_meta[col] = ""
+                
+                save_to_sheet(new_meta[required_cols], "product_metadata")
+                st.success("Supplier Directory Overwritten!")
+                st.rerun()
+        except Exception as e: st.error(f"Error: {e}")
+
+    st.divider()
+    if st.button("🗑️ Reset System Cache"):
         st.cache_data.clear()
         st.rerun()
