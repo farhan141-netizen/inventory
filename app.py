@@ -36,26 +36,53 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # --- ENGINE ---
+# --- UPDATED ENGINE ---
 def recalculate_item(df, item_name):
     if item_name not in df["Product Name"].values: return df
+    
+    # Force all column names to strings to avoid KeyError with Google Sheets
+    df.columns = [str(col) for col in df.columns]
+    
     idx = df[df["Product Name"] == item_name].index[0]
+    
+    # Identify which day columns actually exist in the sheet
     day_cols = [str(i) for i in range(1, 32)]
-    for col in day_cols: 
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
-    total_received = df.iloc[idx][day_cols].sum()
+    existing_day_cols = [col for col in day_cols if col in df.columns]
+    
+    # Convert those columns to numeric, replacing errors with 0
+    for col in existing_day_cols:
+        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+    
+    # Calculate totals
+    total_received = df.loc[idx, existing_day_cols].sum()
+    
+    # Update calculated fields
     df.at[idx, "Total Received"] = total_received
-    df.at[idx, "Closing Stock"] = df.at[idx, "Opening Stock"] + total_received - df.at[idx, "Consumption"]
+    
+    # Ensure Opening Stock and Consumption are numeric
+    opening = pd.to_numeric(df.at[idx, "Opening Stock"], errors='coerce') or 0
+    consumption = pd.to_numeric(df.at[idx, "Consumption"], errors='coerce') or 0
+    
+    df.at[idx, "Closing Stock"] = opening + total_received - consumption
     return df
 
 def apply_transaction(item_name, day_num, qty, log_type="Addition"):
     df = st.session_state.inventory
+    # Force string columns again before searching
+    df.columns = [str(col) for col in df.columns]
+    
     if item_name in df["Product Name"].values:
         idx = df[df["Product Name"] == item_name].index[0]
         col_name = str(int(day_num))
-        if col_name in df.columns:
-            current_val = pd.to_numeric(df.at[idx, col_name], errors='coerce')
-            df.at[idx, col_name] = (0 if pd.isna(current_val) else current_val) + qty
+        
+        # If the day column is missing (e.g. new sheet), create it
+        if col_name not in df.columns:
+            df[col_name] = 0
+            
+        current_val = pd.to_numeric(df.at[idx, col_name], errors='coerce')
+        df.at[idx, col_name] = (0 if pd.isna(current_val) else current_val) + qty
+        
+        # Recalculate and Save
         df = recalculate_item(df, item_name)
         st.session_state.inventory = df
         save_to_sheet(df, "persistent_inventory")
@@ -135,3 +162,4 @@ with st.sidebar:
     if st.button("🗑️ Reset Cache"):
         st.cache_data.clear()
         st.rerun()
+
