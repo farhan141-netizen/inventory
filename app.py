@@ -49,6 +49,7 @@ st.markdown("""
     .stTabs [data-baseweb="tab"] { height: 50px; background-color: #1e2130; color: white; border-radius: 5px 5px 0 0; }
     .stTabs [aria-selected="true"] { background-color: #00ffcc !important; color: #000 !important; }
     .log-entry { border-left: 3px solid #00ffcc; padding: 10px; margin-bottom: 8px; background: #1e2130; border-radius: 0 5px 5px 0; }
+    .pagination-info { font-size: 0.85rem; color: #00ffcc; margin-bottom: 10px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -127,20 +128,16 @@ def add_item_modal():
         supplier_choice = st.selectbox("Supplier Name", options=["New Supplier"] + unique_suppliers)
         if supplier_choice == "New Supplier":
             supplier_name = st.text_input("Enter New Supplier Name")
-            default_cat, default_contact, default_email = "Ingredients", "", ""
+            default_cat = "Ingredients"
         else:
             supplier_name = supplier_choice
             sup_data = meta_df[meta_df["Supplier"] == supplier_choice].iloc[-1]
             default_cat = sup_data.get("Category", "Ingredients")
-            default_contact = sup_data.get("Contact", "")
-            default_email = sup_data.get("Email", "")
 
     with col2:
         cat_list = ["Packaging", "Ingredients", "Equipment", "Cleaning", "Other"]
         category = st.selectbox("Category", options=cat_list, index=cat_list.index(default_cat) if default_cat in cat_list else 1)
         uom = st.selectbox("Unit (UOM)*", ["pcs", "kg", "box", "ltr", "pkt", "can", "bot", "g", "ml", "roll", "set", "bag"])
-        contact = st.text_input("Contact Person", value=default_contact)
-        email = st.text_input("Email", value=default_email)
 
     c3, c4 = st.columns(2)
     with c3: opening_bal = st.number_input("Opening Stock", min_value=0.0)
@@ -158,7 +155,7 @@ def add_item_modal():
             
             new_row_meta = {
                 "Product Name": name, "Category": category, "Supplier": supplier_name, 
-                "Contact": contact, "Email": email, "Min Stock": float(min_stock), "Price": 0.0
+                "Min Stock": float(min_stock), "Price": 0.0
             }
             updated_meta = pd.concat([meta_df, pd.DataFrame([new_row_meta])], ignore_index=True)
             
@@ -198,27 +195,52 @@ with tab_ops:
         st.subheader("📜 Recent Activity")
         logs = load_from_sheet("activity_logs")
         if not logs.empty:
-            for _, row in logs.iloc[::-1].head(10).iterrows():
+            # 1. Day Filter
+            log_days = sorted(logs["Day"].unique().tolist())
+            filter_choice = st.selectbox("📅 Filter by Day", options=["All Days"] + log_days)
+            
+            # Filter logic (Newest first)
+            filtered_logs = logs.iloc[::-1]
+            if filter_choice != "All Days":
+                filtered_logs = filtered_logs[filtered_logs["Day"] == filter_choice]
+            
+            # 2. Pagination Logic (15 items per page)
+            items_per_page = 15
+            total_items = len(filtered_logs)
+            total_pages = max(1, (total_items // items_per_page) + (1 if total_items % items_per_page > 0 else 0))
+            
+            if total_pages > 1:
+                page_num = st.selectbox(f"Page selection (Total {total_pages})", range(1, total_pages + 1))
+            else:
+                page_num = 1
+            
+            start_idx = (page_num - 1) * items_per_page
+            page_logs = filtered_logs.iloc[start_idx : start_idx + items_per_page]
+            
+            st.markdown(f"<div class='pagination-info'>Showing {len(page_logs)} of {total_items} entries</div>", unsafe_allow_html=True)
+
+            # 3. Display Entries
+            for _, row in page_logs.iterrows():
                 is_undone = str(row.get('Status', 'Active')) == "Undone"
                 status_text = " (REVERSED)" if is_undone else ""
                 with st.container():
                     st.markdown(f"<div class='log-entry'><b>{row['Item']}</b>: {row['Qty']} {status_text}<br><small>Day {row['Day']} | {row['Timestamp']}</small></div>", unsafe_allow_html=True)
                     if not is_undone:
                         if st.button(f"Undo {row['LogID']}", key=f"undo_{row['LogID']}"): undo_entry(row['LogID'])
+        else:
+            st.info("No activity found.")
 
     with col_status:
         st.subheader("📊 Live Stock Status")
         if not st.session_state.inventory.empty:
             df_status = clean_dataframe(st.session_state.inventory)
             
-            # 1. Summary View
             short_cols = ["Product Name", "UOM", "Opening Stock", "Total Received", "Closing Stock", "Consumption"]
             for c in short_cols:
                 if c not in df_status.columns: df_status[c] = 0.0
             
             edited_df = st.data_editor(df_status[short_cols], use_container_width=True, disabled=["Product Name", "UOM", "Total Received", "Closing Stock"])
             
-            # 2. Detailed View for Download
             day_cols = [str(i) for i in range(1, 32)]
             for d in day_cols:
                 if d not in df_status.columns: df_status[d] = 0.0
@@ -226,22 +248,18 @@ with tab_ops:
             detailed_cols = ["Product Name", "UOM", "Opening Stock"] + day_cols + ["Total Received", "Consumption", "Closing Stock"]
             detailed_df = df_status[detailed_cols]
 
-            # --- ACTION BUTTONS ---
             save_col, dl_short, dl_full = st.columns([1, 1, 1])
-            
             with save_col:
                 if st.button("💾 Save Changes", use_container_width=True):
                     df_status.update(edited_df)
                     for item in df_status["Product Name"]: df_status = recalculate_item(df_status, item)
                     save_to_sheet(df_status, "persistent_inventory")
                     st.rerun()
-            
             with dl_short:
                 buf_short = io.BytesIO()
                 with pd.ExcelWriter(buf_short, engine='xlsxwriter') as writer:
                     df_status[short_cols].to_excel(writer, index=False, sheet_name='Summary')
                 st.download_button("📥 Summary Excel", data=buf_short.getvalue(), file_name="Stock_Summary.xlsx", use_container_width=True)
-
             with dl_full:
                 buf_full = io.BytesIO()
                 with pd.ExcelWriter(buf_full, engine='xlsxwriter') as writer:
@@ -285,17 +303,6 @@ with st.sidebar:
             new_df = new_df.dropna(subset=["Product Name"])
             if st.button("🚀 Push Inventory to Cloud"):
                 save_to_sheet(new_df, "persistent_inventory")
-                st.rerun()
-        except Exception as e: st.error(f"Error: {e}")
-
-    st.divider()
-    st.subheader("2. Bulk Supplier Directory Sync")
-    meta_upload = st.file_uploader("Upload Product Metadata", type=["csv", "xlsx"])
-    if meta_upload:
-        try:
-            new_meta = pd.read_excel(meta_upload) if meta_upload.name.endswith('.xlsx') else pd.read_csv(meta_upload)
-            if st.button("🚀 Push Directory to Cloud"):
-                save_to_sheet(new_meta, "product_metadata")
                 st.rerun()
         except Exception as e: st.error(f"Error: {e}")
 
