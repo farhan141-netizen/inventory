@@ -224,19 +224,41 @@ with tab_sup:
             save_to_sheet(edited_meta, "product_metadata")
             st.rerun()
 
+# --- SIDEBAR UPDATED ---
 with st.sidebar:
     st.header("Cloud Data Control")
+    st.subheader("1. Master Inventory Sync")
     inv_file = st.file_uploader("Upload New Master File", type=["csv", "xlsx"])
+    
     if inv_file:
-        # Code to process and upload to Google Sheets
-        if inv_file.name.endswith('.xlsx'): raw_df = pd.read_excel(inv_file, skiprows=4, header=None)
-        else: raw_df = pd.read_csv(inv_file, skiprows=4, header=None)
-        # (Processing logic same as your original...)
-        new_df = pd.DataFrame()
-        new_df["Product Name"] = raw_df[1]; new_df["UOM"] = raw_df[2]
-        new_df["Opening Stock"] = pd.to_numeric(raw_df[3], errors='coerce').fillna(0)
-        for i in range(1, 32): new_df[str(i)] = 0
-        new_df["Consumption"] = 0
-        for item in new_df["Product Name"]: new_df = recalculate_item(new_df, item)
-        save_to_sheet(new_df, "persistent_inventory")
-        st.success("Sheet Synced!")
+        try:
+            # Load the file
+            if inv_file.name.endswith('.xlsx'): 
+                raw_df = pd.read_excel(inv_file, skiprows=4, header=None)
+            else: 
+                raw_df = pd.read_csv(inv_file, skiprows=4, header=None)
+            
+            # Rebuild the structure to match Google Sheets
+            new_df = pd.DataFrame()
+            new_df["Product Name"] = raw_df[1]
+            new_df["UOM"] = raw_df[2]
+            new_df["Opening Stock"] = pd.to_numeric(raw_df[3], errors='coerce').fillna(0)
+            
+            # Add Day columns 1-31
+            for i in range(1, 32): 
+                new_df[str(i)] = 0
+            
+            new_df["Total Received"] = 0
+            new_df["Consumption"] = 0
+            new_df["Closing Stock"] = new_df["Opening Stock"]
+            
+            # Remove any empty rows
+            new_df = new_df.dropna(subset=["Product Name"])
+            
+            if st.button("🚀 Push to Google Sheets"):
+                save_to_sheet(new_df, "persistent_inventory")
+                st.success("Successfully synced to Google Sheets!")
+                st.rerun()
+                
+        except Exception as e:
+            st.error(f"Error processing file: {e}")
