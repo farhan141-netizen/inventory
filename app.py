@@ -3,25 +3,21 @@ from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 import datetime
 import uuid
+import io
 
 # --- CLOUD CONNECTION ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def clean_dataframe(df):
-    """Helper to ensure unique columns and remove ghost columns from Google Sheets"""
     if df is None or df.empty:
         return df
-    # Drop columns that are completely empty or named 'Unnamed'
     df = df.loc[:, ~df.columns.str.contains('^Unnamed', na=False)]
     df = df.dropna(axis=1, how='all')
-    # Remove duplicates by keeping the first occurrence
     df = df.loc[:, ~df.columns.duplicated()]
-    # Force headers to strings and strip whitespace
     df.columns = [str(col).strip() for col in df.columns]
     return df
 
 def load_from_sheet(worksheet_name, default_cols=None):
-    """Safely load and clean data from Google Sheets"""
     try:
         df = conn.read(worksheet=worksheet_name, ttl="2s")
         df = clean_dataframe(df)
@@ -32,7 +28,6 @@ def load_from_sheet(worksheet_name, default_cols=None):
         return pd.DataFrame(columns=default_cols) if default_cols else pd.DataFrame()
 
 def save_to_sheet(df, worksheet_name):
-    """Save cleaned data to Google Sheets"""
     df = clean_dataframe(df)
     conn.update(worksheet=worksheet_name, data=df)
     st.cache_data.clear()
@@ -54,18 +49,14 @@ st.markdown("""
 # --- ENGINE ---
 def recalculate_item(df, item_name):
     if item_name not in df["Product Name"].values: return df
-    
     df = clean_dataframe(df)
     idx = df[df["Product Name"] == item_name].index[0]
     day_cols = [str(i) for i in range(1, 32)]
-    
     for col in day_cols:
         if col not in df.columns: df[col] = 0.0
         df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
-    
     total_received = df.loc[idx, day_cols].sum()
     df.at[idx, "Total Received"] = total_received
-    
     opening = pd.to_numeric(df.at[idx, "Opening Stock"], errors='coerce') or 0.0
     consumption = pd.to_numeric(df.at[idx, "Consumption"], errors='coerce') or 0.0
     df.at[idx, "Closing Stock"] = opening + total_received - consumption
@@ -74,25 +65,21 @@ def recalculate_item(df, item_name):
 def apply_transaction(item_name, day_num, qty, is_undo=False, log_type="Addition"):
     df = st.session_state.inventory
     df = clean_dataframe(df)
-    
     if item_name in df["Product Name"].values:
         idx = df[df["Product Name"] == item_name].index[0]
         col_name = str(int(day_num))
-        
         if col_name != "0":
             if col_name not in df.columns: df[col_name] = 0.0
             current_val = pd.to_numeric(df.at[idx, col_name], errors='coerce')
             df.at[idx, col_name] = (0.0 if pd.isna(current_val) else current_val) + float(qty)
-        
         if not is_undo:
             new_log = pd.DataFrame([{
                 "LogID": str(uuid.uuid4())[:8],
-                "Timestamp": datetime.datetime.now().strftime("%H:%S"),
+                "Timestamp": datetime.datetime.now().strftime("%H:%M:%S"),
                 "Item": item_name, "Qty": qty, "Day": day_num, "Status": "Active", "Type": log_type
             }])
             logs_df = load_from_sheet("activity_logs", default_cols=["LogID", "Timestamp", "Item", "Qty", "Day", "Status", "Type"])
             save_to_sheet(pd.concat([logs_df, new_log], ignore_index=True), "activity_logs")
-        
         df = recalculate_item(df, item_name)
         st.session_state.inventory = df
         save_to_sheet(df, "persistent_inventory")
@@ -106,7 +93,6 @@ def undo_entry(log_id):
         if logs.at[idx, "Status"] == "Undone":
             st.warning("Already undone.")
             return
-
         item, qty, day = logs.at[idx, "Item"], logs.at[idx, "Qty"], logs.at[idx, "Day"]
         if apply_transaction(item, day, -qty, is_undo=True):
             logs.at[idx, "Status"] = "Undone"
@@ -120,7 +106,6 @@ def add_item_modal():
     meta_cols = ["Product Name", "Category", "Supplier", "Contact", "Email", "Min Stock", "Price"]
     meta_df = load_from_sheet("product_metadata", default_cols=meta_cols)
     unique_suppliers = sorted(meta_df["Supplier"].dropna().unique().tolist())
-    
     col1, col2 = st.columns(2)
     with col1:
         name = st.text_input("Item Name*")
@@ -134,18 +119,15 @@ def add_item_modal():
             default_cat = sup_data.get("Category", "Ingredients")
             default_contact = sup_data.get("Contact", "")
             default_email = sup_data.get("Email", "")
-
     with col2:
         cat_list = ["Packaging", "Ingredients", "Equipment", "Cleaning", "Other"]
         category = st.selectbox("Category", options=cat_list, index=cat_list.index(default_cat) if default_cat in cat_list else 1)
         uom = st.selectbox("Unit (UOM)*", ["pcs", "kg", "box", "ltr", "pkt", "can", "bot", "g", "ml", "roll", "set", "bag"])
         contact = st.text_input("Contact Person", value=default_contact)
         email = st.text_input("Email", value=default_email)
-
     c3, c4 = st.columns(2)
     with c3: opening_bal = st.number_input("Opening Stock", min_value=0.0)
     with c4: min_stock = st.number_input("Min Stock Alert", min_value=0.0)
-
     if st.button("✅ Create Product", use_container_width=True, type="primary"):
         if name and supplier_name:
             current_inv = clean_dataframe(st.session_state.inventory)
@@ -155,20 +137,18 @@ def add_item_modal():
                 "Total Received": 0.0, "Consumption": 0.0, "Closing Stock": float(opening_bal)
             })
             st.session_state.inventory = pd.concat([current_inv, pd.DataFrame([new_row_inv])], ignore_index=True)
-            
             new_row_meta = {
                 "Product Name": name, "Category": category, "Supplier": supplier_name, 
                 "Contact": contact, "Email": email, "Min Stock": float(min_stock), "Price": 0.0
             }
             updated_meta = pd.concat([meta_df, pd.DataFrame([new_row_meta])], ignore_index=True)
-            
             save_to_sheet(st.session_state.inventory, "persistent_inventory")
             save_to_sheet(updated_meta, "product_metadata")
             apply_transaction(name, 0, opening_bal, is_undo=False, log_type="New Item Added")
             st.success(f"Added {name}")
             st.rerun()
 
-# --- DATA INITIALIZATION ---
+# --- INITIALIZATION ---
 if 'inventory' not in st.session_state:
     st.session_state.inventory = load_from_sheet("persistent_inventory")
 
@@ -211,14 +191,34 @@ with tab_ops:
         if not st.session_state.inventory.empty:
             df_status = clean_dataframe(st.session_state.inventory)
             req_cols = ["Product Name", "UOM", "Opening Stock", "Total Received", "Closing Stock", "Consumption"]
-            # Ensure columns exist before displaying to prevent disappearance
-            display_df = df_status[[c for c in req_cols if c in df_status.columns]]
+            for c in req_cols:
+                if c not in df_status.columns: df_status[c] = 0.0
+            
+            display_df = df_status[req_cols]
             edited_df = st.data_editor(display_df, use_container_width=True, disabled=["Product Name", "UOM", "Total Received", "Closing Stock"])
-            if st.button("💾 Save Table Changes"):
-                df_status.update(edited_df)
-                for item in df_status["Product Name"]: df_status = recalculate_item(df_status, item)
-                save_to_sheet(df_status, "persistent_inventory")
-                st.rerun()
+            
+            # --- ACTION BUTTONS: SAVE & DOWNLOAD ---
+            btn_col1, btn_col2 = st.columns([1, 1])
+            with btn_col1:
+                if st.button("💾 Save Table Changes", use_container_width=True):
+                    df_status.update(edited_df)
+                    for item in df_status["Product Name"]: df_status = recalculate_item(df_status, item)
+                    save_to_sheet(df_status, "persistent_inventory")
+                    st.rerun()
+            
+            with btn_col2:
+                # Convert DataFrame to Excel for download
+                buffer = io.BytesIO()
+                with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+                    display_df.to_excel(writer, index=False, sheet_name='Inventory_Report')
+                
+                st.download_button(
+                    label="📥 Download Stock Report",
+                    data=buffer.getvalue(),
+                    file_name=f"Stock_Report_{datetime.datetime.now().strftime('%Y-%m-%d')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
+                )
 
 # --- TAB 2: REQUISITIONS ---
 with tab_req:
@@ -241,7 +241,7 @@ with tab_sup:
         save_to_sheet(edited_meta if not search else meta_df.update(edited_meta) or meta_df, "product_metadata")
         st.rerun()
 
-# --- SIDEBAR: RESTORED UPLOADS ---
+# --- SIDEBAR ---
 with st.sidebar:
     st.header("Cloud Data Control")
     st.subheader("1. Master Inventory Sync")
