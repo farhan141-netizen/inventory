@@ -12,12 +12,9 @@ def clean_dataframe(df):
     """Ensures unique columns and removes ghost columns from Google Sheets"""
     if df is None or df.empty:
         return df
-    # Drop columns that are completely empty or named 'Unnamed'
     df = df.loc[:, ~df.columns.str.contains('^Unnamed', na=False)]
     df = df.dropna(axis=1, how='all')
-    # Remove duplicates by keeping the first occurrence
     df = df.loc[:, ~df.columns.duplicated()]
-    # Force headers to strings and strip whitespace
     df.columns = [str(col).strip() for col in df.columns]
     return df
 
@@ -118,30 +115,39 @@ def undo_entry(log_id):
 # --- MODAL: ADD NEW ITEM ---
 @st.dialog("➕ Add New Product")
 def add_item_modal():
-    meta_cols = ["Product Name", "Category", "Supplier", "Contact", "Email", "Min Stock", "Price"]
+    # Updated columns to include multiple contacts and sales person
+    meta_cols = ["Product Name", "Category", "Supplier", "Sales Person", "Contact 1", "Contact 2", "Email", "Min Stock"]
     meta_df = load_from_sheet("product_metadata", default_cols=meta_cols)
     unique_suppliers = sorted(meta_df["Supplier"].dropna().unique().tolist())
     
     col1, col2 = st.columns(2)
     with col1:
         name = st.text_input("Item Name*")
-        supplier_choice = st.selectbox("Supplier Name", options=["New Supplier"] + unique_suppliers)
+        supplier_choice = st.selectbox("Company Name (Supplier)", options=["New Supplier"] + unique_suppliers)
+        
         if supplier_choice == "New Supplier":
-            supplier_name = st.text_input("Enter New Supplier Name")
+            supplier_name = st.text_input("Enter Company Name")
+            sales_person = st.text_input("Sales Person Name")
+            c1 = st.text_input("Contact 1")
+            c2 = st.text_input("Contact 2")
+            email_addr = st.text_input("Email")
             default_cat = "Ingredients"
         else:
             supplier_name = supplier_choice
+            # Fetch last known details for this supplier
             sup_data = meta_df[meta_df["Supplier"] == supplier_choice].iloc[-1]
+            sales_person = st.text_input("Sales Person Name", value=sup_data.get("Sales Person", ""))
+            c1 = st.text_input("Contact 1", value=sup_data.get("Contact 1", ""))
+            c2 = st.text_input("Contact 2", value=sup_data.get("Contact 2", ""))
+            email_addr = st.text_input("Email", value=sup_data.get("Email", ""))
             default_cat = sup_data.get("Category", "Ingredients")
 
     with col2:
         cat_list = ["Packaging", "Ingredients", "Equipment", "Cleaning", "Other"]
         category = st.selectbox("Category", options=cat_list, index=cat_list.index(default_cat) if default_cat in cat_list else 1)
         uom = st.selectbox("Unit (UOM)*", ["pcs", "kg", "box", "ltr", "pkt", "can", "bot", "g", "ml", "roll", "set", "bag"])
-
-    c3, c4 = st.columns(2)
-    with c3: opening_bal = st.number_input("Opening Stock", min_value=0.0)
-    with c4: min_stock = st.number_input("Min Stock Alert", min_value=0.0)
+        opening_bal = st.number_input("Opening Stock", min_value=0.0)
+        min_stock = st.number_input("Min Stock Alert", min_value=0.0)
 
     if st.button("✅ Create Product", use_container_width=True, type="primary"):
         if name and supplier_name:
@@ -154,15 +160,21 @@ def add_item_modal():
             st.session_state.inventory = pd.concat([current_inv, pd.DataFrame([new_row_inv])], ignore_index=True)
             
             new_row_meta = {
-                "Product Name": name, "Category": category, "Supplier": supplier_name, 
-                "Min Stock": float(min_stock), "Price": 0.0
+                "Product Name": name, 
+                "Category": category, 
+                "Supplier": supplier_name, 
+                "Sales Person": sales_person,
+                "Contact 1": c1,
+                "Contact 2": c2,
+                "Email": email_addr, 
+                "Min Stock": float(min_stock)
             }
             updated_meta = pd.concat([meta_df, pd.DataFrame([new_row_meta])], ignore_index=True)
             
             save_to_sheet(st.session_state.inventory, "persistent_inventory")
             save_to_sheet(updated_meta, "product_metadata")
             apply_transaction(name, 0, opening_bal, is_undo=False, log_type="New Item Added")
-            st.success(f"Added {name}")
+            st.success(f"Added {name} successfully")
             st.rerun()
 
 # --- INITIALIZATION ---
@@ -195,31 +207,22 @@ with tab_ops:
         st.subheader("📜 Recent Activity")
         logs = load_from_sheet("activity_logs")
         if not logs.empty:
-            # 1. Day Filter
             log_days = sorted(logs["Day"].unique().tolist())
             filter_choice = st.selectbox("📅 Filter by Day", options=["All Days"] + log_days)
-            
-            # Filter logic (Newest first)
             filtered_logs = logs.iloc[::-1]
             if filter_choice != "All Days":
                 filtered_logs = filtered_logs[filtered_logs["Day"] == filter_choice]
             
-            # 2. Pagination Logic (15 items per page)
             items_per_page = 15
             total_items = len(filtered_logs)
             total_pages = max(1, (total_items // items_per_page) + (1 if total_items % items_per_page > 0 else 0))
-            
-            if total_pages > 1:
-                page_num = st.selectbox(f"Page selection (Total {total_pages})", range(1, total_pages + 1))
-            else:
-                page_num = 1
+            page_num = st.selectbox(f"Page selection (Total {total_pages})", range(1, total_pages + 1)) if total_pages > 1 else 1
             
             start_idx = (page_num - 1) * items_per_page
             page_logs = filtered_logs.iloc[start_idx : start_idx + items_per_page]
             
             st.markdown(f"<div class='pagination-info'>Showing {len(page_logs)} of {total_items} entries</div>", unsafe_allow_html=True)
 
-            # 3. Display Entries
             for _, row in page_logs.iterrows():
                 is_undone = str(row.get('Status', 'Active')) == "Undone"
                 status_text = " (REVERSED)" if is_undone else ""
@@ -234,7 +237,6 @@ with tab_ops:
         st.subheader("📊 Live Stock Status")
         if not st.session_state.inventory.empty:
             df_status = clean_dataframe(st.session_state.inventory)
-            
             short_cols = ["Product Name", "UOM", "Opening Stock", "Total Received", "Closing Stock", "Consumption"]
             for c in short_cols:
                 if c not in df_status.columns: df_status[c] = 0.0
@@ -244,9 +246,7 @@ with tab_ops:
             day_cols = [str(i) for i in range(1, 32)]
             for d in day_cols:
                 if d not in df_status.columns: df_status[d] = 0.0
-            
-            detailed_cols = ["Product Name", "UOM", "Opening Stock"] + day_cols + ["Total Received", "Consumption", "Closing Stock"]
-            detailed_df = df_status[detailed_cols]
+            detailed_df = df_status[["Product Name", "UOM", "Opening Stock"] + day_cols + ["Total Received", "Consumption", "Closing Stock"]]
 
             save_col, dl_short, dl_full = st.columns([1, 1, 1])
             with save_col:
