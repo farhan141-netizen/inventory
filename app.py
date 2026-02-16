@@ -225,6 +225,7 @@ with tab_sup:
             st.rerun()
 
 # --- SIDEBAR UPDATED ---
+# --- UPDATED SIDEBAR FOR CLOUD SYNC ---
 with st.sidebar:
     st.header("Cloud Data Control")
     st.subheader("1. Master Inventory Sync")
@@ -232,33 +233,44 @@ with st.sidebar:
     
     if inv_file:
         try:
-            # Load the file
+            # Load the file based on its type
             if inv_file.name.endswith('.xlsx'): 
                 raw_df = pd.read_excel(inv_file, skiprows=4, header=None)
             else: 
                 raw_df = pd.read_csv(inv_file, skiprows=4, header=None)
             
-            # Rebuild the structure to match Google Sheets
+            # Reconstruct to match your persistent_inventory tab structure
             new_df = pd.DataFrame()
             new_df["Product Name"] = raw_df[1]
             new_df["UOM"] = raw_df[2]
             new_df["Opening Stock"] = pd.to_numeric(raw_df[3], errors='coerce').fillna(0)
             
-            # Add Day columns 1-31
+            # Add Day columns (1-31) initialized at 0
             for i in range(1, 32): 
                 new_df[str(i)] = 0
-            
+                
             new_df["Total Received"] = 0
             new_df["Consumption"] = 0
             new_df["Closing Stock"] = new_df["Opening Stock"]
             
-            # Remove any empty rows
+            # Clean up empty rows
             new_df = new_df.dropna(subset=["Product Name"])
             
+            # Show a preview and the Push button
+            st.write(f"Parsed {len(new_df)} items.")
             if st.button("🚀 Push to Google Sheets"):
+                # Use the global save_to_sheet function
                 save_to_sheet(new_df, "persistent_inventory")
                 st.success("Successfully synced to Google Sheets!")
                 st.rerun()
                 
         except Exception as e:
             st.error(f"Error processing file: {e}")
+
+    if st.button("🗑️ Danger: Clear App Cache"):
+        st.cache_data.clear()
+        st.rerun()
+                
+        except Exception as e:
+            st.error(f"Error processing file: {e}")
+
