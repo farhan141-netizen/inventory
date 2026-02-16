@@ -57,7 +57,7 @@ def recalculate_item(df, item_name):
     df.at[idx, "Closing Stock"] = opening + total_received - consumption
     return df
 
-def apply_transaction(item_name, day_num, qty, is_undo=False):
+def apply_transaction(item_name, day_num, qty, is_undo=False, log_type="Addition"):
     df = st.session_state.inventory
     df.columns = [str(col) for col in df.columns]
     
@@ -78,9 +78,10 @@ def apply_transaction(item_name, day_num, qty, is_undo=False):
                 "Item": item_name,
                 "Qty": qty,
                 "Day": day_num,
-                "Status": "Active"
+                "Status": "Active",
+                "Type": log_type
             }])
-            log_cols = ["LogID", "Timestamp", "Item", "Qty", "Day", "Status"]
+            log_cols = ["LogID", "Timestamp", "Item", "Qty", "Day", "Status", "Type"]
             logs_df = load_from_sheet("activity_logs", default_cols=log_cols)
             updated_logs = pd.concat([logs_df, new_log], ignore_index=True)
             save_to_sheet(updated_logs, "activity_logs")
@@ -110,6 +111,68 @@ def undo_entry(log_id):
             st.success(f"Successfully reversed {qty} for {item}")
             st.rerun()
 
+# --- MODAL: ADD NEW ITEM (FROM LOCAL APP.PY) ---
+@st.dialog("➕ Add New Product")
+def add_item_modal():
+    meta_cols = ["Product Name", "Category", "Supplier", "Contact", "Email", "Min Stock", "Price"]
+    meta_df = load_from_sheet("product_metadata", default_cols=meta_cols)
+    unique_suppliers = sorted(meta_df["Supplier"].dropna().unique().tolist())
+    st.write("Register a new item. Selecting an existing supplier will auto-fill contact details.")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        name = st.text_input("Item Name*")
+        supplier_choice = st.selectbox("Supplier Name", options=["New Supplier"] + unique_suppliers)
+        
+        default_cat, default_contact, default_email = "Ingredients", "", ""
+        if supplier_choice != "New Supplier":
+            sup_data = meta_df[meta_df["Supplier"] == supplier_choice].iloc[-1]
+            supplier_name = supplier_choice
+            default_cat = sup_data.get("Category", "Ingredients")
+            default_contact = sup_data.get("Contact", "")
+            default_email = sup_data.get("Email", "")
+        else:
+            supplier_name = st.text_input("Enter New Supplier Name")
+
+    with col2:
+        cat_list = ["Packaging", "Ingredients", "Equipment", "Cleaning", "Other"]
+        cat_idx = cat_list.index(default_cat) if default_cat in cat_list else 1
+        category = st.selectbox("Category", options=cat_list, index=cat_idx)
+        uom = st.selectbox("Unit (UOM)*", ["pcs", "kg", "box", "ltr", "pkt", "can", "bot", "g", "ml", "roll", "set", "bag"])
+        contact = st.text_input("Contact Person / Phone", value=default_contact)
+        email = st.text_input("Email Address", value=default_email)
+
+    st.divider()
+    c3, c4 = st.columns(2)
+    with c3: opening_bal = st.number_input("Opening Stock", min_value=0.0)
+    with c4: min_stock = st.number_input("Min Stock Alert", min_value=0.0)
+
+    if st.button("✅ Create Product", use_container_width=True, type="primary"):
+        if name and (supplier_name or supplier_choice != "New Supplier"):
+            # 1. Update Inventory Sheet
+            new_row_inv = {str(i): 0 for i in range(1, 32)}
+            new_row_inv.update({
+                "Product Name": name, "UOM": uom, "Opening Stock": opening_bal, 
+                "Total Received": 0, "Consumption": 0, "Closing Stock": opening_bal
+            })
+            updated_inv = pd.concat([st.session_state.inventory, pd.DataFrame([new_row_inv])], ignore_index=True)
+            save_to_sheet(updated_inv, "persistent_inventory")
+            st.session_state.inventory = updated_inv
+            
+            # 2. Update Metadata Sheet
+            new_row_meta = {
+                "Product Name": name, "Category": category, "Supplier": supplier_name, 
+                "Contact": contact, "Email": email, "Min Stock": min_stock, "Price": 0
+            }
+            updated_meta = pd.concat([meta_df, pd.DataFrame([new_row_meta])], ignore_index=True)
+            save_to_sheet(updated_meta, "product_metadata")
+            
+            # 3. Log the creation
+            apply_transaction(name, 0, opening_bal, is_undo=False, log_type="New Item Added")
+            
+            st.success(f"Added {name}")
+            st.rerun()
+
 # --- DATA INITIALIZATION ---
 if 'inventory' not in st.session_state:
     st.session_state.inventory = load_from_sheet("persistent_inventory")
@@ -131,6 +194,11 @@ with tab_ops:
                 if apply_transaction(selected_item, day_input, qty_input): st.rerun()
 
     st.divider()
+    # "ADD NEW ITEM" Button integrated here
+    if st.button("➕ ADD NEW PRODUCT", type="secondary", use_container_width=True): 
+        add_item_modal()
+
+    st.divider()
     col_history, col_status = st.columns([1, 2])
     
     with col_history:
@@ -143,7 +211,7 @@ with tab_ops:
                 with st.container():
                     st.markdown(f"""<div class='log-entry'>
                         <b>{row['Item']}</b>: {'+' if row['Qty'] > 0 else ''}{row['Qty']} {status_text}<br>
-                        <small>Day {row['Day']} | {row['Timestamp']}</small>
+                        <small>Day {row['Day']} | {row['Timestamp']} | {row.get('Type', 'Addition')}</small>
                         </div>""", unsafe_allow_html=True)
                     if not is_undone:
                         if st.button(f"Undo Entry {row['LogID']}", key=f"btn_{row['LogID']}"):
@@ -192,7 +260,6 @@ with tab_sup:
     edited_meta = st.data_editor(filtered, num_rows="dynamic", use_container_width=True)
     
     if st.button("💾 Save Directory Changes"):
-        # If filtered, we need to merge changes back to the original meta_df
         if search:
             meta_df.update(edited_meta)
             save_to_sheet(meta_df, "product_metadata")
@@ -204,23 +271,18 @@ with tab_sup:
 # --- SIDEBAR ---
 with st.sidebar:
     st.header("Cloud Data Control")
-    
-    # 1. Inventory Sync
     st.subheader("1. Master Inventory Sync")
     inv_file = st.file_uploader("Upload Inventory Master", type=["csv", "xlsx"], key="inv_up")
     if inv_file:
         try:
             raw_df = pd.read_excel(inv_file, skiprows=4, header=None) if inv_file.name.endswith('.xlsx') else pd.read_csv(inv_file, skiprows=4, header=None)
             new_df = pd.DataFrame()
-            new_df["Product Name"] = raw_df[1]
-            new_df["UOM"] = raw_df[2]
+            new_df["Product Name"] = raw_df[1]; new_df["UOM"] = raw_df[2]
             new_df["Opening Stock"] = pd.to_numeric(raw_df[3], errors='coerce').fillna(0)
             for i in range(1, 32): new_df[str(i)] = 0
-            new_df["Total Received"] = 0
-            new_df["Consumption"] = 0
+            new_df["Total Received"] = 0; new_df["Consumption"] = 0
             new_df["Closing Stock"] = new_df["Opening Stock"]
             new_df = new_df.dropna(subset=["Product Name"])
-            st.write(f"Items found: {len(new_df)}")
             if st.button("🚀 Push Inventory to Cloud"):
                 save_to_sheet(new_df, "persistent_inventory")
                 st.success("Master Inventory Overwritten!")
@@ -228,30 +290,17 @@ with st.sidebar:
         except Exception as e: st.error(f"Error: {e}")
 
     st.divider()
-
-    # 2. Bulk Supplier Sync (Requested Feature)
     st.subheader("2. Bulk Supplier Directory Sync")
     meta_file = st.file_uploader("Upload Product Metadata", type=["csv", "xlsx"], key="meta_up")
     if meta_file:
         try:
-            if meta_file.name.endswith('.xlsx'):
-                new_meta = pd.read_excel(meta_file)
-            else:
-                new_meta = pd.read_csv(meta_file)
-            
-            st.write("Preview of Uploaded Data:")
-            st.dataframe(new_meta.head(5))
-            
+            new_meta = pd.read_excel(meta_file) if meta_file.name.endswith('.xlsx') else pd.read_csv(meta_file)
             if st.button("🚀 Push Directory to Cloud"):
-                # Ensure it matches the required schema
                 required_cols = ["Product Name", "Category", "Supplier", "Contact", "Email", "Min Stock", "Price"]
-                # Fill missing required columns with empty values if they don't exist in upload
                 for col in required_cols:
-                    if col not in new_meta.columns:
-                        new_meta[col] = ""
-                
+                    if col not in new_meta.columns: new_meta[col] = ""
                 save_to_sheet(new_meta[required_cols], "product_metadata")
-                st.success("Supplier Directory Overwritten!")
+                st.success("Directory Overwritten!")
                 st.rerun()
         except Exception as e: st.error(f"Error: {e}")
 
