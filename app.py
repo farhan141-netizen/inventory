@@ -7,10 +7,23 @@ import uuid
 # --- CLOUD CONNECTION ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
+def clean_dataframe(df):
+    """Helper to remove duplicate columns and handle 'Unnamed' headers from Sheets"""
+    if df is None or df.empty:
+        return df
+    # Remove completely empty columns
+    df = df.loc[:, ~df.columns.str.contains('^Unnamed')]
+    # Remove duplicate column names (keep first)
+    df = df.loc[:, ~df.columns.duplicated()]
+    # Ensure all headers are strings
+    df.columns = [str(col).strip() for col in df.columns]
+    return df
+
 def load_from_sheet(worksheet_name, default_cols=None):
-    """Safely load data and ensure default columns exist if sheet is new"""
+    """Safely load and clean data from Google Sheets"""
     try:
         df = conn.read(worksheet=worksheet_name, ttl="2s")
+        df = clean_dataframe(df)
         if df is None or df.empty:
             return pd.DataFrame(columns=default_cols) if default_cols else pd.DataFrame()
         return df
@@ -18,6 +31,8 @@ def load_from_sheet(worksheet_name, default_cols=None):
         return pd.DataFrame(columns=default_cols) if default_cols else pd.DataFrame()
 
 def save_to_sheet(df, worksheet_name):
+    """Save cleaned data to Google Sheets"""
+    df = clean_dataframe(df)
     conn.update(worksheet=worksheet_name, data=df)
     st.cache_data.clear()
 
@@ -39,12 +54,10 @@ st.markdown("""
 def recalculate_item(df, item_name):
     if item_name not in df["Product Name"].values: return df
     
-    df.columns = [str(col) for col in df.columns]
+    df = clean_dataframe(df)
     idx = df[df["Product Name"] == item_name].index[0]
-    
     day_cols = [str(i) for i in range(1, 32)]
     
-    # Fix: Ensure every day column is strictly numeric before sum
     for col in day_cols:
         if col not in df.columns:
             df[col] = 0.0
@@ -60,7 +73,7 @@ def recalculate_item(df, item_name):
 
 def apply_transaction(item_name, day_num, qty, is_undo=False, log_type="Addition"):
     df = st.session_state.inventory
-    df.columns = [str(col) for col in df.columns]
+    df = clean_dataframe(df)
     
     if item_name in df["Product Name"].values:
         idx = df[df["Product Name"] == item_name].index[0]
@@ -75,14 +88,9 @@ def apply_transaction(item_name, day_num, qty, is_undo=False, log_type="Addition
             new_log = pd.DataFrame([{
                 "LogID": str(uuid.uuid4())[:8],
                 "Timestamp": datetime.datetime.now().strftime("%H:%M:%S"),
-                "Item": item_name,
-                "Qty": qty,
-                "Day": day_num,
-                "Status": "Active",
-                "Type": log_type
+                "Item": item_name, "Qty": qty, "Day": day_num, "Status": "Active", "Type": log_type
             }])
-            log_cols = ["LogID", "Timestamp", "Item", "Qty", "Day", "Status", "Type"]
-            logs_df = load_from_sheet("activity_logs", default_cols=log_cols)
+            logs_df = load_from_sheet("activity_logs", default_cols=["LogID", "Timestamp", "Item", "Qty", "Day", "Status", "Type"])
             updated_logs = pd.concat([logs_df, new_log], ignore_index=True)
             save_to_sheet(updated_logs, "activity_logs")
         
@@ -141,16 +149,18 @@ def add_item_modal():
 
     if st.button("✅ Create Product", use_container_width=True, type="primary"):
         if name and supplier_name:
-            current_inv = st.session_state.inventory
-            current_inv.columns = [str(c) for c in current_inv.columns]
+            # FIX: Clean existing inventory headers before concat to avoid InvalidIndexError
+            current_inv = clean_dataframe(st.session_state.inventory)
             
             new_row_inv = {str(i): 0.0 for i in range(1, 32)}
             new_row_inv.update({
                 "Product Name": name, "UOM": uom, "Opening Stock": float(opening_bal), 
                 "Total Received": 0.0, "Consumption": 0.0, "Closing Stock": float(opening_bal)
             })
+            new_row_df = pd.DataFrame([new_row_inv])
             
-            st.session_state.inventory = pd.concat([current_inv, pd.DataFrame([new_row_inv])], ignore_index=True)
+            # Concat cleaned dataframes
+            st.session_state.inventory = pd.concat([current_inv, new_row_df], ignore_index=True)
             
             new_row_meta = {
                 "Product Name": name, "Category": category, "Supplier": supplier_name, 
@@ -201,12 +211,11 @@ with tab_ops:
                     st.markdown(f"<div class='log-entry'><b>{row['Item']}</b>: {row['Qty']} {status_text}<br><small>Day {row['Day']} | {row['Timestamp']}</small></div>", unsafe_allow_html=True)
                     if not is_undone:
                         if st.button(f"Undo {row['LogID']}", key=f"btn_{row['LogID']}"): undo_entry(row['LogID'])
-        else: st.info("No logs.")
 
     with col_status:
         st.subheader("📊 Live Stock Status")
         if not st.session_state.inventory.empty:
-            df = st.session_state.inventory
+            df = clean_dataframe(st.session_state.inventory)
             summary_cols = ["Product Name", "UOM", "Opening Stock", "Total Received", "Closing Stock", "Consumption"]
             edited_df = st.data_editor(df[summary_cols], use_container_width=True, disabled=["Product Name", "UOM", "Total Received", "Closing Stock"])
             if st.button("💾 Save Table Changes"):
@@ -224,7 +233,6 @@ with tab_req:
         if st.button("🗑️ Clear All Orders"):
             save_to_sheet(pd.DataFrame(columns=orders_df.columns), "orders_db")
             st.rerun()
-    else: st.info("No requests.")
 
 # --- TAB 3: SUPPLIER DIRECTORY ---
 with tab_sup:
@@ -238,7 +246,7 @@ with tab_sup:
         save_to_sheet(edited_meta if not search else meta_df.update(edited_meta) or meta_df, "product_metadata")
         st.rerun()
 
-# --- SIDEBAR: ALL UPLOAD FEATURES RESTORED ---
+# --- SIDEBAR ---
 with st.sidebar:
     st.header("Cloud Data Control")
     st.subheader("1. Master Inventory Sync")
