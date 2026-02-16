@@ -8,12 +8,55 @@ import uuid
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def load_from_sheet(worksheet_name, default_cols=None):
+    """Safely load data and ensure default columns exist if sheet is new"""
     try:
-        return conn.read(worksheet=worksheet_name, ttl="2s")
-    except:
+        df = conn.read(worksheet=worksheet_name, ttl="2s")
+        if df.empty and default_cols:
+            return pd.DataFrame(columns=default_cols)
+        return df
+    except Exception:
         if default_cols:
             return pd.DataFrame(columns=default_cols)
         return pd.DataFrame()
+
+def apply_transaction(item_name, day_num, qty, is_undo=False):
+    df = st.session_state.inventory
+    df.columns = [str(col) for col in df.columns]
+    
+    if item_name in df["Product Name"].values:
+        idx = df[df["Product Name"] == item_name].index[0]
+        col_name = str(int(day_num))
+        
+        if col_name not in df.columns: 
+            df[col_name] = 0
+            
+        current_val = pd.to_numeric(df.at[idx, col_name], errors='coerce')
+        df.at[idx, col_name] = (0 if pd.isna(current_val) else current_val) + qty
+        
+        # --- LOG LOGIC WITH SAFETY CHECK ---
+        if not is_undo:
+            new_log = pd.DataFrame([{
+                "LogID": str(uuid.uuid4())[:8],
+                "Timestamp": datetime.datetime.now().strftime("%H:%M:%S"),
+                "Item": item_name,
+                "Qty": qty,
+                "Day": day_num,
+                "Status": "Active"
+            }])
+            # Define expected headers for activity_logs
+            log_cols = ["LogID", "Timestamp", "Item", "Qty", "Day", "Status"]
+            logs_df = load_from_sheet("activity_logs", default_cols=log_cols)
+            
+            # Use pd.concat safely
+            updated_logs = pd.concat([logs_df, new_log], ignore_index=True)
+            save_to_sheet(updated_logs, "activity_logs")
+        
+        # Update Inventory
+        df = recalculate_item(df, item_name)
+        st.session_state.inventory = df
+        save_to_sheet(df, "persistent_inventory")
+        return True
+    return False
 
 def save_to_sheet(df, worksheet_name):
     conn.update(worksheet=worksheet_name, data=df)
@@ -206,3 +249,4 @@ with st.sidebar:
     if st.button("🗑️ Reset System Cache"):
         st.cache_data.clear()
         st.rerun()
+
