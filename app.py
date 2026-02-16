@@ -183,26 +183,25 @@ tab_ops, tab_req, tab_sup = st.tabs(["📊 Inventory Operations", "🚚 Requisit
 
 # --- TAB 1: OPERATIONS ---
 with tab_ops:
-    # --- New Layout: 3:1 Ratio ---
     main_col, action_col = st.columns([3, 1])
 
     with main_col:
         st.subheader("📥 Daily Receipt Portal")
         if not st.session_state.inventory.empty:
             item_list = sorted(st.session_state.inventory["Product Name"].unique().tolist())
-            rc1, rc2, rc3, rc4 = st.columns([2, 1, 1, 1.2]) # Internal columns for the 3/4 space
+            rc1, rc2, rc3, rc4 = st.columns([2, 1, 1, 1.2])
             with rc1: selected_item = st.selectbox("🔍 Search Item", options=[""] + item_list)
             with rc2: day_input = st.number_input("Day (1-31)", 1, 31, datetime.datetime.now().day)
             with rc3: qty_input = st.number_input("Qty Received", min_value=0.0, step=0.1)
             with rc4: 
-                st.write("##") # Spacer to align with inputs
+                st.write("##")
                 if st.button("✅ Confirm Receipt", use_container_width=True, type="primary"):
                     if selected_item and qty_input > 0:
                         if apply_transaction(selected_item, day_input, qty_input): st.rerun()
 
     with action_col:
         st.subheader("⚙️ Actions")
-        st.write("##") # Spacer to align with the portal inputs
+        st.write("##")
         if st.button("➕ ADD NEW PRODUCT", type="secondary", use_container_width=True): 
             add_item_modal()
 
@@ -274,7 +273,30 @@ with tab_ops:
 
 # --- TAB 2: REQUISITIONS ---
 with tab_req:
-    st.subheader("🚚 Pending Requisitions")
+    st.subheader("🚚 Create Requisition")
+    meta_df = load_from_sheet("product_metadata")
+    if not meta_df.empty:
+        col_it, col_qt, col_ad = st.columns([3, 1, 1])
+        with col_it: req_item = st.selectbox("Select Product", options=[""] + sorted(meta_df["Product Name"].tolist()))
+        with col_qt: req_qty = st.number_input("Order Qty", min_value=0.0)
+        with col_ad:
+            st.write("##")
+            if st.button("➕ Add to List", use_container_width=True):
+                if req_item and req_qty > 0:
+                    orders_df = load_from_sheet("orders_db", default_cols=["Product Name", "Qty", "Supplier", "Contact", "Status"])
+                    sup_info = meta_df[meta_df["Product Name"] == req_item].iloc[0]
+                    new_order = pd.DataFrame([{
+                        "Product Name": req_item, "Qty": req_qty, 
+                        "Supplier": sup_info.get("Supplier", "N/A"), 
+                        "Contact": sup_info.get("Contact 1", "N/A"),
+                        "Status": "Pending"
+                    }])
+                    save_to_sheet(pd.concat([orders_df, new_order], ignore_index=True), "orders_db")
+                    st.success(f"Added {req_item}")
+                    st.rerun()
+
+    st.divider()
+    st.subheader("📋 Pending Requisitions")
     orders_df = load_from_sheet("orders_db")
     if not orders_df.empty:
         st.dataframe(orders_df, use_container_width=True)
@@ -309,6 +331,18 @@ with st.sidebar:
             new_df = new_df.dropna(subset=["Product Name"])
             if st.button("🚀 Push Inventory to Cloud"):
                 save_to_sheet(new_df, "persistent_inventory")
+                st.rerun()
+        except Exception as e: st.error(f"Error: {e}")
+
+    st.divider()
+    st.subheader("2. Bulk Supplier Directory Sync")
+    meta_upload = st.file_uploader("Upload Product Metadata", type=["csv", "xlsx"])
+    if meta_upload:
+        try:
+            new_meta = pd.read_excel(meta_upload) if meta_upload.name.endswith('.xlsx') else pd.read_csv(meta_upload)
+            if st.button("🚀 Push Metadata to Cloud"):
+                save_to_sheet(new_meta, "product_metadata")
+                st.success("Metadata uploaded!")
                 st.rerun()
         except Exception as e: st.error(f"Error: {e}")
 
