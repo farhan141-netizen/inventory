@@ -47,9 +47,19 @@ st.markdown("""
     .stTabs [aria-selected="true"] { background-color: #00ffcc !important; color: #000 !important; }
     .log-entry { border-left: 3px solid #00ffcc; padding: 10px; margin-bottom: 8px; background: #1e2130; border-radius: 0 5px 5px 0; }
     .pagination-info { font-size: 0.85rem; color: #00ffcc; margin-bottom: 10px; }
-    /* Align buttons to the bottom of the row */
-    div[data-testid="stVerticalBlock"] > div:has(button) {
-        justify-content: flex-end;
+    
+    /* Styling for the two containers to look like separate cards */
+    [data-testid="stVerticalBlock"] > div:has(.receipt-card) {
+        background-color: #161b22;
+        padding: 20px;
+        border-radius: 10px;
+        border: 1px solid #30363d;
+    }
+    [data-testid="stVerticalBlock"] > div:has(.action-card) {
+        background-color: #161b22;
+        padding: 20px;
+        border-radius: 10px;
+        border: 1px solid #30363d;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -186,26 +196,34 @@ with tab_ops:
     main_col, action_col = st.columns([3, 1])
 
     with main_col:
-        st.subheader("📥 Daily Receipt Portal")
-        if not st.session_state.inventory.empty:
-            item_list = sorted(st.session_state.inventory["Product Name"].unique().tolist())
-            rc1, rc2, rc3, rc4 = st.columns([2, 1, 1, 1.2])
-            with rc1: selected_item = st.selectbox("🔍 Search Item", options=[""] + item_list)
-            with rc2: day_input = st.number_input("Day (1-31)", 1, 31, datetime.datetime.now().day)
-            with rc3: qty_input = st.number_input("Qty Received", min_value=0.0, step=0.1)
-            with rc4: 
-                st.write("##")
+        with st.container():
+            st.markdown('<div class="receipt-card">', unsafe_allow_html=True)
+            st.subheader("📥 Daily Receipt Portal")
+            if not st.session_state.inventory.empty:
+                item_list = sorted(st.session_state.inventory["Product Name"].unique().tolist())
+                # Row for inputs
+                rc1, rc2, rc3 = st.columns([2, 1, 1])
+                with rc1: selected_item = st.selectbox("🔍 Search Item", options=[""] + item_list)
+                with rc2: day_input = st.number_input("Day (1-31)", 1, 31, datetime.datetime.now().day)
+                with rc3: qty_input = st.number_input("Qty Received", min_value=0.0, step=0.1)
+                
+                # Row for the Confirm button (Move to below inputs)
                 if st.button("✅ Confirm Receipt", use_container_width=True, type="primary"):
                     if selected_item and qty_input > 0:
                         if apply_transaction(selected_item, day_input, qty_input): st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
 
     with action_col:
-        st.subheader("⚙️ Actions")
-        st.write("##")
-        if st.button("➕ ADD NEW PRODUCT", type="secondary", use_container_width=True): 
-            add_item_modal()
+        with st.container():
+            st.markdown('<div class="action-card">', unsafe_allow_html=True)
+            st.subheader("⚙️ Actions")
+            if st.button("➕ ADD NEW PRODUCT", type="secondary", use_container_width=True): 
+                add_item_modal()
+            # Future buttons go here
+            st.markdown('</div>', unsafe_allow_html=True)
 
     st.divider()
+    # Rest of the tab (Activity & Status) continues here...
     col_history, col_status = st.columns([1, 2])
     
     with col_history:
