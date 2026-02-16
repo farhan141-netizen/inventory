@@ -39,13 +39,12 @@ st.markdown("""
 def recalculate_item(df, item_name):
     if item_name not in df["Product Name"].values: return df
     
-    # Ensure all columns are strings for consistent indexing
     df.columns = [str(col) for col in df.columns]
     idx = df[df["Product Name"] == item_name].index[0]
     
     day_cols = [str(i) for i in range(1, 32)]
     
-    # Pre-check: Ensure day columns exist and are treated as numeric Series
+    # Fix: Ensure every day column is strictly numeric before sum
     for col in day_cols:
         if col not in df.columns:
             df[col] = 0.0
@@ -67,13 +66,11 @@ def apply_transaction(item_name, day_num, qty, is_undo=False, log_type="Addition
         idx = df[df["Product Name"] == item_name].index[0]
         col_name = str(int(day_num))
         
-        # Only apply qty if it's a valid day (1-31). Day 0 is for initialization only.
         if col_name != "0":
             if col_name not in df.columns: df[col_name] = 0.0
             current_val = pd.to_numeric(df.at[idx, col_name], errors='coerce')
             df.at[idx, col_name] = (0.0 if pd.isna(current_val) else current_val) + float(qty)
         
-        # Log Logic
         if not is_undo:
             new_log = pd.DataFrame([{
                 "LogID": str(uuid.uuid4())[:8],
@@ -89,12 +86,26 @@ def apply_transaction(item_name, day_num, qty, is_undo=False, log_type="Addition
             updated_logs = pd.concat([logs_df, new_log], ignore_index=True)
             save_to_sheet(updated_logs, "activity_logs")
         
-        # Update Inventory calculations
         df = recalculate_item(df, item_name)
         st.session_state.inventory = df
         save_to_sheet(df, "persistent_inventory")
         return True
     return False
+
+def undo_entry(log_id):
+    logs = load_from_sheet("activity_logs")
+    if log_id in logs["LogID"].values:
+        idx = logs[logs["LogID"] == log_id].index[0]
+        if logs.at[idx, "Status"] == "Undone":
+            st.warning("Already undone.")
+            return
+
+        item, qty, day = logs.at[idx, "Item"], logs.at[idx, "Qty"], logs.at[idx, "Day"]
+        if apply_transaction(item, day, -qty, is_undo=True):
+            logs.at[idx, "Status"] = "Undone"
+            save_to_sheet(logs, "activity_logs")
+            st.success(f"Reversed {qty} for {item}")
+            st.rerun()
 
 # --- MODAL: ADD NEW ITEM ---
 @st.dialog("➕ Add New Product")
@@ -107,63 +118,50 @@ def add_item_modal():
     with col1:
         name = st.text_input("Item Name*")
         supplier_choice = st.selectbox("Supplier Name", options=["New Supplier"] + unique_suppliers)
-        
-        default_cat, default_contact, default_email = "Ingredients", "", ""
-        if supplier_choice != "New Supplier":
-            sup_matches = meta_df[meta_df["Supplier"] == supplier_choice]
-            if not sup_matches.empty:
-                sup_data = sup_matches.iloc[-1]
-                supplier_name = supplier_choice
-                default_cat = sup_data.get("Category", "Ingredients")
-                default_contact = sup_data.get("Contact", "")
-                default_email = sup_data.get("Email", "")
-        else:
+        if supplier_choice == "New Supplier":
             supplier_name = st.text_input("Enter New Supplier Name")
+            default_cat, default_contact, default_email = "Ingredients", "", ""
+        else:
+            supplier_name = supplier_choice
+            sup_data = meta_df[meta_df["Supplier"] == supplier_choice].iloc[-1]
+            default_cat = sup_data.get("Category", "Ingredients")
+            default_contact = sup_data.get("Contact", "")
+            default_email = sup_data.get("Email", "")
 
     with col2:
         cat_list = ["Packaging", "Ingredients", "Equipment", "Cleaning", "Other"]
-        cat_idx = cat_list.index(default_cat) if default_cat in cat_list else 1
-        category = st.selectbox("Category", options=cat_list, index=cat_idx)
+        category = st.selectbox("Category", options=cat_list, index=cat_list.index(default_cat) if default_cat in cat_list else 1)
         uom = st.selectbox("Unit (UOM)*", ["pcs", "kg", "box", "ltr", "pkt", "can", "bot", "g", "ml", "roll", "set", "bag"])
-        contact = st.text_input("Contact Person / Phone", value=default_contact)
-        email = st.text_input("Email Address", value=default_email)
+        contact = st.text_input("Contact Person", value=default_contact)
+        email = st.text_input("Email", value=default_email)
 
     c3, c4 = st.columns(2)
     with c3: opening_bal = st.number_input("Opening Stock", min_value=0.0)
     with c4: min_stock = st.number_input("Min Stock Alert", min_value=0.0)
 
     if st.button("✅ Create Product", use_container_width=True, type="primary"):
-        if name and (supplier_name if supplier_choice == "New Supplier" else supplier_choice):
-            # Ensure the session state inventory has correct columns
+        if name and supplier_name:
             current_inv = st.session_state.inventory
             current_inv.columns = [str(c) for c in current_inv.columns]
             
-            # Create full row structure with all 31 days
             new_row_inv = {str(i): 0.0 for i in range(1, 32)}
             new_row_inv.update({
                 "Product Name": name, "UOM": uom, "Opening Stock": float(opening_bal), 
                 "Total Received": 0.0, "Consumption": 0.0, "Closing Stock": float(opening_bal)
             })
             
-            # Add to local state first
             st.session_state.inventory = pd.concat([current_inv, pd.DataFrame([new_row_inv])], ignore_index=True)
             
-            # Update Metadata
             new_row_meta = {
-                "Product Name": name, "Category": category, 
-                "Supplier": supplier_name if supplier_choice == "New Supplier" else supplier_choice, 
+                "Product Name": name, "Category": category, "Supplier": supplier_name, 
                 "Contact": contact, "Email": email, "Min Stock": float(min_stock), "Price": 0.0
             }
             updated_meta = pd.concat([meta_df, pd.DataFrame([new_row_meta])], ignore_index=True)
             
-            # Save all to Cloud
             save_to_sheet(st.session_state.inventory, "persistent_inventory")
             save_to_sheet(updated_meta, "product_metadata")
-            
-            # Apply initialization log (Day 0)
             apply_transaction(name, 0, opening_bal, is_undo=False, log_type="New Item Added")
-            
-            st.success(f"Successfully Added {name}")
+            st.success(f"Added {name}")
             st.rerun()
 
 # --- INITIALIZATION ---
@@ -187,21 +185,23 @@ with tab_ops:
                 if apply_transaction(selected_item, day_input, qty_input): st.rerun()
 
     st.divider()
-    if st.button("➕ ADD NEW PRODUCT", type="secondary", use_container_width=True): 
-        add_item_modal()
+    if st.button("➕ ADD NEW PRODUCT", type="secondary", use_container_width=True): add_item_modal()
 
     st.divider()
     col_history, col_status = st.columns([1, 2])
     
     with col_history:
-        st.subheader("📜 Recent Activity")
+        st.subheader("📜 Recent Activity (Undo)")
         logs = load_from_sheet("activity_logs")
         if not logs.empty:
             for _, row in logs.iloc[::-1].head(10).iterrows():
-                st.markdown(f"""<div class='log-entry'>
-                    <b>{row['Item']}</b>: {row['Qty']} (Day {row['Day']})<br>
-                    <small>{row['Timestamp']} | {row['Type']}</small>
-                    </div>""", unsafe_allow_html=True)
+                is_undone = row['Status'] == "Undone"
+                status_text = " (REVERSED)" if is_undone else ""
+                with st.container():
+                    st.markdown(f"<div class='log-entry'><b>{row['Item']}</b>: {row['Qty']} {status_text}<br><small>Day {row['Day']} | {row['Timestamp']}</small></div>", unsafe_allow_html=True)
+                    if not is_undone:
+                        if st.button(f"Undo {row['LogID']}", key=f"btn_{row['LogID']}"): undo_entry(row['LogID'])
+        else: st.info("No logs.")
 
     with col_status:
         st.subheader("📊 Live Stock Status")
@@ -215,18 +215,60 @@ with tab_ops:
                 save_to_sheet(df, "persistent_inventory")
                 st.rerun()
 
-# --- TAB 2 & 3 (Simplified for logic) ---
+# --- TAB 2: REQUISITIONS ---
 with tab_req:
     st.subheader("🚚 Pending Requisitions")
-    orders = load_from_sheet("orders_db")
-    st.dataframe(orders, use_container_width=True)
+    orders_df = load_from_sheet("orders_db")
+    if not orders_df.empty:
+        st.dataframe(orders_df, use_container_width=True)
+        if st.button("🗑️ Clear All Orders"):
+            save_to_sheet(pd.DataFrame(columns=orders_df.columns), "orders_db")
+            st.rerun()
+    else: st.info("No requests.")
 
+# --- TAB 3: SUPPLIER DIRECTORY ---
 with tab_sup:
     st.subheader("📞 Supplier Directory")
-    meta = load_from_sheet("product_metadata")
-    st.data_editor(meta, use_container_width=True)
+    meta_cols = ["Product Name", "Category", "Supplier", "Contact", "Email", "Min Stock", "Price"]
+    meta_df = load_from_sheet("product_metadata", default_cols=meta_cols)
+    search = st.text_input("🔍 Search Supplier/Item").lower()
+    filtered = meta_df[meta_df["Product Name"].str.lower().str.contains(search, na=False) | meta_df["Supplier"].str.lower().str.contains(search, na=False)] if search else meta_df
+    edited_meta = st.data_editor(filtered, num_rows="dynamic", use_container_width=True)
+    if st.button("💾 Save Directory Changes"):
+        save_to_sheet(edited_meta if not search else meta_df.update(edited_meta) or meta_df, "product_metadata")
+        st.rerun()
 
+# --- SIDEBAR: ALL UPLOAD FEATURES RESTORED ---
 with st.sidebar:
+    st.header("Cloud Data Control")
+    st.subheader("1. Master Inventory Sync")
+    inv_file = st.file_uploader("Upload Inventory Master", type=["csv", "xlsx"])
+    if inv_file:
+        try:
+            raw_df = pd.read_excel(inv_file, skiprows=4, header=None) if inv_file.name.endswith('.xlsx') else pd.read_csv(inv_file, skiprows=4, header=None)
+            new_df = pd.DataFrame()
+            new_df["Product Name"] = raw_df[1]; new_df["UOM"] = raw_df[2]
+            new_df["Opening Stock"] = pd.to_numeric(raw_df[3], errors='coerce').fillna(0.0)
+            for i in range(1, 32): new_df[str(i)] = 0.0
+            new_df["Total Received"] = 0.0; new_df["Consumption"] = 0.0; new_df["Closing Stock"] = new_df["Opening Stock"]
+            new_df = new_df.dropna(subset=["Product Name"])
+            if st.button("🚀 Push Inventory to Cloud"):
+                save_to_sheet(new_df, "persistent_inventory")
+                st.rerun()
+        except Exception as e: st.error(f"Error: {e}")
+
+    st.divider()
+    st.subheader("2. Bulk Supplier Directory Sync")
+    meta_upload = st.file_uploader("Upload Product Metadata", type=["csv", "xlsx"])
+    if meta_upload:
+        try:
+            new_meta = pd.read_excel(meta_upload) if meta_upload.name.endswith('.xlsx') else pd.read_csv(meta_upload)
+            if st.button("🚀 Push Directory to Cloud"):
+                save_to_sheet(new_meta, "product_metadata")
+                st.rerun()
+        except Exception as e: st.error(f"Error: {e}")
+
+    st.divider()
     if st.button("🗑️ Reset Cache"):
         st.cache_data.clear()
         st.rerun()
