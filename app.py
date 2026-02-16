@@ -47,6 +47,10 @@ st.markdown("""
     .stTabs [aria-selected="true"] { background-color: #00ffcc !important; color: #000 !important; }
     .log-entry { border-left: 3px solid #00ffcc; padding: 10px; margin-bottom: 8px; background: #1e2130; border-radius: 0 5px 5px 0; }
     .pagination-info { font-size: 0.85rem; color: #00ffcc; margin-bottom: 10px; }
+    /* Align buttons to the bottom of the row */
+    div[data-testid="stVerticalBlock"] > div:has(button) {
+        justify-content: flex-end;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -115,7 +119,6 @@ def undo_entry(log_id):
 # --- MODAL: ADD NEW ITEM ---
 @st.dialog("➕ Add New Product")
 def add_item_modal():
-    # Updated columns to include multiple contacts and sales person
     meta_cols = ["Product Name", "Category", "Supplier", "Sales Person", "Contact 1", "Contact 2", "Email", "Min Stock"]
     meta_df = load_from_sheet("product_metadata", default_cols=meta_cols)
     unique_suppliers = sorted(meta_df["Supplier"].dropna().unique().tolist())
@@ -134,7 +137,6 @@ def add_item_modal():
             default_cat = "Ingredients"
         else:
             supplier_name = supplier_choice
-            # Fetch last known details for this supplier
             sup_data = meta_df[meta_df["Supplier"] == supplier_choice].iloc[-1]
             sales_person = st.text_input("Sales Person Name", value=sup_data.get("Sales Person", ""))
             c1 = st.text_input("Contact 1", value=sup_data.get("Contact 1", ""))
@@ -160,13 +162,8 @@ def add_item_modal():
             st.session_state.inventory = pd.concat([current_inv, pd.DataFrame([new_row_inv])], ignore_index=True)
             
             new_row_meta = {
-                "Product Name": name, 
-                "Category": category, 
-                "Supplier": supplier_name, 
-                "Sales Person": sales_person,
-                "Contact 1": c1,
-                "Contact 2": c2,
-                "Email": email_addr, 
+                "Product Name": name, "Category": category, "Supplier": supplier_name, 
+                "Sales Person": sales_person, "Contact 1": c1, "Contact 2": c2, "Email": email_addr, 
                 "Min Stock": float(min_stock)
             }
             updated_meta = pd.concat([meta_df, pd.DataFrame([new_row_meta])], ignore_index=True)
@@ -174,7 +171,7 @@ def add_item_modal():
             save_to_sheet(st.session_state.inventory, "persistent_inventory")
             save_to_sheet(updated_meta, "product_metadata")
             apply_transaction(name, 0, opening_bal, is_undo=False, log_type="New Item Added")
-            st.success(f"Added {name} successfully")
+            st.success(f"Added {name}")
             st.rerun()
 
 # --- INITIALIZATION ---
@@ -186,19 +183,28 @@ tab_ops, tab_req, tab_sup = st.tabs(["📊 Inventory Operations", "🚚 Requisit
 
 # --- TAB 1: OPERATIONS ---
 with tab_ops:
-    st.subheader("📥 Daily Receipt Portal")
-    if not st.session_state.inventory.empty:
-        item_list = sorted(st.session_state.inventory["Product Name"].unique().tolist())
-        c1, c2, c3 = st.columns([2, 1, 1])
-        with c1: selected_item = st.selectbox("🔍 Search Item", options=[""] + item_list)
-        with c2: day_input = st.number_input("Day (1-31)", 1, 31, datetime.datetime.now().day)
-        with c3: qty_input = st.number_input("Qty Received", min_value=0.0, step=0.1)
-        if st.button("✅ Confirm Receipt", use_container_width=True, type="primary"):
-            if selected_item and qty_input > 0:
-                if apply_transaction(selected_item, day_input, qty_input): st.rerun()
+    # --- New Layout: 3:1 Ratio ---
+    main_col, action_col = st.columns([3, 1])
 
-    st.divider()
-    if st.button("➕ ADD NEW PRODUCT", type="secondary", use_container_width=True): add_item_modal()
+    with main_col:
+        st.subheader("📥 Daily Receipt Portal")
+        if not st.session_state.inventory.empty:
+            item_list = sorted(st.session_state.inventory["Product Name"].unique().tolist())
+            rc1, rc2, rc3, rc4 = st.columns([2, 1, 1, 1.2]) # Internal columns for the 3/4 space
+            with rc1: selected_item = st.selectbox("🔍 Search Item", options=[""] + item_list)
+            with rc2: day_input = st.number_input("Day (1-31)", 1, 31, datetime.datetime.now().day)
+            with rc3: qty_input = st.number_input("Qty Received", min_value=0.0, step=0.1)
+            with rc4: 
+                st.write("##") # Spacer to align with inputs
+                if st.button("✅ Confirm Receipt", use_container_width=True, type="primary"):
+                    if selected_item and qty_input > 0:
+                        if apply_transaction(selected_item, day_input, qty_input): st.rerun()
+
+    with action_col:
+        st.subheader("⚙️ Actions")
+        st.write("##") # Spacer to align with the portal inputs
+        if st.button("➕ ADD NEW PRODUCT", type="secondary", use_container_width=True): 
+            add_item_modal()
 
     st.divider()
     col_history, col_status = st.columns([1, 2])
