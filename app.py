@@ -45,7 +45,31 @@ st.markdown("""
     .stMetric { background-color: #1e2130; padding: 15px; border-radius: 10px; border: 1px solid #333; }
     .stTabs [data-baseweb="tab"] { height: 50px; background-color: #1e2130; color: white; border-radius: 5px 5px 0 0; }
     .stTabs [aria-selected="true"] { background-color: #00ffcc !important; color: #000 !important; }
-    .log-entry { border-left: 3px solid #00ffcc; padding: 10px; margin-bottom: 8px; background: #1e2130; border-radius: 0 5px 5px 0; }
+    
+    /* Compact Log Styling */
+    .log-container {
+        max-height: 600px;
+        overflow-y: auto;
+        padding-right: 5px;
+    }
+    .log-entry-row {
+        border-left: 3px solid #00ffcc;
+        padding: 8px;
+        margin-bottom: 5px;
+        background: #1e2130;
+        border-radius: 0 5px 5px 0;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    .log-text {
+        font-size: 0.9rem;
+        line-height: 1.2;
+    }
+    .log-meta {
+        font-size: 0.75rem;
+        color: #888;
+    }
     .pagination-info { font-size: 0.85rem; color: #00ffcc; margin-bottom: 10px; }
     
     /* Styling for the two containers to look like separate cards */
@@ -201,13 +225,11 @@ with tab_ops:
             st.subheader("📥 Daily Receipt Portal")
             if not st.session_state.inventory.empty:
                 item_list = sorted(st.session_state.inventory["Product Name"].unique().tolist())
-                # Row for inputs
                 rc1, rc2, rc3 = st.columns([2, 1, 1])
                 with rc1: selected_item = st.selectbox("🔍 Search Item", options=[""] + item_list)
                 with rc2: day_input = st.number_input("Day (1-31)", 1, 31, datetime.datetime.now().day)
                 with rc3: qty_input = st.number_input("Qty Received", min_value=0.0, step=0.1)
                 
-                # Row for the Confirm button (Move to below inputs)
                 if st.button("✅ Confirm Receipt", use_container_width=True, type="primary"):
                     if selected_item and qty_input > 0:
                         if apply_transaction(selected_item, day_input, qty_input): st.rerun()
@@ -219,12 +241,10 @@ with tab_ops:
             st.subheader("⚙️ Actions")
             if st.button("➕ ADD NEW PRODUCT", type="secondary", use_container_width=True): 
                 add_item_modal()
-            # Future buttons go here
             st.markdown('</div>', unsafe_allow_html=True)
 
     st.divider()
-    # Rest of the tab (Activity & Status) continues here...
-    col_history, col_status = st.columns([1, 2])
+    col_history, col_status = st.columns([1, 2.2]) # Slightly adjusted ratio
     
     with col_history:
         st.subheader("📜 Recent Activity")
@@ -236,23 +256,40 @@ with tab_ops:
             if filter_choice != "All Days":
                 filtered_logs = filtered_logs[filtered_logs["Day"] == filter_choice]
             
-            items_per_page = 15
+            # Pagination Logic
+            items_per_page = 20
             total_items = len(filtered_logs)
             total_pages = max(1, (total_items // items_per_page) + (1 if total_items % items_per_page > 0 else 0))
-            page_num = st.selectbox(f"Page selection (Total {total_pages})", range(1, total_pages + 1)) if total_pages > 1 else 1
+            page_num = st.selectbox(f"Page (Total {total_pages})", range(1, total_pages + 1)) if total_pages > 1 else 1
             
             start_idx = (page_num - 1) * items_per_page
             page_logs = filtered_logs.iloc[start_idx : start_idx + items_per_page]
             
             st.markdown(f"<div class='pagination-info'>Showing {len(page_logs)} of {total_items} entries</div>", unsafe_allow_html=True)
 
+            # Scrollable Container for Logs
+            st.markdown('<div class="log-container">', unsafe_allow_html=True)
             for _, row in page_logs.iterrows():
                 is_undone = str(row.get('Status', 'Active')) == "Undone"
                 status_text = " (REVERSED)" if is_undone else ""
-                with st.container():
-                    st.markdown(f"<div class='log-entry'><b>{row['Item']}</b>: {row['Qty']} {status_text}<br><small>Day {row['Day']} | {row['Timestamp']}</small></div>", unsafe_allow_html=True)
+                
+                # Layout for Row: Info on left, Undo on right
+                l_col, r_col = st.columns([3, 1])
+                with l_col:
+                    st.markdown(f"""
+                        <div class='log-text'>
+                            <b>{row['Item']}</b>: {row['Qty']}{status_text}<br>
+                            <span class='log-meta'>Day {row['Day']} | {row['Timestamp']}</span>
+                        </div>
+                    """, unsafe_allow_html=True)
+                with r_col:
                     if not is_undone:
-                        if st.button(f"Undo {row['LogID']}", key=f"undo_{row['LogID']}"): undo_entry(row['LogID'])
+                        if st.button("Undo", key=f"undo_{row['LogID']}", use_container_width=True):
+                            undo_entry(row['LogID'])
+                    else:
+                        st.write("Done")
+                st.markdown("<hr style='margin: 5px 0; border: 0.1px solid #333'>", unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
         else:
             st.info("No activity found.")
 
