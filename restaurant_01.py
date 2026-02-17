@@ -172,39 +172,53 @@ with tab_pending:
     st.subheader("Your Requisitions at Warehouse")
     orders_df = load_from_sheet("orders_db")
     
-    # Safety Check: Ensure Supplier column exists before filtering
-    if "Supplier" not in orders_df.columns:
-        orders_df["Supplier"] = "Unknown"
+    # SAFETY 1: Ensure columns exist
+    for col in ["Supplier", "Status", "FollowUp", "Product Name", "Qty"]:
+        if col not in orders_df.columns:
+            orders_df[col] = False if col == "FollowUp" else "Unknown"
 
     if not orders_df.empty:
+        # Filter for Main Warehouse orders
         my_orders = orders_df[orders_df["Supplier"] == "Main Warehouse"]
+        
         if my_orders.empty:
-            st.info("No active requisitions for this restaurant.")
+            st.info("No active requisitions found for this restaurant.")
         
         for idx, row in my_orders.iterrows():
             with st.container():
+                # Get values safely with fallbacks
+                item_name = row.get('Product Name', 'Unknown Item')
+                item_qty = row.get('Qty', 0)
+                item_status = row.get('Status', 'Pending')
+                
+                # SAFETY 2: Force FollowUp to be True or False (Fixes the TypeError)
+                fup_val = row.get("FollowUp")
+                fup_needed = bool(fup_val) if pd.notna(fup_val) else False
+                
                 st.markdown(f"""
                 <div class="pending-box">
-                    <b>{row['Product Name']}</b> | Qty: {row.get('Qty', 0)} | Status: <span style="color:#ffaa00">{row.get('Status', 'Pending')}</span>
+                    <b>{item_name}</b> | Qty: {item_qty} | Status: <span style="color:#ffaa00">{item_status}</span>
                 </div>
                 """, unsafe_allow_html=True)
                 
                 c1, c2 = st.columns(2)
-                if row.get('Status') == "Pending":
+                
+                # Only show actions if still Pending
+                if item_status == "Pending":
                     if c1.button("Mark Received ✅", key=f"recv_{idx}"):
                         orders_df.at[idx, "Status"] = "Received"
                         save_to_sheet(orders_df, "orders_db")
                         st.rerun()
                     
-                    fup_needed = row.get("FollowUp", False)
                     fup_label = "⚠️ Follow Up Sent" if fup_needed else "🚩 Request Follow Up"
+                    # The 'disabled' parameter now receives a guaranteed boolean
                     if c2.button(fup_label, key=f"fup_{idx}", disabled=fup_needed):
                         orders_df.at[idx, "FollowUp"] = True
                         save_to_sheet(orders_df, "orders_db")
                         st.toast("Warehouse notified!")
                         st.rerun()
     else:
-        st.info("No active requisitions.")
+        st.info("No orders found in the cloud.")
 
 # --- SIDEBAR (DYNAMIC IMPORT) ---
 with st.sidebar:
@@ -250,3 +264,4 @@ with st.sidebar:
     if st.button("🗑️ Reset Application Cache"):
         st.cache_data.clear()
         st.rerun()
+
