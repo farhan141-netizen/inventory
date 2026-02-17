@@ -35,7 +35,7 @@ def save_to_sheet(df, worksheet_name):
     st.cache_data.clear()
 
 # --- PAGE CONFIG ---
-st.set_page_config(page_title="Warehouse Pro Cloud v6.5", layout="wide")
+st.set_page_config(page_title="Warehouse Pro Cloud v7.0", layout="wide")
 
 # --- CUSTOM CSS ---
 st.markdown("""
@@ -114,7 +114,7 @@ def undo_entry(log_id):
             save_to_sheet(logs, "activity_logs")
             st.rerun()
 
-# --- MODALS (Restored from v5) ---
+# --- MODALS ---
 @st.dialog("➕ Add New Product")
 def add_item_modal():
     col1, col2 = st.columns(2)
@@ -174,7 +174,7 @@ if 'inventory' not in st.session_state:
     st.session_state.inventory = load_from_sheet("persistent_inventory")
 
 # --- MAIN UI ---
-st.title("📦 Warehouse Pro Management v6.5")
+st.title("📦 Warehouse Pro Management v7.0")
 tab_ops, tab_req, tab_sup = st.tabs(["📊 Operations", "🚚 Requisitions", "📞 Suppliers"])
 
 with tab_ops:
@@ -200,22 +200,30 @@ with tab_ops:
         if st.button("🔒 Close Month", type="primary", use_container_width=True): close_month_modal()
         st.markdown('</div>', unsafe_allow_html=True)
 
-    # --- PAR ANALYSIS ---
-        st.markdown('<div class="par-card">', unsafe_allow_html=True)
-    st.subheader("📈 Multi-Month Weekly Par Analysis")
-    df_history = load_from_sheet("monthly_history")
-    if not df_history.empty and not st.session_state.inventory.empty:
-        df_history["Consumption"] = pd.to_numeric(df_history["Consumption"], errors='coerce').fillna(0)
-        avg_cons = df_history.groupby("Product Name")["Consumption"].mean().reset_index()
-        avg_cons.rename(columns={"Consumption": "Avg_Monthly"}, inplace=True)
-        df_par = pd.merge(st.session_state.inventory[["Product Name", "UOM", "Closing Stock"]], avg_cons, on="Product Name", how="left").fillna(0)
-        df_par["Weekly Usage"] = (df_par["Avg_Monthly"] / 4.33).round(2)
-        df_par["Min (50%)"] = (df_par["Weekly Usage"] * 0.5).round(2)
-        df_par["Historical Par"] = df_par["Weekly Usage"]
-        df_par["Max (150%)"] = (df_par["Weekly Usage"] * 1.5).round(2)
-        st.dataframe(df_par, use_container_width=True, hide_index=True)
+    # --- PAR ANALYSIS WITH VISIBILITY TOGGLE ---
+    st.markdown('<div class="par-card">', unsafe_allow_html=True)
+    head_col, tog_col = st.columns([3, 1])
+    with head_col:
+        st.subheader("📈 Multi-Month Weekly Par Analysis")
+    with tog_col:
+        show_par = st.toggle("Show Analysis Table", value=False)
+    
+    if show_par:
+        df_history = load_from_sheet("monthly_history")
+        if not df_history.empty and not st.session_state.inventory.empty:
+            df_history["Consumption"] = pd.to_numeric(df_history["Consumption"], errors='coerce').fillna(0)
+            avg_cons = df_history.groupby("Product Name")["Consumption"].mean().reset_index()
+            avg_cons.rename(columns={"Consumption": "Avg_Monthly"}, inplace=True)
+            df_par = pd.merge(st.session_state.inventory[["Product Name", "UOM", "Closing Stock"]], avg_cons, on="Product Name", how="left").fillna(0)
+            df_par["Weekly Usage"] = (df_par["Avg_Monthly"] / 4.33).round(2)
+            df_par["Min (50%)"] = (df_par["Weekly Usage"] * 0.5).round(2)
+            df_par["Historical Par"] = df_par["Weekly Usage"]
+            df_par["Max (150%)"] = (df_par["Weekly Usage"] * 1.5).round(2)
+            st.dataframe(df_par, use_container_width=True, hide_index=True)
+        else:
+            st.info("Historical data required for Par Analysis. Run 'Close Month' to start archiving.")
     else:
-        st.info("Historical data required for Par Analysis. Run 'Close Month' to start archiving.")
+        st.caption("Toggle the switch above to load historical averages and stock par recommendations.")
     st.markdown('</div>', unsafe_allow_html=True)
 
     st.divider()
@@ -284,17 +292,17 @@ with tab_sup:
     edited_meta = st.data_editor(filtered, num_rows="dynamic", use_container_width=True)
     if st.button("💾 Save Directory"): save_to_sheet(edited_meta, "product_metadata"); st.rerun()
 
-# --- SIDEBAR (Restored exact v5 logic) ---
+# --- SIDEBAR (Bulk Upload Integration) ---
 with st.sidebar:
     st.header("Cloud Data Control")
     st.subheader("1. Bulk Inventory Sync")
     inv_file = st.file_uploader("Upload Inventory Master", type=["csv", "xlsx"])
     if inv_file:
         try:
-            # Matches version 5 template (skiprows=4, header=None) [cite: 38]
+            # Matches version 5 template (skiprows=4, header=None)
             raw_df = pd.read_excel(inv_file, skiprows=4, header=None) if inv_file.name.endswith('.xlsx') else pd.read_csv(inv_file, skiprows=4, header=None)
             new_df = pd.DataFrame()
-            new_df["Product Name"] = raw_df[1]; new_df["UOM"] = raw_df[2] [cite: 39]
+            new_df["Product Name"] = raw_df[1]; new_df["UOM"] = raw_df[2]
             new_df["Opening Stock"] = pd.to_numeric(raw_df[3], errors='coerce').fillna(0.0)
             for i in range(1, 32): new_df[str(i)] = 0.0
             new_df["Total Received"] = 0.0; new_df["Consumption"] = 0.0; new_df["Closing Stock"] = new_df["Opening Stock"]
