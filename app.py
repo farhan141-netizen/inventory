@@ -46,13 +46,10 @@ st.markdown("""
     .stTabs [data-baseweb="tab"] { height: 50px; background-color: #1e2130; color: white; border-radius: 5px 5px 0 0; }
     .stTabs [aria-selected="true"] { background-color: #00ffcc !important; color: #000 !important; }
     
-    /* Compact Log Styling */
     .log-container { max-height: 600px; overflow-y: auto; padding-right: 5px; }
     .log-text { font-size: 0.9rem; line-height: 1.2; }
     .log-meta { font-size: 0.75rem; color: #888; }
-    .pagination-info { font-size: 0.85rem; color: #00ffcc; margin-bottom: 10px; }
     
-    /* Card Styling */
     .receipt-card, .action-card {
         background-color: #161b22; padding: 20px; border-radius: 10px; border: 1px solid #30363d; margin-bottom: 20px;
     }
@@ -178,49 +175,36 @@ def add_item_modal():
             st.success(f"Added {name}")
             st.rerun()
 
-# --- UPDATED ENGINE FOR MONTHLY CLOSING ---
-
 @st.dialog("🔒 Close Month & Rollover")
 def close_month_modal():
-    st.warning("This archives data to 'monthly_history' and resets daily counts.")
-    month_label = st.text_input("Month Label (e.g., Jan 2024)", datetime.datetime.now().strftime("%b %Y"))
-    
+    st.warning("Ensure the sheet 'monthly_history' exists in your Google Sheet!")
+    month_label = st.text_input("Month Label", datetime.datetime.now().strftime("%b %Y"))
     if st.button("Confirm Monthly Close", type="primary", use_container_width=True):
-        # 1. Load current inventory
         df = st.session_state.inventory
+        history_df = load_from_sheet("monthly_history")
         
-        # 2. Load history (Handle case where worksheet might not exist yet)
-        try:
-            history_df = load_from_sheet("monthly_history")
-        except Exception:
-            st.error("Sheet 'monthly_history' not found. Please create this tab in your Google Sheet first.")
-            return
-
-        # 3. Archive current data
         archive_copy = df.copy()
         archive_copy["Month_Period"] = month_label
         
-        # 4. Save to history tab
         updated_history = pd.concat([history_df, archive_copy], ignore_index=True)
-        save_to_sheet(updated_history, "monthly_history") [cite: 57]
+        save_to_sheet(updated_history, "monthly_history")
         
-        # 5. Reset for the new month
         new_df = df.copy()
-        # Clear daily receipts (columns 1-31)
-        for i in range(1, 32):
-            new_df[str(i)] = 0.0
+        for i in range(1, 32): new_df[str(i)] = 0.0
+        
+        if "Physical Count" in new_df.columns:
+            new_df["Opening Stock"] = new_df["Physical Count"].replace(0, pd.NA).fillna(new_df["Closing Stock"])
+            new_df["Physical Count"] = 0.0
+            new_df["Variance"] = 0.0
+        else:
+            new_df["Opening Stock"] = new_df["Closing Stock"]
             
-        # Carry over Closing Stock to be the new Opening Stock
-        new_df["Opening Stock"] = new_df["Closing Stock"]
         new_df["Total Received"] = 0.0
         new_df["Consumption"] = 0.0
-        # Closing stock will initially equal the new Opening Stock
         new_df["Closing Stock"] = new_df["Opening Stock"]
         
-        # 6. Save reset inventory to the persistent sheet
         save_to_sheet(new_df, "persistent_inventory")
-        
-        st.success(f"Successfully archived {month_label} and reset inventory!")
+        st.success(f"Closed {month_label}. Opening balances updated!")
         st.rerun()
 
 # --- INITIALIZATION ---
@@ -231,6 +215,7 @@ if 'inventory' not in st.session_state:
 st.title("📦 Warehouse Pro Management (Cloud) v4")
 tab_ops, tab_req, tab_sup = st.tabs(["📊 Inventory Operations", "🚚 Requisitions", "📞 Supplier Directory"])
 
+# --- TAB 1: OPERATIONS ---
 with tab_ops:
     main_col, action_col = st.columns([3, 1])
     with main_col:
@@ -303,6 +288,7 @@ with tab_ops:
                                        disabled=["Product Name", "UOM", "Total Received", "Closing Stock", "Variance"],
                                        hide_index=True)
             
+            # --- EXCEL EXPORT LOGIC ---
             day_cols = [str(i) for i in range(1, 32)]
             detailed_df = df_status[["Product Name", "UOM", "Opening Stock"] + day_cols + ["Total Received", "Consumption", "Closing Stock"]]
 
@@ -365,6 +351,7 @@ with tab_sup:
         save_to_sheet(edited_meta if not search else meta_df.update(edited_meta) or meta_df, "product_metadata")
         st.rerun()
 
+
 # --- SIDEBAR ---
 with st.sidebar:
     st.header("Cloud Data Control")
@@ -395,4 +382,5 @@ with st.sidebar:
     st.divider()
     if st.button("🗑️ Reset Cache"):
         st.cache_data.clear(); st.rerun()
+
 
