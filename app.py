@@ -35,7 +35,7 @@ def save_to_sheet(df, worksheet_name):
     st.cache_data.clear()
 
 # --- PAGE CONFIG ---
-st.set_page_config(page_title="Warehouse Pro Cloud v6.1", layout="wide")
+st.set_page_config(page_title="Warehouse Pro Cloud v6.2", layout="wide")
 
 # --- CUSTOM CSS ---
 st.markdown("""
@@ -115,43 +115,38 @@ def undo_entry(log_id):
             st.rerun()
 
 # --- MODALS ---
-@st.dialog("📂 Archive Explorer")
-def archive_explorer_modal():
-    st.write("Select a past month to download the report.")
-    hist_df = load_from_sheet("monthly_history")
-    if not hist_df.empty and "Month_Period" in hist_df.columns:
-        available_months = sorted(hist_df["Month_Period"].unique().tolist(), reverse=True)
-        selected_month = st.selectbox("Month Period", options=available_months)
-        month_data = hist_df[hist_df["Month_Period"] == selected_month].drop(columns=["Month_Period"])
-        buf_month = io.BytesIO()
-        with pd.ExcelWriter(buf_month, engine='xlsxwriter') as writer:
-            month_data.to_excel(writer, index=False, sheet_name="Archive")
-        st.download_button(label=f"📥 Download {selected_month}", data=buf_month.getvalue(), file_name=f"Inventory_{selected_month}.xlsx", use_container_width=True, type="primary")
-    else:
-        st.info("No records found.")
-
 @st.dialog("➕ Add New Product")
 def add_item_modal():
     meta_cols = ["Product Name", "Category", "Supplier", "Sales Person", "Contact 1", "Contact 2", "Email", "Min Stock"]
     meta_df = load_from_sheet("product_metadata", default_cols=meta_cols)
+    unique_suppliers = sorted(meta_df["Supplier"].dropna().unique().tolist())
+    
     col1, col2 = st.columns(2)
     with col1:
         name = st.text_input("Item Name*")
-        uom = st.selectbox("Unit", ["pcs", "kg", "box", "ltr", "pkt", "can", "bot"])
-        supplier = st.text_input("Supplier Name")
+        supplier_choice = st.selectbox("Supplier", options=["New Supplier"] + unique_suppliers)
+        if supplier_choice == "New Supplier":
+            supplier_name = st.text_input("Enter Company Name")
+            contact = st.text_input("Contact 1")
+        else:
+            supplier_name = supplier_choice
+            sup_data = meta_df[meta_df["Supplier"] == supplier_choice].iloc[-1]
+            contact = st.text_input("Contact 1", value=sup_data.get("Contact 1", ""))
+            
     with col2:
+        uom = st.selectbox("Unit", ["pcs", "kg", "box", "ltr", "pkt", "can", "bot"])
         opening = st.number_input("Opening Stock", min_value=0.0)
         min_stock = st.number_input("Min Stock Alert", min_value=0.0)
     
     if st.button("✅ Create Product", use_container_width=True, type="primary"):
-        if name:
+        if name and supplier_name:
             inv = st.session_state.inventory
             new_inv_row = {str(i): 0.0 for i in range(1, 32)}
             new_inv_row.update({"Product Name": name, "UOM": uom, "Opening Stock": opening, 
                                 "Total Received": 0.0, "Consumption": 0.0, "Closing Stock": opening})
             save_to_sheet(pd.concat([inv, pd.DataFrame([new_inv_row])], ignore_index=True), "persistent_inventory")
             
-            new_meta = {"Product Name": name, "Supplier": supplier, "Min Stock": min_stock}
+            new_meta = {"Product Name": name, "Supplier": supplier_name, "Min Stock": min_stock, "Contact 1": contact}
             save_to_sheet(pd.concat([meta_df, pd.DataFrame([new_meta])], ignore_index=True), "product_metadata")
             st.rerun()
 
@@ -183,7 +178,7 @@ if 'inventory' not in st.session_state:
     st.session_state.inventory = load_from_sheet("persistent_inventory")
 
 # --- MAIN UI ---
-st.title("📦 Warehouse Pro Management v6.1")
+st.title("📦 Warehouse Pro Management v6.2")
 tab_ops, tab_req, tab_sup = st.tabs(["📊 Operations", "🚚 Requisitions", "📞 Suppliers"])
 
 with tab_ops:
@@ -226,7 +221,7 @@ with tab_ops:
         df_par["Max (150%)"] = (df_par["Weekly Usage"] * 1.5).round(2)
         st.dataframe(df_par, use_container_width=True, hide_index=True)
     else:
-        st.info("Archive empty. Par analysis activates after first 'Close Month'.")
+        st.info("Archive empty. Analysis activates after first 'Close Month'.")
     st.markdown('</div>', unsafe_allow_html=True)
 
     st.divider()
@@ -237,14 +232,18 @@ with tab_ops:
         logs = load_from_sheet("activity_logs")
         if not logs.empty:
             filtered_logs = logs.iloc[::-1]
+            days = sorted(logs["Day"].unique().tolist())
+            f_day = st.selectbox("Filter Day", ["All"] + days)
+            if f_day != "All": filtered_logs = filtered_logs[filtered_logs["Day"] == f_day]
+            
             items_per_page = 15
-            total_pages = max(1, len(filtered_logs)//items_per_page + 1)
-            page = st.selectbox("Page", range(1, total_pages + 1))
+            total_p = max(1, len(filtered_logs)//items_per_page + 1)
+            page = st.selectbox("Page", range(1, total_p + 1))
             st.markdown('<div class="log-container">', unsafe_allow_html=True)
             for _, row in filtered_logs.iloc[(page-1)*items_per_page : page*items_per_page].iterrows():
                 is_undone = row.get("Status") == "Undone"
                 lc, rc = st.columns([3, 1])
-                with lc: st.markdown(f"<div class='log-text'><b>{row['Item']}</b>: {row['Qty']}<br><span class='log-meta'>Day {row['Day']} | {row['Timestamp']}</span></div>", unsafe_allow_html=True)
+                with lc: st.markdown(f"<div class='log-text'>{'<s>' if is_undone else ''}<b>{row['Item']}</b>: {row['Qty']}{'</s>' if is_undone else ''}<br><span class='log-meta'>Day {row['Day']} | {row['Timestamp']}</span></div>", unsafe_allow_html=True)
                 with rc: 
                     if not is_undone and st.button("Undo", key=row["LogID"]): undo_entry(row["LogID"])
                 st.markdown("<hr style='margin:5px; border:0.1px solid #333'>", unsafe_allow_html=True)
@@ -269,7 +268,9 @@ with tab_ops:
             st.download_button("📥 Summary Excel", buf.getvalue(), "Stock_Summary.xlsx", use_container_width=True)
         with s3:
             buf_f = io.BytesIO()
-            with pd.ExcelWriter(buf_f) as w: df_status.to_excel(w, index=False)
+            day_cols = [str(i) for i in range(1, 32)]
+            full_export = df_status[["Product Name", "UOM", "Opening Stock"] + day_cols + ["Total Received", "Consumption", "Closing Stock"]]
+            with pd.ExcelWriter(buf_f) as w: full_export.to_excel(w, index=False)
             st.download_button("📂 Full Report (1-31)", buf_f.getvalue(), "Full_Report.xlsx", use_container_width=True)
 
 # --- REQUISITIONS & SUPPLIERS ---
@@ -281,11 +282,13 @@ with tab_req:
     with col_qt: req_qty = st.number_input("Order Qty", min_value=0.0)
     if st.button("➕ Add to List", use_container_width=True):
         if req_item and req_qty > 0:
-            orders = load_from_sheet("orders_db", ["Product Name", "Qty", "Supplier", "Status"])
-            sup = meta_df[meta_df["Product Name"] == req_item]["Supplier"].values[0] if not meta_df.empty else "N/A"
-            save_to_sheet(pd.concat([orders, pd.DataFrame([{"Product Name": req_item, "Qty": req_qty, "Supplier": sup, "Status": "Pending"}])], ignore_index=True), "orders_db")
+            orders = load_from_sheet("orders_db", ["Product Name", "Qty", "Supplier", "Contact", "Status"])
+            sup_info = meta_df[meta_df["Product Name"] == req_item].iloc[0] if not meta_df.empty else {}
+            new_order = pd.DataFrame([{"Product Name": req_item, "Qty": req_qty, "Supplier": sup_info.get("Supplier", "N/A"), "Contact": sup_info.get("Contact 1", "N/A"), "Status": "Pending"}])
+            save_to_sheet(pd.concat([orders, new_order], ignore_index=True), "orders_db")
             st.rerun()
     st.dataframe(load_from_sheet("orders_db"), use_container_width=True)
+    if st.button("🗑️ Clear Orders"): save_to_sheet(pd.DataFrame(columns=["Product Name", "Qty", "Supplier", "Contact", "Status"]), "orders_db"); st.rerun()
 
 with tab_sup:
     st.subheader("📞 Supplier Directory")
@@ -296,15 +299,19 @@ with tab_sup:
 # --- SIDEBAR ---
 with st.sidebar:
     st.header("Cloud Data Control")
-    st.subheader("1. Master Inventory Sync")
+    st.subheader("1. Bulk Inventory Upload")
     inv_file = st.file_uploader("Upload Inventory Master", type=["xlsx", "csv"])
     if inv_file and st.button("🚀 Push Inventory"):
-        raw = pd.read_excel(inv_file) if inv_file.name.endswith('.xlsx') else pd.read_csv(inv_file)
-        # Assuming format: Product, UOM, Opening...
-        save_to_sheet(raw, "persistent_inventory"); st.rerun()
+        raw = pd.read_excel(inv_file, skiprows=4, header=None) if inv_file.name.endswith('.xlsx') else pd.read_csv(inv_file, skiprows=4, header=None)
+        new_df = pd.DataFrame()
+        new_df["Product Name"] = raw[1]; new_df["UOM"] = raw[2]
+        new_df["Opening Stock"] = pd.to_numeric(raw[3], errors='coerce').fillna(0.0)
+        for i in range(1, 32): new_df[str(i)] = 0.0
+        new_df["Total Received"] = 0.0; new_df["Consumption"] = 0.0; new_df["Closing Stock"] = new_df["Opening Stock"]
+        save_to_sheet(new_df.dropna(subset=["Product Name"]), "persistent_inventory"); st.rerun()
     
-    st.subheader("2. Bulk Metadata Sync")
-    meta_file = st.file_uploader("Upload Product Metadata", type=["xlsx", "csv"])
+    st.subheader("2. Bulk Supplier Sync")
+    meta_file = st.file_uploader("Upload Metadata", type=["xlsx", "csv"])
     if meta_file and st.button("🚀 Push Metadata"):
         raw_m = pd.read_excel(meta_file) if meta_file.name.endswith('.xlsx') else pd.read_csv(meta_file)
         save_to_sheet(raw_m, "product_metadata"); st.rerun()
