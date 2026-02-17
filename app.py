@@ -154,52 +154,117 @@ if 'inventory' not in st.session_state:
 st.title("📦 Warehouse Pro Management v4")
 tab_ops, tab_req, tab_sup = st.tabs(["📊 Operations", "🚚 Requisitions", "📞 Suppliers"])
 
+# --- TAB 1: OPERATIONS ---
 with tab_ops:
-    m_col, a_col = st.columns([3, 1])
-    with m_col:
-        st.subheader("📥 Daily Receipt")
-        if not st.session_state.inventory.empty:
-            item_list = sorted(st.session_state.inventory["Product Name"].unique().tolist())
-            c1, c2, c3 = st.columns([2, 1, 1])
-            with c1: sel_item = st.selectbox("Item", options=[""] + item_list)
-            with c2: day_in = st.number_input("Day", 1, 31, datetime.datetime.now().day)
-            with c3: qty_in = st.number_input("Qty", min_value=0.0)
-            if st.button("Confirm Receipt", type="primary"):
-                if sel_item and qty_in > 0:
-                    apply_transaction(sel_item, day_in, qty_in); st.rerun()
+    main_col, action_col = st.columns([3, 1])
 
-    with a_col:
-        st.subheader("Actions")
-        if st.button("➕ Add Item", use_container_width=True): add_item_modal()
-        if st.button("🔒 Close Month", type="primary", use_container_width=True): close_month_modal()
+    with main_col:
+        with st.container():
+            st.markdown('<div class="receipt-card">', unsafe_allow_html=True)
+            st.subheader("📥 Daily Receipt Portal")
+            if not st.session_state.inventory.empty:
+                item_list = sorted(st.session_state.inventory["Product Name"].unique().tolist())
+                rc1, rc2, rc3 = st.columns([2, 1, 1])
+                with rc1: selected_item = st.selectbox("🔍 Search Item", options=[""] + item_list)
+                with rc2: day_input = st.number_input("Day (1-31)", 1, 31, datetime.datetime.now().day)
+                with rc3: qty_input = st.number_input("Qty Received", min_value=0.0, step=0.1)
+                
+                if st.button("✅ Confirm Receipt", use_container_width=True, type="primary"):
+                    if selected_item and qty_input > 0:
+                        if apply_transaction(selected_item, day_input, qty_input): st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
+
+    with action_col:
+        with st.container():
+            st.markdown('<div class="action-card">', unsafe_allow_html=True)
+            st.subheader("⚙️ Actions")
+            if st.button("➕ ADD NEW PRODUCT", type="secondary", use_container_width=True): 
+                add_item_modal()
+            st.markdown('</div>', unsafe_allow_html=True)
 
     st.divider()
+    col_history, col_status = st.columns([1, 2.2]) # Slightly adjusted ratio
     
-    st.subheader("📊 Live Stock Status & Variance")
-    df_status = st.session_state.inventory.copy()
-    
-    # Ensure Variance columns exist
-    if "Physical Count" not in df_status.columns: df_status["Physical Count"] = 0.0
-    if "Variance" not in df_status.columns: df_status["Variance"] = 0.0
-    
-    disp_cols = ["Product Name", "UOM", "Opening Stock", "Total Received", "Closing Stock", "Consumption", "Physical Count", "Variance"]
-    
-    # Data Editor for Physical Count and Consumption
-    edited_df = st.data_editor(df_status[disp_cols], use_container_width=True, 
-                               disabled=["Product Name", "UOM", "Total Received", "Closing Stock", "Variance"],
-                               hide_index=True)
-    
-    if st.button("💾 Save Calculations & Update Variance", use_container_width=True):
-        df_status.update(edited_df)
-        # Force recalculate every row to update Variance
-        for item in df_status["Product Name"]:
-            df_status = recalculate_item(df_status, item)
-        st.session_state.inventory = df_status
-        save_to_sheet(df_status, "persistent_inventory")
-        st.success("Variance and Stocks Updated!")
-        st.rerun()
+    with col_history:
+        st.subheader("📜 Recent Activity")
+        logs = load_from_sheet("activity_logs")
+        if not logs.empty:
+            log_days = sorted(logs["Day"].unique().tolist())
+            filter_choice = st.selectbox("📅 Filter by Day", options=["All Days"] + log_days)
+            filtered_logs = logs.iloc[::-1]
+            if filter_choice != "All Days":
+                filtered_logs = filtered_logs[filtered_logs["Day"] == filter_choice]
+            
+            # Pagination Logic
+            items_per_page = 20
+            total_items = len(filtered_logs)
+            total_pages = max(1, (total_items // items_per_page) + (1 if total_items % items_per_page > 0 else 0))
+            page_num = st.selectbox(f"Page (Total {total_pages})", range(1, total_pages + 1)) if total_pages > 1 else 1
+            
+            start_idx = (page_num - 1) * items_per_page
+            page_logs = filtered_logs.iloc[start_idx : start_idx + items_per_page]
+            
+            st.markdown(f"<div class='pagination-info'>Showing {len(page_logs)} of {total_items} entries</div>", unsafe_allow_html=True)
 
-# --- TAB 2 & 3 (Omitted for brevity, but same as previous v4) ---
+            # Scrollable Container for Logs
+            st.markdown('<div class="log-container">', unsafe_allow_html=True)
+            for _, row in page_logs.iterrows():
+                is_undone = str(row.get('Status', 'Active')) == "Undone"
+                status_text = " (REVERSED)" if is_undone else ""
+                
+                # Layout for Row: Info on left, Undo on right
+                l_col, r_col = st.columns([3, 1])
+                with l_col:
+                    st.markdown(f"""
+                        <div class='log-text'>
+                            <b>{row['Item']}</b>: {row['Qty']}{status_text}<br>
+                            <span class='log-meta'>Day {row['Day']} | {row['Timestamp']}</span>
+                        </div>
+                    """, unsafe_allow_html=True)
+                with r_col:
+                    if not is_undone:
+                        if st.button("Undo", key=f"undo_{row['LogID']}", use_container_width=True):
+                            undo_entry(row['LogID'])
+                    else:
+                        st.write("Done")
+                st.markdown("<hr style='margin: 5px 0; border: 0.1px solid #333'>", unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+        else:
+            st.info("No activity found.")
+
+    with col_status:
+        st.subheader("📊 Live Stock Status")
+        if not st.session_state.inventory.empty:
+            df_status = clean_dataframe(st.session_state.inventory)
+            short_cols = ["Product Name", "UOM", "Opening Stock", "Total Received", "Closing Stock", "Consumption"]
+            for c in short_cols:
+                if c not in df_status.columns: df_status[c] = 0.0
+            
+            edited_df = st.data_editor(df_status[short_cols], use_container_width=True, disabled=["Product Name", "UOM", "Total Received", "Closing Stock"])
+            
+            day_cols = [str(i) for i in range(1, 32)]
+            for d in day_cols:
+                if d not in df_status.columns: df_status[d] = 0.0
+            detailed_df = df_status[["Product Name", "UOM", "Opening Stock"] + day_cols + ["Total Received", "Consumption", "Closing Stock"]]
+
+            save_col, dl_short, dl_full = st.columns([1, 1, 1])
+            with save_col:
+                if st.button("💾 Save Changes", use_container_width=True):
+                    df_status.update(edited_df)
+                    for item in df_status["Product Name"]: df_status = recalculate_item(df_status, item)
+                    save_to_sheet(df_status, "persistent_inventory")
+                    st.rerun()
+            with dl_short:
+                buf_short = io.BytesIO()
+                with pd.ExcelWriter(buf_short, engine='xlsxwriter') as writer:
+                    df_status[short_cols].to_excel(writer, index=False, sheet_name='Summary')
+                st.download_button("📥 Summary Excel", data=buf_short.getvalue(), file_name="Stock_Summary.xlsx", use_container_width=True)
+            with dl_full:
+                buf_full = io.BytesIO()
+                with pd.ExcelWriter(buf_full, engine='xlsxwriter') as writer:
+                    detailed_df.to_excel(writer, index=False, sheet_name='Detailed_1_31')
+                st.download_button("📂 Full Report (1-31)", data=buf_full.getvalue(), file_name="Detailed_Stock_Report.xlsx", use_container_width=True)
+
 
 # --- TAB 2: REQUISITIONS ---
 with tab_req:
@@ -274,6 +339,7 @@ with st.sidebar:
     st.divider()
     if st.button("🗑️ Reset Cache"):
         st.cache_data.clear(); st.rerun()
+
 
 
 
