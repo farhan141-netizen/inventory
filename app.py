@@ -46,7 +46,7 @@ st.markdown("""
     .log-container { max-height: 400px; overflow-y: auto; padding: 10px; background: #161b22; border-radius: 10px; }
     .log-text { font-size: 0.85rem; line-height: 1.2; margin-bottom: 5px; }
     .log-meta { font-size: 0.7rem; color: #888; }
-    .receipt-card, .action-card, .archive-card { background-color: #161b22; padding: 20px; border-radius: 10px; border: 1px solid #30363d; margin-bottom: 20px; }
+    .receipt-card, .action-card { background-color: #161b22; padding: 20px; border-radius: 10px; border: 1px solid #30363d; margin-bottom: 20px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -115,6 +115,32 @@ def undo_entry(log_id):
             st.rerun()
 
 # --- MODALS ---
+@st.dialog("📂 Archive Explorer")
+def archive_explorer_modal():
+    st.write("Select a past month to download the full inventory report.")
+    hist_df = load_from_sheet("monthly_history")
+    
+    if not hist_df.empty and "Month_Period" in hist_df.columns:
+        available_months = sorted(hist_df["Month_Period"].unique().tolist(), reverse=True)
+        selected_month = st.selectbox("Month Period", options=available_months)
+        
+        month_data = hist_df[hist_df["Month_Period"] == selected_month].drop(columns=["Month_Period"])
+        
+        buf_month = io.BytesIO()
+        with pd.ExcelWriter(buf_month, engine='xlsxwriter') as writer:
+            month_data.to_excel(writer, index=False, sheet_name="Archive_"+selected_month[:20])
+        
+        st.write("---")
+        st.download_button(
+            label=f"📥 Download {selected_month} (Excel)",
+            data=buf_month.getvalue(),
+            file_name=f"Inventory_{selected_month}.xlsx",
+            use_container_width=True,
+            type="primary"
+        )
+    else:
+        st.info("No historical records found in 'monthly_history'.")
+
 @st.dialog("➕ Add New Product")
 def add_item_modal():
     col1, col2 = st.columns(2)
@@ -191,29 +217,9 @@ with tab_ops:
         st.markdown('<div class="action-card">', unsafe_allow_html=True)
         st.subheader("⚙️ Quick Actions")
         if st.button("➕ Add New Product", use_container_width=True): add_item_modal()
+        if st.button("📂 Archive Explorer", use_container_width=True): archive_explorer_modal()
         if st.button("🔒 Close Month", type="primary", use_container_width=True): close_month_modal()
         st.markdown('</div>', unsafe_allow_html=True)
-
-    # --- ARCHIVE EXPORTER ---
-    st.markdown('<div class="archive-card">', unsafe_allow_html=True)
-    st.subheader("📂 Archive Explorer & Month Exporter")
-    hist_df = load_from_sheet("monthly_history")
-    if not hist_df.empty and "Month_Period" in hist_df.columns:
-        available_months = sorted(hist_df["Month_Period"].unique().tolist(), reverse=True)
-        ex_col1, ex_col2 = st.columns([2, 1])
-        with ex_col1:
-            selected_month = st.selectbox("Select Month to Export", options=available_months)
-        with ex_col2:
-            st.write("##")
-            month_data = hist_df[hist_df["Month_Period"] == selected_month].drop(columns=["Month_Period"])
-            buf_month = io.BytesIO()
-            with pd.ExcelWriter(buf_month, engine='xlsxwriter') as writer:
-                month_data.to_excel(writer, index=False, sheet_name="Archive_"+selected_month[:20])
-            st.download_button(f"📥 Download {selected_month}", data=buf_month.getvalue(), 
-                               file_name=f"Inventory_{selected_month}.xlsx", use_container_width=True)
-    else:
-        st.info("No historical data found. Archive your first month to use the explorer.")
-    st.markdown('</div>', unsafe_allow_html=True)
 
     st.divider()
     
@@ -273,7 +279,6 @@ with tab_req:
         st.write("##")
         if st.button("➕ Add to Requisition", use_container_width=True):
             if req_item and req_qty > 0:
-                # Find supplier if exists
                 supplier = meta_df[meta_df["Product Name"] == req_item]["Supplier"].values[0] if req_item in meta_df["Product Name"].values else "Unknown"
                 orders_df = load_from_sheet("orders_db", ["Product Name", "Qty", "Supplier", "Status"])
                 new_order = pd.DataFrame([{"Product Name": req_item, "Qty": req_qty, "Supplier": supplier, "Status": "Pending"}])
