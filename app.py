@@ -36,7 +36,7 @@ def save_to_sheet(df, worksheet_name):
     st.cache_data.clear()
 
 # --- PAGE CONFIG ---
-st.set_page_config(page_title="Warehouse Pro Cloud", layout="wide")
+st.set_page_config(page_title="Warehouse Pro Cloud v4", layout="wide")
 
 # --- CUSTOM CSS ---
 st.markdown("""
@@ -47,43 +47,14 @@ st.markdown("""
     .stTabs [aria-selected="true"] { background-color: #00ffcc !important; color: #000 !important; }
     
     /* Compact Log Styling */
-    .log-container {
-        max-height: 600px;
-        overflow-y: auto;
-        padding-right: 5px;
-    }
-    .log-entry-row {
-        border-left: 3px solid #00ffcc;
-        padding: 8px;
-        margin-bottom: 5px;
-        background: #1e2130;
-        border-radius: 0 5px 5px 0;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-    }
-    .log-text {
-        font-size: 0.9rem;
-        line-height: 1.2;
-    }
-    .log-meta {
-        font-size: 0.75rem;
-        color: #888;
-    }
+    .log-container { max-height: 600px; overflow-y: auto; padding-right: 5px; }
+    .log-text { font-size: 0.9rem; line-height: 1.2; }
+    .log-meta { font-size: 0.75rem; color: #888; }
     .pagination-info { font-size: 0.85rem; color: #00ffcc; margin-bottom: 10px; }
     
-    /* Styling for the two containers to look like separate cards */
-    [data-testid="stVerticalBlock"] > div:has(.receipt-card) {
-        background-color: #161b22;
-        padding: 20px;
-        border-radius: 10px;
-        border: 1px solid #30363d;
-    }
-    [data-testid="stVerticalBlock"] > div:has(.action-card) {
-        background-color: #161b22;
-        padding: 20px;
-        border-radius: 10px;
-        border: 1px solid #30363d;
+    /* Card Styling */
+    .receipt-card, .action-card {
+        background-color: #161b22; padding: 20px; border-radius: 10px; border: 1px solid #30363d; margin-bottom: 20px;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -104,17 +75,21 @@ def recalculate_item(df, item_name):
     
     opening = pd.to_numeric(df.at[idx, "Opening Stock"], errors='coerce') or 0.0
     consumption = pd.to_numeric(df.at[idx, "Consumption"], errors='coerce') or 0.0
-    df.at[idx, "Closing Stock"] = opening + total_received - consumption
+    closing = opening + total_received - consumption
+    df.at[idx, "Closing Stock"] = closing
+    
+    if "Physical Count" in df.columns:
+        physical = pd.to_numeric(df.at[idx, "Physical Count"], errors='coerce')
+        if not pd.isna(physical):
+            df.at[idx, "Variance"] = physical - closing
     return df
 
 def apply_transaction(item_name, day_num, qty, is_undo=False, log_type="Addition"):
     df = st.session_state.inventory
     df = clean_dataframe(df)
-    
     if item_name in df["Product Name"].values:
         idx = df[df["Product Name"] == item_name].index[0]
         col_name = str(int(day_num))
-        
         if col_name != "0":
             if col_name not in df.columns: df[col_name] = 0.0
             current_val = pd.to_numeric(df.at[idx, col_name], errors='coerce')
@@ -123,7 +98,7 @@ def apply_transaction(item_name, day_num, qty, is_undo=False, log_type="Addition
         if not is_undo:
             new_log = pd.DataFrame([{
                 "LogID": str(uuid.uuid4())[:8],
-                "Timestamp": datetime.datetime.now().strftime("%H:%M:%S"),
+                "Timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "Item": item_name, "Qty": qty, "Day": day_num, "Status": "Active", "Type": log_type
             }])
             logs_df = load_from_sheet("activity_logs", default_cols=["LogID", "Timestamp", "Item", "Qty", "Day", "Status", "Type"])
@@ -142,7 +117,6 @@ def undo_entry(log_id):
         if logs.at[idx, "Status"] == "Undone":
             st.warning("Already undone.")
             return
-
         item, qty, day = logs.at[idx, "Item"], logs.at[idx, "Qty"], logs.at[idx, "Day"]
         if apply_transaction(item, day, -qty, is_undo=True):
             logs.at[idx, "Status"] = "Undone"
@@ -150,7 +124,7 @@ def undo_entry(log_id):
             st.success(f"Reversed {qty} for {item}")
             st.rerun()
 
-# --- MODAL: ADD NEW ITEM ---
+# --- MODALS ---
 @st.dialog("➕ Add New Product")
 def add_item_modal():
     meta_cols = ["Product Name", "Category", "Supplier", "Sales Person", "Contact 1", "Contact 2", "Email", "Min Stock"]
@@ -161,12 +135,10 @@ def add_item_modal():
     with col1:
         name = st.text_input("Item Name*")
         supplier_choice = st.selectbox("Company Name (Supplier)", options=["New Supplier"] + unique_suppliers)
-        
         if supplier_choice == "New Supplier":
             supplier_name = st.text_input("Enter Company Name")
             sales_person = st.text_input("Sales Person Name")
             c1 = st.text_input("Contact 1")
-            c2 = st.text_input("Contact 2")
             email_addr = st.text_input("Email")
             default_cat = "Ingredients"
         else:
@@ -174,7 +146,6 @@ def add_item_modal():
             sup_data = meta_df[meta_df["Supplier"] == supplier_choice].iloc[-1]
             sales_person = st.text_input("Sales Person Name", value=sup_data.get("Sales Person", ""))
             c1 = st.text_input("Contact 1", value=sup_data.get("Contact 1", ""))
-            c2 = st.text_input("Contact 2", value=sup_data.get("Contact 2", ""))
             email_addr = st.text_input("Email", value=sup_data.get("Email", ""))
             default_cat = sup_data.get("Category", "Ingredients")
 
@@ -196,9 +167,8 @@ def add_item_modal():
             st.session_state.inventory = pd.concat([current_inv, pd.DataFrame([new_row_inv])], ignore_index=True)
             
             new_row_meta = {
-                "Product Name": name, "Category": category, "Supplier": supplier_name, 
-                "Sales Person": sales_person, "Contact 1": c1, "Contact 2": c2, "Email": email_addr, 
-                "Min Stock": float(min_stock)
+                 "Product Name": name, "Category": category, "Supplier": supplier_name, 
+                "Sales Person": sales_person, "Contact 1": c1, "Email": email_addr, "Min Stock": float(min_stock)
             }
             updated_meta = pd.concat([meta_df, pd.DataFrame([new_row_meta])], ignore_index=True)
             
@@ -208,43 +178,67 @@ def add_item_modal():
             st.success(f"Added {name}")
             st.rerun()
 
+@st.dialog("🔒 Close Month & Rollover")
+def close_month_modal():
+    st.warning("This archives data to 'monthly_history' and resets daily counts. Ensure Physical Counts are updated!")
+    month_label = st.text_input("Month Label", datetime.datetime.now().strftime("%b %Y"))
+    if st.button("Confirm Monthly Close", type="primary", use_container_width=True):
+        df = st.session_state.inventory
+        history_df = load_from_sheet("monthly_history")
+        archive_copy = df.copy()
+        archive_copy["Month_Period"] = month_label
+        save_to_sheet(pd.concat([history_df, archive_copy], ignore_index=True), "monthly_history")
+        
+        new_df = df.copy()
+        for i in range(1, 32): new_df[str(i)] = 0.0
+        if "Physical Count" in new_df.columns:
+            new_df["Opening Stock"] = new_df["Physical Count"].replace(0, pd.NA).fillna(new_df["Closing Stock"])
+            new_df["Physical Count"] = 0.0
+            new_df["Variance"] = 0.0
+        else:
+            new_df["Opening Stock"] = new_df["Closing Stock"]
+        new_df["Total Received"] = 0.0
+        new_df["Consumption"] = 0.0
+        new_df["Closing Stock"] = new_df["Opening Stock"]
+        save_to_sheet(new_df, "persistent_inventory")
+        st.success(f"Closed {month_label}. Opening balances updated!")
+        st.rerun()
+
 # --- INITIALIZATION ---
 if 'inventory' not in st.session_state:
     st.session_state.inventory = load_from_sheet("persistent_inventory")
 
-st.title("📦 Warehouse Pro Management (Cloud)")
+# --- MAIN UI ---
+st.title("📦 Warehouse Pro Management (Cloud) v4")
 tab_ops, tab_req, tab_sup = st.tabs(["📊 Inventory Operations", "🚚 Requisitions", "📞 Supplier Directory"])
 
-# --- TAB 1: OPERATIONS ---
 with tab_ops:
     main_col, action_col = st.columns([3, 1])
-
     with main_col:
-        with st.container():
-            st.markdown('<div class="receipt-card">', unsafe_allow_html=True)
-            st.subheader("📥 Daily Receipt Portal")
-            if not st.session_state.inventory.empty:
-                item_list = sorted(st.session_state.inventory["Product Name"].unique().tolist())
-                rc1, rc2, rc3 = st.columns([2, 1, 1])
-                with rc1: selected_item = st.selectbox("🔍 Search Item", options=[""] + item_list)
-                with rc2: day_input = st.number_input("Day (1-31)", 1, 31, datetime.datetime.now().day)
-                with rc3: qty_input = st.number_input("Qty Received", min_value=0.0, step=0.1)
-                
-                if st.button("✅ Confirm Receipt", use_container_width=True, type="primary"):
-                    if selected_item and qty_input > 0:
-                        if apply_transaction(selected_item, day_input, qty_input): st.rerun()
-            st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown('<div class="receipt-card">', unsafe_allow_html=True)
+        st.subheader("📥 Daily Receipt Portal")
+        if not st.session_state.inventory.empty:
+            item_list = sorted(st.session_state.inventory["Product Name"].unique().tolist())
+            rc1, rc2, rc3 = st.columns([2, 1, 1])
+            with rc1: selected_item = st.selectbox("🔍 Search Item", options=[""] + item_list)
+            with rc2: day_input = st.number_input("Day", 1, 31, datetime.datetime.now().day)
+            with rc3: qty_input = st.number_input("Qty", min_value=0.0, step=0.1)
+            if st.button("✅ Confirm Receipt", use_container_width=True, type="primary"):
+                if selected_item and qty_input > 0:
+                    apply_transaction(selected_item, day_input, qty_input); st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
 
     with action_col:
-        with st.container():
-            st.markdown('<div class="action-card">', unsafe_allow_html=True)
-            st.subheader("⚙️ Actions")
-            if st.button("➕ ADD NEW PRODUCT", type="secondary", use_container_width=True): 
-                add_item_modal()
-            st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown('<div class="action-card">', unsafe_allow_html=True)
+        st.subheader("⚙️ Actions")
+        if st.button("➕ ADD NEW PRODUCT", use_container_width=True): 
+            add_item_modal()
+        if st.button("🔒 CLOSE MONTH", type="primary", use_container_width=True):
+            close_month_modal()
+        st.markdown('</div>', unsafe_allow_html=True)
 
     st.divider()
-    col_history, col_status = st.columns([1, 2.2]) # Slightly adjusted ratio
+    col_history, col_status = st.columns([1, 2.2])
     
     with col_history:
         st.subheader("📜 Recent Activity")
@@ -256,65 +250,49 @@ with tab_ops:
             if filter_choice != "All Days":
                 filtered_logs = filtered_logs[filtered_logs["Day"] == filter_choice]
             
-            # Pagination Logic
             items_per_page = 20
-            total_items = len(filtered_logs)
-            total_pages = max(1, (total_items // items_per_page) + (1 if total_items % items_per_page > 0 else 0))
+            total_pages = max(1, (len(filtered_logs) // items_per_page) + 1)
             page_num = st.selectbox(f"Page (Total {total_pages})", range(1, total_pages + 1)) if total_pages > 1 else 1
-            
             start_idx = (page_num - 1) * items_per_page
             page_logs = filtered_logs.iloc[start_idx : start_idx + items_per_page]
             
-            st.markdown(f"<div class='pagination-info'>Showing {len(page_logs)} of {total_items} entries</div>", unsafe_allow_html=True)
-
-            # Scrollable Container for Logs
             st.markdown('<div class="log-container">', unsafe_allow_html=True)
             for _, row in page_logs.iterrows():
                 is_undone = str(row.get('Status', 'Active')) == "Undone"
                 status_text = " (REVERSED)" if is_undone else ""
-                
-                # Layout for Row: Info on left, Undo on right
                 l_col, r_col = st.columns([3, 1])
                 with l_col:
-                    st.markdown(f"""
-                        <div class='log-text'>
-                            <b>{row['Item']}</b>: {row['Qty']}{status_text}<br>
-                            <span class='log-meta'>Day {row['Day']} | {row['Timestamp']}</span>
-                        </div>
-                    """, unsafe_allow_html=True)
+                    st.markdown(f"<div class='log-text'><b>{row['Item']}</b>: {row['Qty']}{status_text}<br><span class='log-meta'>Day {row['Day']} | {row['Timestamp']}</span></div>", unsafe_allow_html=True)
                 with r_col:
-                    if not is_undone:
-                        if st.button("Undo", key=f"undo_{row['LogID']}", use_container_width=True):
-                            undo_entry(row['LogID'])
-                    else:
-                        st.write("Done")
-                st.markdown("<hr style='margin: 5px 0; border: 0.1px solid #333'>", unsafe_allow_html=True)
+                    if not is_undone and st.button("Undo", key=f"undo_{row['LogID']}", use_container_width=True):
+                        undo_entry(row['LogID'])
+                st.markdown("<hr style='margin:5px 0; border:0.1px solid #333'>", unsafe_allow_html=True)
             st.markdown('</div>', unsafe_allow_html=True)
-        else:
-            st.info("No activity found.")
 
     with col_status:
         st.subheader("📊 Live Stock Status")
         if not st.session_state.inventory.empty:
             df_status = clean_dataframe(st.session_state.inventory)
-            short_cols = ["Product Name", "UOM", "Opening Stock", "Total Received", "Closing Stock", "Consumption"]
+            if "Physical Count" not in df_status.columns: df_status["Physical Count"] = 0.0
+            if "Variance" not in df_status.columns: df_status["Variance"] = 0.0
+            
+            short_cols = ["Product Name", "UOM", "Opening Stock", "Total Received", "Closing Stock", "Consumption", "Physical Count", "Variance"]
             for c in short_cols:
                 if c not in df_status.columns: df_status[c] = 0.0
             
-            edited_df = st.data_editor(df_status[short_cols], use_container_width=True, disabled=["Product Name", "UOM", "Total Received", "Closing Stock"])
+            edited_df = st.data_editor(df_status[short_cols], use_container_width=True, 
+                                       disabled=["Product Name", "UOM", "Total Received", "Closing Stock", "Variance"],
+                                       hide_index=True)
             
             day_cols = [str(i) for i in range(1, 32)]
-            for d in day_cols:
-                if d not in df_status.columns: df_status[d] = 0.0
             detailed_df = df_status[["Product Name", "UOM", "Opening Stock"] + day_cols + ["Total Received", "Consumption", "Closing Stock"]]
 
             save_col, dl_short, dl_full = st.columns([1, 1, 1])
             with save_col:
-                if st.button("💾 Save Changes", use_container_width=True):
+                if st.button("💾 Save Changes & Update Variance", use_container_width=True):
                     df_status.update(edited_df)
                     for item in df_status["Product Name"]: df_status = recalculate_item(df_status, item)
-                    save_to_sheet(df_status, "persistent_inventory")
-                    st.rerun()
+                    save_to_sheet(df_status, "persistent_inventory"); st.rerun()
             with dl_short:
                 buf_short = io.BytesIO()
                 with pd.ExcelWriter(buf_short, engine='xlsxwriter') as writer:
@@ -347,8 +325,7 @@ with tab_req:
                         "Status": "Pending"
                     }])
                     save_to_sheet(pd.concat([orders_df, new_order], ignore_index=True), "orders_db")
-                    st.success(f"Added {req_item}")
-                    st.rerun()
+                    st.success(f"Added {req_item}"); st.rerun()
 
     st.divider()
     st.subheader("📋 Pending Requisitions")
@@ -356,8 +333,7 @@ with tab_req:
     if not orders_df.empty:
         st.dataframe(orders_df, use_container_width=True)
         if st.button("🗑️ Clear All Orders"):
-            save_to_sheet(pd.DataFrame(columns=orders_df.columns), "orders_db")
-            st.rerun()
+            save_to_sheet(pd.DataFrame(columns=orders_df.columns), "orders_db"); st.rerun()
 
 # --- TAB 3: SUPPLIER DIRECTORY ---
 with tab_sup:
@@ -383,25 +359,20 @@ with st.sidebar:
             new_df["Opening Stock"] = pd.to_numeric(raw_df[3], errors='coerce').fillna(0.0)
             for i in range(1, 32): new_df[str(i)] = 0.0
             new_df["Total Received"] = 0.0; new_df["Consumption"] = 0.0; new_df["Closing Stock"] = new_df["Opening Stock"]
-            new_df = new_df.dropna(subset=["Product Name"])
             if st.button("🚀 Push Inventory to Cloud"):
-                save_to_sheet(new_df, "persistent_inventory")
-                st.rerun()
+                save_to_sheet(new_df.dropna(subset=["Product Name"]), "persistent_inventory"); st.rerun()
         except Exception as e: st.error(f"Error: {e}")
 
     st.divider()
-    st.subheader("2. Bulk Supplier Directory Sync")
+    st.subheader("2. Bulk Supplier Sync")
     meta_upload = st.file_uploader("Upload Product Metadata", type=["csv", "xlsx"])
     if meta_upload:
         try:
             new_meta = pd.read_excel(meta_upload) if meta_upload.name.endswith('.xlsx') else pd.read_csv(meta_upload)
             if st.button("🚀 Push Metadata to Cloud"):
-                save_to_sheet(new_meta, "product_metadata")
-                st.success("Metadata uploaded!")
-                st.rerun()
+                save_to_sheet(new_meta, "product_metadata"); st.success("Metadata uploaded!"); st.rerun()
         except Exception as e: st.error(f"Error: {e}")
 
     st.divider()
     if st.button("🗑️ Reset Cache"):
-        st.cache_data.clear()
-        st.rerun()
+        st.cache_data.clear(); st.rerun()
