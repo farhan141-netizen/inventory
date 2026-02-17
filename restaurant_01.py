@@ -9,6 +9,7 @@ import io
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def clean_dataframe(df):
+    """Removes ghost columns and ensures unique headers"""
     if df is None or df.empty: return df
     df = df.loc[:, ~df.columns.str.contains('^Unnamed', na=False)]
     df = df.dropna(axis=1, how='all')
@@ -17,6 +18,7 @@ def clean_dataframe(df):
     return df
 
 def load_from_sheet(worksheet_name, default_cols=None):
+    """Safely loads data with a fallback to empty DataFrame if sheet/cols missing"""
     try:
         df = conn.read(worksheet=worksheet_name, ttl="2s")
         df = clean_dataframe(df)
@@ -27,6 +29,7 @@ def load_from_sheet(worksheet_name, default_cols=None):
         return pd.DataFrame(columns=default_cols) if default_cols else pd.DataFrame()
 
 def save_to_sheet(df, worksheet_name):
+    """Saves data and clears Streamlit cache for immediate update"""
     df = clean_dataframe(df)
     conn.update(worksheet=worksheet_name, data=df)
     st.cache_data.clear()
@@ -34,7 +37,7 @@ def save_to_sheet(df, worksheet_name):
 # --- PAGE CONFIG ---
 st.set_page_config(page_title="Restaurant 01 Pro", layout="wide")
 
-# --- CUSTOM UI ---
+# --- CUSTOM CSS ---
 st.markdown("""
     <style>
     .main { background-color: #0e1117; }
@@ -86,15 +89,21 @@ tab_inv, tab_req, tab_pending = st.tabs(["📋 Inventory Count", "🛒 New Requi
 with tab_inv:
     st.subheader("Daily Stock Take")
     if not st.session_state.inventory.empty:
-        # Category Filter
+        # Category Filter (Safe check)
+        if "Category" not in st.session_state.inventory.columns:
+            st.session_state.inventory["Category"] = "General"
+            
         cats = ["All"] + sorted(st.session_state.inventory["Category"].unique().tolist())
         sel_cat = st.selectbox("Filter Category", cats)
         
-        display_df = st.session_state.inventory
+        display_df = st.session_state.inventory.copy()
         if sel_cat != "All":
             display_df = display_df[display_df["Category"] == sel_cat]
         
-        cols_to_show = ["Product Name", "UOM", "Opening Stock", "Total Received", "Physical Count", "Consumption", "Closing Stock"]
+        # SAFETY CHECK: Only show columns that actually exist in the dataframe
+        master_cols = ["Product Name", "UOM", "Opening Stock", "Total Received", "Physical Count", "Consumption", "Closing Stock"]
+        cols_to_show = [c for c in master_cols if c in display_df.columns]
+        
         edited_inv = st.data_editor(
             display_df[cols_to_show],
             use_container_width=True,
@@ -111,7 +120,7 @@ with tab_inv:
             st.success("Cloud Sync Complete!")
             st.rerun()
     else:
-        st.warning("No inventory found. Please upload a template in the sidebar.")
+        st.warning("No inventory found. Please use the Sidebar to upload your template.")
 
 with tab_req:
     col_l, col_r = st.columns([2, 1])
@@ -120,9 +129,9 @@ with tab_req:
         st.subheader("Add Items to Requisition")
         if not st.session_state.inventory.empty:
             search_item = st.text_input("🔍 Search Product").lower()
-            items = st.session_state.inventory[st.session_state.inventory["Product Name"].str.lower().str.contains(search_item)]
+            items = st.session_state.inventory[st.session_state.inventory["Product Name"].str.lower().str.contains(search_item, na=False)]
             
-            for _, row in items.iterrows():
+            for _, row in items.head(20).iterrows(): # Show top 20 for performance
                 c1, c2, c3 = st.columns([3, 1, 1])
                 c1.write(f"**{row['Product Name']}** ({row['UOM']})")
                 qty = c2.number_input("Qty", min_value=0.0, key=f"req_{row['Product Name']}")
@@ -143,20 +152,13 @@ with tab_req:
                 st.rerun()
                 
             if st.button("🚀 Submit Order to Warehouse", type="primary", use_container_width=True):
-                # 1. Load Bridge
                 orders_df = load_from_sheet("orders_db", ["Product Name", "Qty", "Supplier", "Status", "FollowUp"])
-                
-                # 2. Add new rows
                 new_entries = []
                 for item in st.session_state.cart:
                     new_entries.append({
-                        "Product Name": item['name'],
-                        "Qty": item['qty'],
-                        "Supplier": "Main Warehouse",
-                        "Status": "Pending",
-                        "FollowUp": False
+                        "Product Name": item['name'], "Qty": item['qty'],
+                        "Supplier": "Main Warehouse", "Status": "Pending", "FollowUp": False
                     })
-                
                 updated_orders = pd.concat([orders_df, pd.DataFrame(new_entries)], ignore_index=True)
                 save_to_sheet(updated_orders, "orders_db")
                 st.session_state.cart = []
@@ -170,32 +172,33 @@ with tab_pending:
     st.subheader("Your Requisitions at Warehouse")
     orders_df = load_from_sheet("orders_db")
     
-    # SAFETY CHECK: If the sheet is empty or column is missing, create a dummy
+    # Safety Check: Ensure Supplier column exists before filtering
     if "Supplier" not in orders_df.columns:
-        orders_df = pd.DataFrame(columns=["Product Name", "Qty", "Supplier", "Status", "FollowUp"])
+        orders_df["Supplier"] = "Unknown"
 
     if not orders_df.empty:
-        # Filter for Main Warehouse orders only
         my_orders = orders_df[orders_df["Supplier"] == "Main Warehouse"]
+        if my_orders.empty:
+            st.info("No active requisitions for this restaurant.")
         
         for idx, row in my_orders.iterrows():
             with st.container():
                 st.markdown(f"""
                 <div class="pending-box">
-                    <b>{row['Product Name']}</b> | Qty: {row['Qty']} | Status: <span style="color:#ffaa00">{row['Status']}</span>
+                    <b>{row['Product Name']}</b> | Qty: {row.get('Qty', 0)} | Status: <span style="color:#ffaa00">{row.get('Status', 'Pending')}</span>
                 </div>
                 """, unsafe_allow_html=True)
                 
                 c1, c2 = st.columns(2)
-                if row['Status'] == "Pending":
+                if row.get('Status') == "Pending":
                     if c1.button("Mark Received ✅", key=f"recv_{idx}"):
-                        # Logic to update inventory received count could go here
                         orders_df.at[idx, "Status"] = "Received"
                         save_to_sheet(orders_df, "orders_db")
                         st.rerun()
                     
-                    fup_text = "⚠️ Follow Up Sent" if row.get("FollowUp") == True else "🚩 Request Follow Up"
-                    if c2.button(fup_text, key=f"fup_{idx}", disabled=row.get("FollowUp", False)):
+                    fup_needed = row.get("FollowUp", False)
+                    fup_label = "⚠️ Follow Up Sent" if fup_needed else "🚩 Request Follow Up"
+                    if c2.button(fup_label, key=f"fup_{idx}", disabled=fup_needed):
                         orders_df.at[idx, "FollowUp"] = True
                         save_to_sheet(orders_df, "orders_db")
                         st.toast("Warehouse notified!")
@@ -203,31 +206,47 @@ with tab_pending:
     else:
         st.info("No active requisitions.")
 
-# --- SIDEBAR SETTINGS ---
+# --- SIDEBAR (DYNAMIC IMPORT) ---
 with st.sidebar:
-    st.header("Admin Controls")
-    st.subheader("Bulk Import Template")
-    inv_file = st.file_uploader("Upload Restaurant Template", type=["csv", "xlsx"])
+    st.header("Admin Settings")
+    st.subheader("1. Dynamic Template Import")
+    inv_file = st.file_uploader("Upload Inventory Excel", type=["csv", "xlsx"])
+    
     if inv_file:
         try:
-            raw_df = pd.read_excel(inv_file, skiprows=4, header=None) if inv_file.name.endswith('.xlsx') else pd.read_csv(inv_file, skiprows=4, header=None)
+            # Load raw data based on your specific template (skiprows=4)
+            if inv_file.name.endswith('.xlsx'):
+                raw_df = pd.read_excel(inv_file, skiprows=4, header=None)
+            else:
+                raw_df = pd.read_csv(inv_file, skiprows=4, header=None)
+
+            # Map based on standard column positions (B=Name, C=UOM, D=Opening)
             new_df = pd.DataFrame()
             new_df["Product Name"] = raw_df[1]
             new_df["UOM"] = raw_df[2]
             new_df["Opening Stock"] = pd.to_numeric(raw_df[3], errors='coerce').fillna(0)
-            new_df["Total Received"] = 0.0
-            new_df["Physical Count"] = None
-            new_df["Consumption"] = 0.0
-            new_df["Closing Stock"] = new_df["Opening Stock"]
-            new_df["Category"] = "General"
-            
+
+            # DYNAMIC COLUMN ADDITION: Ensure required logic columns exist
+            required_logic = {
+                "Total Received": 0.0, "Physical Count": None,
+                "Consumption": 0.0, "Closing Stock": 0.0, "Category": "General"
+            }
+            for col, val in required_logic.items():
+                if col not in new_df.columns:
+                    new_df[col] = val
+
+            # Clean up empty rows
+            new_df = new_df.dropna(subset=["Product Name"])
+
             if st.button("🚀 Push to Restaurant Cloud"):
-                save_to_sheet(new_df.dropna(subset=["Product Name"]), "rest_01_inventory")
+                save_to_sheet(new_df, "rest_01_inventory")
+                st.success(f"Sheet Created with {len(new_df)} items!")
                 st.rerun()
+
         except Exception as e:
-            st.error(f"Error: {e}")
+            st.error(f"Mapping Error: {e}. Check if column B is Product Name and C is UOM.")
             
-    if st.button("🗑️ Reset Cache"):
+    st.divider()
+    if st.button("🗑️ Reset Application Cache"):
         st.cache_data.clear()
         st.rerun()
-
