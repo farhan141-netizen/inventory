@@ -69,8 +69,10 @@ def recalculate_item(df, item_name):
     df.at[idx, "Closing Stock"] = closing
     
     if "Physical Count" in df.columns:
-        physical = pd.to_numeric(df.at[idx, "Physical Count"], errors='coerce')
-        if not pd.isna(physical) and physical != 0:
+        physical_val = df.at[idx, "Physical Count"]
+        # Treat 0 as a valid number for variance calculation
+        if pd.notna(physical_val) and str(physical_val).strip() != "":
+            physical = pd.to_numeric(physical_val, errors='coerce')
             df.at[idx, "Variance"] = physical - closing
         else:
             df.at[idx, "Variance"] = 0.0
@@ -128,44 +130,46 @@ def add_item_modal():
             new_row = {str(i): 0.0 for i in range(1, 32)}
             new_row.update({"Product Name": name, "UOM": uom, "Opening Stock": opening, 
                             "Total Received": 0.0, "Consumption": 0.0, "Closing Stock": opening,
-                            "Physical Count": 0.0, "Variance": 0.0})
+                            "Physical Count": None, "Variance": 0.0})
             st.session_state.inventory = pd.concat([st.session_state.inventory, pd.DataFrame([new_row])], ignore_index=True)
             save_to_sheet(st.session_state.inventory, "persistent_inventory")
             st.rerun()
 
 @st.dialog("🔒 Close Month & Rollover")
 def close_month_modal():
-    st.warning("Ensure 'monthly_history' sheet exists! Physical Counts will become new Opening Stocks.")
+    st.warning("Physical Counts will become new Opening Stocks. 0 is now correctly accepted as a count.")
     month_label = st.text_input("Month Label", datetime.datetime.now().strftime("%b %Y"))
     if st.button("Confirm Monthly Close", type="primary", use_container_width=True):
         df = st.session_state.inventory.copy()
         history_df = load_from_sheet("monthly_history")
         
-        # 1. Archive
+        # 1. Archive current month
         archive_df = df.copy()
         archive_df["Month_Period"] = month_label
         save_to_sheet(pd.concat([history_df, archive_df], ignore_index=True), "monthly_history")
         
-        # 2. Rollover Logic
+        # 2. Reset for New Month
         new_df = df.copy()
         for i in range(1, 32): new_df[str(i)] = 0.0
         
         for idx, row in new_df.iterrows():
-            phys = pd.to_numeric(row.get("Physical Count"), errors='coerce')
-            # If a physical count was entered (not zero/NaN), it becomes opening stock
-            if not pd.isna(phys) and phys != 0:
-                new_df.at[idx, "Opening Stock"] = phys
+            phys_val = row.get("Physical Count")
+            
+            # FIXED LOGIC: If value is not empty/None, use it as opening stock (even if it is 0)
+            if pd.notna(phys_val) and str(phys_val).strip() != "":
+                new_df.at[idx, "Opening Stock"] = pd.to_numeric(phys_val)
             else:
+                # If field was left blank, use the calculated closing stock
                 new_df.at[idx, "Opening Stock"] = row["Closing Stock"]
         
         new_df["Total Received"] = 0.0
         new_df["Consumption"] = 0.0
         new_df["Closing Stock"] = new_df["Opening Stock"]
-        new_df["Physical Count"] = 0.0
+        new_df["Physical Count"] = None # Reset to empty for the new month
         new_df["Variance"] = 0.0
         
         save_to_sheet(new_df, "persistent_inventory")
-        st.success("Month Closed Successfully!")
+        st.success("Month Closed. Nutella and other 0-count items correctly handled!")
         st.rerun()
 
 # --- INITIALIZATION ---
@@ -201,7 +205,6 @@ with tab_ops:
 
     st.divider()
     
-    # Bottom Section: Logs and Status
     log_col, stat_col = st.columns([1, 2.5])
     
     with log_col:
@@ -222,8 +225,7 @@ with tab_ops:
         st.subheader("📊 Live Inventory & Variance")
         df_status = st.session_state.inventory.copy()
         
-        # Column Setup
-        if "Physical Count" not in df_status.columns: df_status["Physical Count"] = 0.0
+        if "Physical Count" not in df_status.columns: df_status["Physical Count"] = None
         if "Variance" not in df_status.columns: df_status["Variance"] = 0.0
         
         disp_cols = ["Product Name", "UOM", "Opening Stock", "Total Received", "Closing Stock", "Consumption", "Physical Count", "Variance"]
@@ -232,7 +234,6 @@ with tab_ops:
                                    disabled=["Product Name", "UOM", "Total Received", "Closing Stock", "Variance"],
                                    hide_index=True)
         
-        # Action Buttons for Status
         btn1, btn2, btn3 = st.columns(3)
         with btn1:
             if st.button("💾 Save & Update Variance", use_container_width=True):
@@ -243,14 +244,12 @@ with tab_ops:
                 st.rerun()
         
         with btn2:
-            # Summary Excel Export
             buf = io.BytesIO()
             with pd.ExcelWriter(buf, engine='xlsxwriter') as writer:
                 df_status[disp_cols].to_excel(writer, index=False, sheet_name='Summary')
             st.download_button("📥 Download Summary", data=buf.getvalue(), file_name="Inventory_Summary.xlsx", use_container_width=True)
             
         with btn3:
-            # Detailed Excel Export
             day_cols = [str(i) for i in range(1, 32)]
             full_export_cols = ["Product Name", "UOM", "Opening Stock"] + day_cols + ["Total Received", "Consumption", "Closing Stock", "Physical Count", "Variance"]
             buf_full = io.BytesIO()
@@ -261,7 +260,6 @@ with tab_ops:
 # --- TAB 2: REQUISITIONS ---
 with tab_req:
     st.subheader("🚚 Requisition System")
-    # ... (Logic from your previous working v4 Requisitions)
     meta_df = load_from_sheet("product_metadata")
     col_it, col_qt, col_ad = st.columns([3, 1, 1])
     with col_it: req_item = st.selectbox("Select Product", options=[""] + sorted(meta_df["Product Name"].tolist()) if not meta_df.empty else [""])
