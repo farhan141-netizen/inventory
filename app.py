@@ -9,9 +9,7 @@ import io
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def clean_dataframe(df):
-    """Ensures unique columns and removes ghost columns from Google Sheets"""
-    if df is None or df.empty:
-        return df
+    if df is None or df.empty: return df
     df = df.loc[:, ~df.columns.str.contains('^Unnamed', na=False)]
     df = df.dropna(axis=1, how='all')
     df = df.loc[:, ~df.columns.duplicated()]
@@ -19,7 +17,6 @@ def clean_dataframe(df):
     return df
 
 def load_from_sheet(worksheet_name, default_cols=None):
-    """Safely load and clean data from Google Sheets"""
     try:
         df = conn.read(worksheet=worksheet_name, ttl="2s")
         df = clean_dataframe(df)
@@ -30,7 +27,6 @@ def load_from_sheet(worksheet_name, default_cols=None):
         return pd.DataFrame(columns=default_cols) if default_cols else pd.DataFrame()
 
 def save_to_sheet(df, worksheet_name):
-    """Save cleaned data to Google Sheets"""
     df = clean_dataframe(df)
     conn.update(worksheet=worksheet_name, data=df)
     st.cache_data.clear()
@@ -38,31 +34,13 @@ def save_to_sheet(df, worksheet_name):
 # --- PAGE CONFIG ---
 st.set_page_config(page_title="Warehouse Pro Cloud v4", layout="wide")
 
-# --- CUSTOM CSS ---
-st.markdown("""
-    <style>
-    .main { background-color: #0e1117; }
-    .stMetric { background-color: #1e2130; padding: 15px; border-radius: 10px; border: 1px solid #333; }
-    .stTabs [data-baseweb="tab"] { height: 50px; background-color: #1e2130; color: white; border-radius: 5px 5px 0 0; }
-    .stTabs [aria-selected="true"] { background-color: #00ffcc !important; color: #000 !important; }
-    
-    .log-container { max-height: 600px; overflow-y: auto; padding-right: 5px; }
-    .log-text { font-size: 0.9rem; line-height: 1.2; }
-    .log-meta { font-size: 0.75rem; color: #888; }
-    
-    .receipt-card, .action-card {
-        background-color: #161b22; padding: 20px; border-radius: 10px; border: 1px solid #30363d; margin-bottom: 20px;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-
 # --- ENGINE ---
 def recalculate_item(df, item_name):
     if item_name not in df["Product Name"].values: return df
-    df = clean_dataframe(df)
     idx = df[df["Product Name"] == item_name].index[0]
-    day_cols = [str(i) for i in range(1, 32)]
     
+    # Calculate Total Received (Days 1-31)
+    day_cols = [str(i) for i in range(1, 32)]
     for col in day_cols:
         if col not in df.columns: df[col] = 0.0
         df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
@@ -70,36 +48,36 @@ def recalculate_item(df, item_name):
     total_received = df.loc[idx, day_cols].sum()
     df.at[idx, "Total Received"] = total_received
     
+    # Calculate Closing Stock
     opening = pd.to_numeric(df.at[idx, "Opening Stock"], errors='coerce') or 0.0
     consumption = pd.to_numeric(df.at[idx, "Consumption"], errors='coerce') or 0.0
     closing = opening + total_received - consumption
     df.at[idx, "Closing Stock"] = closing
     
+    # Update Variance immediately
     if "Physical Count" in df.columns:
         physical = pd.to_numeric(df.at[idx, "Physical Count"], errors='coerce')
         if not pd.isna(physical):
             df.at[idx, "Variance"] = physical - closing
     return df
 
-def apply_transaction(item_name, day_num, qty, is_undo=False, log_type="Addition"):
+def apply_transaction(item_name, day_num, qty):
     df = st.session_state.inventory
-    df = clean_dataframe(df)
     if item_name in df["Product Name"].values:
         idx = df[df["Product Name"] == item_name].index[0]
         col_name = str(int(day_num))
         if col_name != "0":
-            if col_name not in df.columns: df[col_name] = 0.0
-            current_val = pd.to_numeric(df.at[idx, col_name], errors='coerce')
-            df.at[idx, col_name] = (0.0 if pd.isna(current_val) else current_val) + float(qty)
+            current_val = pd.to_numeric(df.at[idx, col_name], errors='coerce') or 0.0
+            df.at[idx, col_name] = current_val + float(qty)
         
-        if not is_undo:
-            new_log = pd.DataFrame([{
-                "LogID": str(uuid.uuid4())[:8],
-                "Timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "Item": item_name, "Qty": qty, "Day": day_num, "Status": "Active", "Type": log_type
-            }])
-            logs_df = load_from_sheet("activity_logs", default_cols=["LogID", "Timestamp", "Item", "Qty", "Day", "Status", "Type"])
-            save_to_sheet(pd.concat([logs_df, new_log], ignore_index=True), "activity_logs")
+        # Log entry
+        new_log = pd.DataFrame([{
+            "LogID": str(uuid.uuid4())[:8],
+            "Timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "Item": item_name, "Qty": qty, "Day": day_num, "Status": "Active", "Type": "Addition"
+        }])
+        logs_df = load_from_sheet("activity_logs", ["LogID", "Timestamp", "Item", "Qty", "Day", "Status", "Type"])
+        save_to_sheet(pd.concat([logs_df, new_log], ignore_index=True), "activity_logs")
         
         df = recalculate_item(df, item_name)
         st.session_state.inventory = df
@@ -107,104 +85,65 @@ def apply_transaction(item_name, day_num, qty, is_undo=False, log_type="Addition
         return True
     return False
 
-def undo_entry(log_id):
-    logs = load_from_sheet("activity_logs")
-    if log_id in logs["LogID"].values:
-        idx = logs[logs["LogID"] == log_id].index[0]
-        if logs.at[idx, "Status"] == "Undone":
-            st.warning("Already undone.")
-            return
-        item, qty, day = logs.at[idx, "Item"], logs.at[idx, "Qty"], logs.at[idx, "Day"]
-        if apply_transaction(item, day, -qty, is_undo=True):
-            logs.at[idx, "Status"] = "Undone"
-            save_to_sheet(logs, "activity_logs")
-            st.success(f"Reversed {qty} for {item}")
-            st.rerun()
-
 # --- MODALS ---
 @st.dialog("➕ Add New Product")
 def add_item_modal():
-    meta_cols = ["Product Name", "Category", "Supplier", "Sales Person", "Contact 1", "Contact 2", "Email", "Min Stock"]
+    meta_cols = ["Product Name", "Category", "Supplier", "Sales Person", "Contact 1", "Email", "Min Stock"]
     meta_df = load_from_sheet("product_metadata", default_cols=meta_cols)
-    unique_suppliers = sorted(meta_df["Supplier"].dropna().unique().tolist())
     
     col1, col2 = st.columns(2)
     with col1:
         name = st.text_input("Item Name*")
-        supplier_choice = st.selectbox("Company Name (Supplier)", options=["New Supplier"] + unique_suppliers)
-        if supplier_choice == "New Supplier":
-            supplier_name = st.text_input("Enter Company Name")
-            sales_person = st.text_input("Sales Person Name")
-            c1 = st.text_input("Contact 1")
-            email_addr = st.text_input("Email")
-            default_cat = "Ingredients"
-        else:
-            supplier_name = supplier_choice
-            sup_data = meta_df[meta_df["Supplier"] == supplier_choice].iloc[-1]
-            sales_person = st.text_input("Sales Person Name", value=sup_data.get("Sales Person", ""))
-            c1 = st.text_input("Contact 1", value=sup_data.get("Contact 1", ""))
-            email_addr = st.text_input("Email", value=sup_data.get("Email", ""))
-            default_cat = sup_data.get("Category", "Ingredients")
-
+        supplier = st.text_input("Supplier Name")
     with col2:
-        cat_list = ["Packaging", "Ingredients", "Equipment", "Cleaning", "Other"]
-        category = st.selectbox("Category", options=cat_list, index=cat_list.index(default_cat) if default_cat in cat_list else 1)
-        uom = st.selectbox("Unit (UOM)*", ["pcs", "kg", "box", "ltr", "pkt", "can", "bot", "g", "ml", "roll", "set", "bag"])
-        opening_bal = st.number_input("Opening Stock", min_value=0.0)
-        min_stock = st.number_input("Min Stock Alert", min_value=0.0)
+        uom = st.selectbox("Unit", ["pcs", "kg", "box", "ltr", "pkt"])
+        opening = st.number_input("Opening Stock", min_value=0.0)
 
-    if st.button("✅ Create Product", use_container_width=True, type="primary"):
-        if name and supplier_name:
-            current_inv = clean_dataframe(st.session_state.inventory)
-            new_row_inv = {str(i): 0.0 for i in range(1, 32)}
-            new_row_inv.update({
-                "Product Name": name, "UOM": uom, "Opening Stock": float(opening_bal), 
-                "Total Received": 0.0, "Consumption": 0.0, "Closing Stock": float(opening_bal)
-            })
-            st.session_state.inventory = pd.concat([current_inv, pd.DataFrame([new_row_inv])], ignore_index=True)
-            
-            new_row_meta = {
-                 "Product Name": name, "Category": category, "Supplier": supplier_name, 
-                "Sales Person": sales_person, "Contact 1": c1, "Email": email_addr, "Min Stock": float(min_stock)
-            }
-            updated_meta = pd.concat([meta_df, pd.DataFrame([new_row_meta])], ignore_index=True)
-            
+    if st.button("✅ Create", use_container_width=True):
+        if name:
+            new_row = {str(i): 0.0 for i in range(1, 32)}
+            new_row.update({"Product Name": name, "UOM": uom, "Opening Stock": opening, 
+                            "Total Received": 0.0, "Consumption": 0.0, "Closing Stock": opening,
+                            "Physical Count": 0.0, "Variance": 0.0})
+            st.session_state.inventory = pd.concat([st.session_state.inventory, pd.DataFrame([new_row])], ignore_index=True)
             save_to_sheet(st.session_state.inventory, "persistent_inventory")
-            save_to_sheet(updated_meta, "product_metadata")
-            apply_transaction(name, 0, opening_bal, is_undo=False, log_type="New Item Added")
-            st.success(f"Added {name}")
             st.rerun()
 
 @st.dialog("🔒 Close Month & Rollover")
 def close_month_modal():
-    st.warning("Ensure the sheet 'monthly_history' exists in your Google Sheet!")
-    month_label = st.text_input("Month Label", datetime.datetime.now().strftime("%b %Y"))
+    st.warning("This will archive current data and set Physical Counts as the new Opening Stock.")
+    month_label = st.text_input("Archive Name (e.g., Jan 2024)", datetime.datetime.now().strftime("%b %Y"))
+    
     if st.button("Confirm Monthly Close", type="primary", use_container_width=True):
-        df = st.session_state.inventory
+        df = st.session_state.inventory.copy()
+        
+        # 1. Archive to history (Including Physical and Variance)
         history_df = load_from_sheet("monthly_history")
-        
-        archive_copy = df.copy()
-        archive_copy["Month_Period"] = month_label
-        
-        updated_history = pd.concat([history_df, archive_copy], ignore_index=True)
+        archive_df = df.copy()
+        archive_df["Month_Period"] = month_label
+        updated_history = pd.concat([history_df, archive_df], ignore_index=True)
         save_to_sheet(updated_history, "monthly_history")
         
+        # 2. Reset for New Month
         new_df = df.copy()
         for i in range(1, 32): new_df[str(i)] = 0.0
         
-        if "Physical Count" in new_df.columns:
-            new_df["Opening Stock"] = new_df["Physical Count"].replace(0, pd.NA).fillna(new_df["Closing Stock"])
-            new_df["Physical Count"] = 0.0
-            new_df["Variance"] = 0.0
-        else:
-            new_df["Opening Stock"] = new_df["Closing Stock"]
-            
+        # CRITICAL: Opening Stock = Physical Count (if provided), else Closing Stock
+        for idx, row in new_df.iterrows():
+            phys = pd.to_numeric(row.get("Physical Count"), errors='coerce')
+            if not pd.isna(phys) and phys > 0:
+                new_df.at[idx, "Opening Stock"] = phys
+            else:
+                new_df.at[idx, "Opening Stock"] = row["Closing Stock"]
+        
         new_df["Total Received"] = 0.0
         new_df["Consumption"] = 0.0
         new_df["Closing Stock"] = new_df["Opening Stock"]
+        new_df["Physical Count"] = 0.0
+        new_df["Variance"] = 0.0
         
         save_to_sheet(new_df, "persistent_inventory")
-        st.success(f"Closed {month_label}. Opening balances updated!")
+        st.success(f"Archived {month_label}. New month started!")
         st.rerun()
 
 # --- INITIALIZATION ---
@@ -212,8 +151,8 @@ if 'inventory' not in st.session_state:
     st.session_state.inventory = load_from_sheet("persistent_inventory")
 
 # --- MAIN UI ---
-st.title("📦 Warehouse Pro Management (Cloud) v4")
-tab_ops, tab_req, tab_sup = st.tabs(["📊 Inventory Operations", "🚚 Requisitions", "📞 Supplier Directory"])
+st.title("📦 Warehouse Pro Management v4")
+tab_ops, tab_req, tab_sup = st.tabs(["📊 Operations", "🚚 Requisitions", "📞 Suppliers"])
 
 # --- TAB 1: OPERATIONS ---
 with tab_ops:
@@ -382,5 +321,6 @@ with st.sidebar:
     st.divider()
     if st.button("🗑️ Reset Cache"):
         st.cache_data.clear(); st.rerun()
+
 
 
