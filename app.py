@@ -56,10 +56,10 @@ st.markdown("""
     .log-time { font-size: 0.7rem; color: #8b949e; margin-left: 10px; }
     .receipt-card, .action-card, .par-card { 
         background-color: #161b22; 
-        padding: 20px; 
+        padding: 5px; 
         border-radius: 10px; 
         border: 1px solid #30363d; 
-        margin-bottom: 20px; 
+        margin-bottom: 5px; 
     }
     </style>
     """, unsafe_allow_html=True)
@@ -338,3 +338,4 @@ with st.sidebar:
         except Exception as e: st.error(f"Error: {e}")
     
     if st.button("🗑️ Reset Cache"): st.cache_data.clear(); st.rerun()
+
