@@ -170,6 +170,10 @@ with tab_pending:
     st.subheader("Your Requisitions at Warehouse")
     orders_df = load_from_sheet("orders_db")
     
+    # SAFETY CHECK: If the sheet is empty or column is missing, create a dummy
+    if "Supplier" not in orders_df.columns:
+        orders_df = pd.DataFrame(columns=["Product Name", "Qty", "Supplier", "Status", "FollowUp"])
+
     if not orders_df.empty:
         # Filter for Main Warehouse orders only
         my_orders = orders_df[orders_df["Supplier"] == "Main Warehouse"]
@@ -226,3 +230,4 @@ with st.sidebar:
     if st.button("🗑️ Reset Cache"):
         st.cache_data.clear()
         st.rerun()
+
