@@ -1,14 +1,37 @@
 import streamlit as st
+from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 import datetime
-import os
 import uuid
+import io
 
-# --- FILE SETTINGS ---
-DB_FILE = "rest_01_inventory.csv"
-LOG_FILE = "rest_01_logs.csv"
-ORDERS_FILE = "orders_db.csv"  # The shared bridge to the Warehouse
+# --- CLOUD CONNECTION ---
+conn = st.connection("gsheets", type=GSheetsConnection)
 
+def clean_dataframe(df):
+    if df is None or df.empty: return df
+    df = df.loc[:, ~df.columns.str.contains('^Unnamed', na=False)]
+    df = df.dropna(axis=1, how='all')
+    df = df.loc[:, ~df.columns.duplicated()]
+    df.columns = [str(col).strip() for col in df.columns]
+    return df
+
+def load_from_sheet(worksheet_name, default_cols=None):
+    try:
+        df = conn.read(worksheet=worksheet_name, ttl="2s")
+        df = clean_dataframe(df)
+        if df is None or df.empty:
+            return pd.DataFrame(columns=default_cols) if default_cols else pd.DataFrame()
+        return df
+    except Exception:
+        return pd.DataFrame(columns=default_cols) if default_cols else pd.DataFrame()
+
+def save_to_sheet(df, worksheet_name):
+    df = clean_dataframe(df)
+    conn.update(worksheet=worksheet_name, data=df)
+    st.cache_data.clear()
+
+# --- PAGE CONFIG ---
 st.set_page_config(page_title="Restaurant 01 Pro", layout="wide")
 
 # --- CUSTOM UI ---
@@ -22,255 +45,184 @@ st.markdown("""
     }
     .stTabs [aria-selected="true"] { background-color: #ffaa00 !important; color: #000 !important; }
     .cart-container { 
-        padding: 20px; 
-        background-color: #1e2130; 
-        border-radius: 10px; 
-        border: 1px solid #ffaa00;
-        margin-top: 20px;
+        padding: 20px; background-color: #1e2130; 
+        border-radius: 10px; border: 1px solid #ffaa00; margin-top: 20px;
     }
     .pending-box {
-        border-left: 4px solid #ff4b4b;
-        padding: 10px;
-        background: #1e2130;
-        margin: 5px 0;
+        border-left: 5px solid #ffaa00; background: #262730;
+        padding: 10px; margin-bottom: 10px; border-radius: 4px;
     }
     </style>
     """, unsafe_allow_html=True)
 
-# --- DATA PERSISTENCE ---
-def load_data():
-    if os.path.exists(DB_FILE):
-        try:
-            return pd.read_csv(DB_FILE, sep=';', encoding='utf-8-sig')
-        except Exception:
-            return pd.DataFrame()
-    return pd.DataFrame()
+# --- INITIALIZATION ---
+if 'inventory' not in st.session_state:
+    st.session_state.inventory = load_from_sheet("rest_01_inventory")
 
-def load_logs():
-    if os.path.exists(LOG_FILE):
-        try:
-            logs = pd.read_csv(LOG_FILE, sep=';', encoding='utf-8-sig')
-            logs['undone'] = logs['undone'].astype(bool)
-            return logs
-        except:
-            return pd.DataFrame(columns=["id", "timestamp", "item", "day", "qty", "type", "undone"])
-    return pd.DataFrame(columns=["id", "timestamp", "item", "day", "qty", "type", "undone"])
+if 'cart' not in st.session_state:
+    st.session_state.cart = []
 
-def load_orders():
-    if os.path.exists(ORDERS_FILE):
-        df = pd.read_csv(ORDERS_FILE)
-        if "FollowUp" not in df.columns: df["FollowUp"] = False
-        return df
-    return pd.DataFrame(columns=["OrderID", "Date", "From", "Item", "Qty", "Status", "FollowUp"])
-
-def save_all(df):
-    df.to_csv(DB_FILE, index=False, sep=';', encoding='utf-8-sig')
-
-def append_log(item, day, qty, log_type):
-    logs = load_logs()
-    new_log = pd.DataFrame([{
-        "id": str(uuid.uuid4())[:8],
-        "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "item": item, "day": int(day), "qty": float(qty), "type": log_type, "undone": False
-    }])
-    pd.concat([new_log, logs], ignore_index=True).to_csv(LOG_FILE, index=False, sep=';', encoding='utf-8-sig')
-
-# --- ENGINE ---
-def recalculate_item(df, item_name):
+# --- CALCULATION ENGINE ---
+def recalculate_rest_item(df, item_name):
     if item_name not in df["Product Name"].values: return df
     idx = df[df["Product Name"] == item_name].index[0]
     
-    for col in ["Total Received", "Consumption", "Closing Stock"]:
-        if col not in df.columns: df[col] = 0
+    opening = pd.to_numeric(df.at[idx, "Opening Stock"], errors='coerce') or 0
+    received = pd.to_numeric(df.at[idx, "Total Received"], errors='coerce') or 0
+    physical = pd.to_numeric(df.at[idx, "Physical Count"], errors='coerce')
     
-    day_cols = [str(i) for i in range(1, 32)]
-    for col in day_cols:
-        if col not in df.columns: df[col] = 0
-        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
-            
-    total_received = df.loc[idx, day_cols].sum()
-    df.at[idx, "Total Received"] = total_received
-    df.at[idx, "Closing Stock"] = df.at[idx, "Opening Stock"] + total_received - df.at[idx, "Consumption"]
+    if pd.notna(physical):
+        df.at[idx, "Consumption"] = (opening + received) - physical
+        df.at[idx, "Closing Stock"] = physical
+    else:
+        df.at[idx, "Closing Stock"] = opening + received
     return df
 
-# --- MODAL: MANUAL ADD ---
-@st.dialog("➕ Add Item to Restaurant Inventory")
-def add_item_modal():
-    st.write("Register an item and its current opening balance.")
-    col1, col2 = st.columns(2)
-    with col1:
-        name = st.text_input("Item Name*")
-        uom = st.selectbox("Unit", ["pcs", "kg", "box", "ltr", "pkt", "can", "g", "ml", "bot"])
-    with col2:
-        category = st.selectbox("Category", ["Food", "Beverage", "Cleaning", "Packaging"])
-        opening_bal = st.number_input("Opening Balance", min_value=0.0)
-    
-    if st.button("✅ Register Item", use_container_width=True):
-        if name:
-            new_row = {str(i): 0 for i in range(1, 32)}
-            new_row.update({"Product Name": name, "UOM": uom, "Category": category, 
-                            "Opening Stock": opening_bal, "Total Received": 0, 
-                            "Consumption": 0, "Closing Stock": opening_bal})
-            st.session_state.rest_inv = pd.concat([st.session_state.rest_inv, pd.DataFrame([new_row])], ignore_index=True)
-            save_all(st.session_state.rest_inv)
-            append_log(name, 0, opening_bal, "Initial Stock Set")
-            st.rerun()
+# --- MAIN APP ---
+st.title("🍴 Restaurant 01 | Operations Portal")
 
-# --- INITIAL LOAD ---
-if 'rest_inv' not in st.session_state:
-    st.session_state.rest_inv = load_data()
+tab_inv, tab_req, tab_pending = st.tabs(["📋 Inventory Count", "🛒 New Requisition", "🚚 Pending Orders"])
 
-if 'requisition_cart' not in st.session_state:
-    st.session_state.requisition_cart = []
-
-st.title("🍴 Restaurant 01: Inventory Control")
-
-tab_inv, tab_req, tab_receive = st.tabs(["📊 Stock & Consumption", "📝 Internal Requisition", "📥 Receive Shipment"])
-
-# --- TAB 1: CONSUMPTION TRACKING ---
 with tab_inv:
-    col_a, col_b = st.columns([2, 1])
-    with col_a:
-        st.subheader("Live Inventory Status")
-        if not st.session_state.rest_inv.empty:
-            summary_cols = ["Product Name", "UOM", "Opening Stock", "Total Received", "Closing Stock", "Consumption"]
-            edited_df = st.data_editor(st.session_state.rest_inv[summary_cols], use_container_width=True, 
-                                     disabled=["Product Name", "UOM", "Total Received", "Closing Stock"])
+    st.subheader("Daily Stock Take")
+    if not st.session_state.inventory.empty:
+        # Category Filter
+        cats = ["All"] + sorted(st.session_state.inventory["Category"].unique().tolist())
+        sel_cat = st.selectbox("Filter Category", cats)
+        
+        display_df = st.session_state.inventory
+        if sel_cat != "All":
+            display_df = display_df[display_df["Category"] == sel_cat]
+        
+        cols_to_show = ["Product Name", "UOM", "Opening Stock", "Total Received", "Physical Count", "Consumption", "Closing Stock"]
+        edited_inv = st.data_editor(
+            display_df[cols_to_show],
+            use_container_width=True,
+            disabled=["Product Name", "UOM", "Opening Stock", "Total Received", "Consumption", "Closing Stock"],
+            hide_index=True,
+            key="inv_editor"
+        )
+        
+        if st.button("💾 Save Daily Count", type="primary"):
+            st.session_state.inventory.update(edited_inv)
+            for item in st.session_state.inventory["Product Name"]:
+                st.session_state.inventory = recalculate_rest_item(st.session_state.inventory, item)
+            save_to_sheet(st.session_state.inventory, "rest_01_inventory")
+            st.success("Cloud Sync Complete!")
+            st.rerun()
+    else:
+        st.warning("No inventory found. Please upload a template in the sidebar.")
+
+with tab_req:
+    col_l, col_r = st.columns([2, 1])
+    
+    with col_l:
+        st.subheader("Add Items to Requisition")
+        if not st.session_state.inventory.empty:
+            search_item = st.text_input("🔍 Search Product").lower()
+            items = st.session_state.inventory[st.session_state.inventory["Product Name"].str.lower().str.contains(search_item)]
             
-            if st.button("💾 Save Changes"):
-                st.session_state.rest_inv.update(edited_df)
-                for item in st.session_state.rest_inv["Product Name"]:
-                    st.session_state.rest_inv = recalculate_item(st.session_state.rest_inv, item)
-                save_all(st.session_state.rest_inv)
-                st.success("Data Updated!")
+            for _, row in items.iterrows():
+                c1, c2, c3 = st.columns([3, 1, 1])
+                c1.write(f"**{row['Product Name']}** ({row['UOM']})")
+                qty = c2.number_input("Qty", min_value=0.0, key=f"req_{row['Product Name']}")
+                if c3.button("Add ➕", key=f"btn_{row['Product Name']}"):
+                    if qty > 0:
+                        st.session_state.cart.append({'name': row['Product Name'], 'qty': qty, 'uom': row['UOM']})
+                        st.toast(f"Added {row['Product Name']}")
+
+    with col_r:
+        st.markdown('<div class="cart-container">', unsafe_allow_html=True)
+        st.subheader("🛒 Current Cart")
+        if st.session_state.cart:
+            for i, item in enumerate(st.session_state.cart):
+                st.write(f"- {item['name']}: {item['qty']} {item['uom']}")
+            
+            if st.button("🗑️ Clear Cart"):
+                st.session_state.cart = []
+                st.rerun()
+                
+            if st.button("🚀 Submit Order to Warehouse", type="primary", use_container_width=True):
+                # 1. Load Bridge
+                orders_df = load_from_sheet("orders_db", ["Product Name", "Qty", "Supplier", "Status", "FollowUp"])
+                
+                # 2. Add new rows
+                new_entries = []
+                for item in st.session_state.cart:
+                    new_entries.append({
+                        "Product Name": item['name'],
+                        "Qty": item['qty'],
+                        "Supplier": "Main Warehouse",
+                        "Status": "Pending",
+                        "FollowUp": False
+                    })
+                
+                updated_orders = pd.concat([orders_df, pd.DataFrame(new_entries)], ignore_index=True)
+                save_to_sheet(updated_orders, "orders_db")
+                st.session_state.cart = []
+                st.success("Order pushed to Cloud!")
                 st.rerun()
         else:
-            st.info("Your inventory is currently empty.")
+            st.write("Cart is empty.")
+        st.markdown('</div>', unsafe_allow_html=True)
 
-    with col_b:
-        st.subheader("Actions")
-        if st.button("➕ ADD NEW ITEM", use_container_width=True): add_item_modal()
-        st.divider()
-        st.write("📜 Recent Activity")
-        logs = load_logs()
-        for i, row in logs.head(8).iterrows():
-            st.caption(f"{row['timestamp']} - {row['item']} ({row['type']})")
-
-# --- TAB 2: REQUISITION ---
-with tab_req:
-    st.subheader("Build Requisition Request")
-    if not st.session_state.rest_inv.empty:
-        item_list = sorted(st.session_state.rest_inv["Product Name"].unique().tolist())
+with tab_pending:
+    st.subheader("Your Requisitions at Warehouse")
+    orders_df = load_from_sheet("orders_db")
+    
+    if not orders_df.empty:
+        # Filter for Main Warehouse orders only
+        my_orders = orders_df[orders_df["Supplier"] == "Main Warehouse"]
         
-        with st.container():
-            c_sel, c_qty, c_btn = st.columns([2, 1, 1])
-            selected_item = c_sel.selectbox("Select Item", options=item_list)
-            qty_needed = c_qty.number_input("Qty", min_value=0.1, step=0.1, value=1.0)
-            
-            if c_btn.button("➕ Add to List", use_container_width=True):
-                st.session_state.requisition_cart.append({"Item": selected_item, "Qty": qty_needed})
-                st.toast(f"Added {selected_item}")
-
-        if st.session_state.requisition_cart:
-            st.markdown('<div class="cart-container">', unsafe_allow_html=True)
-            cart_df = pd.DataFrame(st.session_state.requisition_cart)
-            st.table(cart_df)
-            
-            c_clear, c_send = st.columns(2)
-            if c_clear.button("🗑️ Clear List", use_container_width=True):
-                st.session_state.requisition_cart = []
-                st.rerun()
-                
-            if c_send.button("🚀 Send All to Warehouse", use_container_width=True, type="primary"):
-                existing = load_orders()
-                batch_id = f"REQ-{uuid.uuid4().hex[:4].upper()}"
-                new_orders = []
-                for entry in st.session_state.requisition_cart:
-                    new_orders.append({
-                        "OrderID": batch_id, "Date": datetime.date.today(), "From": "Restaurant 01",
-                        "Item": entry["Item"], "Qty": entry["Qty"], "Status": "Pending", "FollowUp": False
-                    })
-                pd.concat([existing, pd.DataFrame(new_orders)], ignore_index=True).to_csv(ORDERS_FILE, index=False)
-                st.session_state.requisition_cart = []
-                st.success("Sent to Warehouse!")
-                st.rerun()
-            st.markdown('</div>', unsafe_allow_html=True)
-    else: st.warning("Please initialize inventory.")
-
-# --- TAB 3: RECEIVE SHIPMENT (PARTIAL DELIVERY LOGIC) ---
-with tab_receive:
-    st.subheader("Shipment & Backorder Status")
-    orders_df = load_orders()
-    
-    # 1. Show items currently in Transit (Available to Accept)
-    transit_items = orders_df[(orders_df["Status"] == "In Transit") & (orders_df["From"] == "Restaurant 01")]
-    
-    # 2. Show items currently Pending (Backorders/Owed items)
-    pending_items = orders_df[(orders_df["Status"] == "Pending") & (orders_df["From"] == "Restaurant 01")]
-
-    st.markdown("### 🚚 Incoming Now")
-    if transit_items.empty:
-        st.info("No shipments in transit.")
-    else:
-        for idx, row in transit_items.iterrows():
+        for idx, row in my_orders.iterrows():
             with st.container():
-                c1, c2, c3 = st.columns([3, 1, 1])
-                c1.write(f"📦 **{row['Item']}**")
-                c2.write(f"Warehouse Sent: **{row['Qty']}**")
+                st.markdown(f"""
+                <div class="pending-box">
+                    <b>{row['Product Name']}</b> | Qty: {row['Qty']} | Status: <span style="color:#ffaa00">{row['Status']}</span>
+                </div>
+                """, unsafe_allow_html=True)
                 
-                if c3.button("✅ Accept", key=f"acc_{idx}"):
-                    rest_df = st.session_state.rest_inv
-                    if row['Item'] in rest_df["Product Name"].values:
-                        item_idx = rest_df[rest_df["Product Name"] == row['Item']].index[0]
-                        day_col = str(datetime.datetime.now().day)
-                        rest_df.at[item_idx, day_col] = pd.to_numeric(rest_df.at[item_idx, day_col]) + row['Qty']
-                        st.session_state.rest_inv = recalculate_item(rest_df, row['Item'])
-                        save_all(st.session_state.rest_inv)
-                        
-                        orders_df.at[idx, "Status"] = "Completed"
-                        orders_df.to_csv(ORDERS_FILE, index=False)
-                        append_log(row['Item'], day_col, row['Qty'], "Stock Accepted")
+                c1, c2 = st.columns(2)
+                if row['Status'] == "Pending":
+                    if c1.button("Mark Received ✅", key=f"recv_{idx}"):
+                        # Logic to update inventory received count could go here
+                        orders_df.at[idx, "Status"] = "Received"
+                        save_to_sheet(orders_df, "orders_db")
                         st.rerun()
-            st.divider()
-
-    st.markdown("### ⏳ Pending / Backorders")
-    if pending_items.empty:
-        st.write("No pending items.")
+                    
+                    fup_text = "⚠️ Follow Up Sent" if row.get("FollowUp") == True else "🚩 Request Follow Up"
+                    if c2.button(fup_text, key=f"fup_{idx}", disabled=row.get("FollowUp", False)):
+                        orders_df.at[idx, "FollowUp"] = True
+                        save_to_sheet(orders_df, "orders_db")
+                        st.toast("Warehouse notified!")
+                        st.rerun()
     else:
-        for idx, row in pending_items.iterrows():
-            st.markdown(f'<div class="pending-box">', unsafe_allow_html=True)
-            p1, p2, p3 = st.columns([3, 1, 1])
-            p1.write(f"**{row['Item']}** (Status: Owed by Warehouse)")
-            p2.write(f"Remaining: {row['Qty']}")
-            
-            follow_text = "🔔 Following Up..." if row.get("FollowUp", False) else "🚩 Click to Follow Up"
-            if p3.button(follow_text, key=f"fup_{idx}", disabled=row.get("FollowUp", False)):
-                orders_df.at[idx, "FollowUp"] = True
-                orders_df.to_csv(ORDERS_FILE, index=False)
-                st.toast("Warehouse notified to follow up on this item!")
-                st.rerun()
-            st.markdown('</div>', unsafe_allow_html=True)
+        st.info("No active requisitions.")
 
-# --- SIDEBAR ---
+# --- SIDEBAR SETTINGS ---
 with st.sidebar:
-    st.header("Settings")
-    inv_file = st.file_uploader("Upload Master Template", type=["csv", "xlsx"])
+    st.header("Admin Controls")
+    st.subheader("Bulk Import Template")
+    inv_file = st.file_uploader("Upload Restaurant Template", type=["csv", "xlsx"])
     if inv_file:
         try:
-            if inv_file.name.endswith('.xlsx'): raw_df = pd.read_excel(inv_file, skiprows=4, header=None)
-            else: raw_df = pd.read_csv(inv_file, skiprows=4, header=None, encoding='utf-8')
-            
+            raw_df = pd.read_excel(inv_file, skiprows=4, header=None) if inv_file.name.endswith('.xlsx') else pd.read_csv(inv_file, skiprows=4, header=None)
             new_df = pd.DataFrame()
-            new_df["Product Name"] = raw_df[1]; new_df["UOM"] = raw_df[2]; new_df["Opening Stock"] = pd.to_numeric(raw_df[3], errors='coerce').fillna(0)
-            for i in range(1, 32): new_df[str(i)] = 0
-            new_df["Total Received"] = 0; new_df["Consumption"] = 0; new_df["Closing Stock"] = 0; new_df["Category"] = "General"
-            st.session_state.rest_inv = new_df.dropna(subset=["Product Name"])
-            save_all(st.session_state.rest_inv)
-            st.success("Synced!")
-            st.rerun()
-        except Exception as e: st.error(e)
-
-    if st.button("🗑️ Reset Local Data"):
-        for f in [DB_FILE, LOG_FILE]:
-            if os.path.exists(f): os.remove(f)
+            new_df["Product Name"] = raw_df[1]
+            new_df["UOM"] = raw_df[2]
+            new_df["Opening Stock"] = pd.to_numeric(raw_df[3], errors='coerce').fillna(0)
+            new_df["Total Received"] = 0.0
+            new_df["Physical Count"] = None
+            new_df["Consumption"] = 0.0
+            new_df["Closing Stock"] = new_df["Opening Stock"]
+            new_df["Category"] = "General"
+            
+            if st.button("🚀 Push to Restaurant Cloud"):
+                save_to_sheet(new_df.dropna(subset=["Product Name"]), "rest_01_inventory")
+                st.rerun()
+        except Exception as e:
+            st.error(f"Error: {e}")
+            
+    if st.button("🗑️ Reset Cache"):
+        st.cache_data.clear()
         st.rerun()
