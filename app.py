@@ -178,30 +178,49 @@ def add_item_modal():
             st.success(f"Added {name}")
             st.rerun()
 
+# --- UPDATED ENGINE FOR MONTHLY CLOSING ---
+
 @st.dialog("🔒 Close Month & Rollover")
 def close_month_modal():
-    st.warning("This archives data to 'monthly_history' and resets daily counts. Ensure Physical Counts are updated!")
-    month_label = st.text_input("Month Label", datetime.datetime.now().strftime("%b %Y"))
+    st.warning("This archives data to 'monthly_history' and resets daily counts.")
+    month_label = st.text_input("Month Label (e.g., Jan 2024)", datetime.datetime.now().strftime("%b %Y"))
+    
     if st.button("Confirm Monthly Close", type="primary", use_container_width=True):
+        # 1. Load current inventory
         df = st.session_state.inventory
-        history_df = load_from_sheet("monthly_history")
+        
+        # 2. Load history (Handle case where worksheet might not exist yet)
+        try:
+            history_df = load_from_sheet("monthly_history")
+        except Exception:
+            st.error("Sheet 'monthly_history' not found. Please create this tab in your Google Sheet first.")
+            return
+
+        # 3. Archive current data
         archive_copy = df.copy()
         archive_copy["Month_Period"] = month_label
-        save_to_sheet(pd.concat([history_df, archive_copy], ignore_index=True), "monthly_history")
         
+        # 4. Save to history tab
+        updated_history = pd.concat([history_df, archive_copy], ignore_index=True)
+        save_to_sheet(updated_history, "monthly_history") [cite: 57]
+        
+        # 5. Reset for the new month
         new_df = df.copy()
-        for i in range(1, 32): new_df[str(i)] = 0.0
-        if "Physical Count" in new_df.columns:
-            new_df["Opening Stock"] = new_df["Physical Count"].replace(0, pd.NA).fillna(new_df["Closing Stock"])
-            new_df["Physical Count"] = 0.0
-            new_df["Variance"] = 0.0
-        else:
-            new_df["Opening Stock"] = new_df["Closing Stock"]
+        # Clear daily receipts (columns 1-31)
+        for i in range(1, 32):
+            new_df[str(i)] = 0.0
+            
+        # Carry over Closing Stock to be the new Opening Stock
+        new_df["Opening Stock"] = new_df["Closing Stock"]
         new_df["Total Received"] = 0.0
         new_df["Consumption"] = 0.0
+        # Closing stock will initially equal the new Opening Stock
         new_df["Closing Stock"] = new_df["Opening Stock"]
+        
+        # 6. Save reset inventory to the persistent sheet
         save_to_sheet(new_df, "persistent_inventory")
-        st.success(f"Closed {month_label}. Opening balances updated!")
+        
+        st.success(f"Successfully archived {month_label} and reset inventory!")
         st.rerun()
 
 # --- INITIALIZATION ---
@@ -376,3 +395,4 @@ with st.sidebar:
     st.divider()
     if st.button("🗑️ Reset Cache"):
         st.cache_data.clear(); st.rerun()
+
