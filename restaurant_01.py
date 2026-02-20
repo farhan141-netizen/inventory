@@ -31,6 +31,68 @@ def save_to_sheet(df, worksheet_name):
     except:
         return False
 
+def create_standard_inventory(df):
+    """Convert uploaded inventory to standard format with all required columns"""
+    standard_df = pd.DataFrame()
+    
+    # Map columns or use defaults
+    standard_df["Product Name"] = df[1] if 1 in df.columns else ""
+    standard_df["Category"] = "General"
+    standard_df["UOM"] = df[2] if 2 in df.columns else "pcs"
+    standard_df["Opening Stock"] = pd.to_numeric(df[3] if 3 in df.columns else 0, errors='coerce').fillna(0)
+    
+    # Add day columns (1-31)
+    for day in range(1, 32):
+        standard_df[str(day)] = 0.0
+    
+    # Add calculation columns
+    standard_df["Total Received"] = 0.0
+    standard_df["Consumption"] = 0.0
+    standard_df["Closing Stock"] = standard_df["Opening Stock"]
+    standard_df["Physical Count"] = None
+    standard_df["Variance"] = 0.0
+    
+    # Remove empty rows
+    standard_df = standard_df.dropna(subset=["Product Name"])
+    standard_df["Product Name"] = standard_df["Product Name"].astype(str).str.strip()
+    standard_df = standard_df[standard_df["Product Name"] != ""]
+    
+    return standard_df
+
+def recalculate_inventory(df):
+    """Recalculate totals and closing stock"""
+    day_cols = [str(i) for i in range(1, 32)]
+    
+    for idx, row in df.iterrows():
+        # Calculate total received from day columns
+        total_received = 0.0
+        for col in day_cols:
+            if col in df.columns:
+                try:
+                    total_received += float(df.at[idx, col]) if pd.notna(df.at[idx, col]) else 0.0
+                except:
+                    pass
+        
+        df.at[idx, "Total Received"] = total_received
+        
+        # Calculate closing stock
+        opening = float(df.at[idx, "Opening Stock"]) if pd.notna(df.at[idx, "Opening Stock"]) else 0.0
+        consumption = float(df.at[idx, "Consumption"]) if pd.notna(df.at[idx, "Consumption"]) else 0.0
+        df.at[idx, "Closing Stock"] = opening + total_received - consumption
+        
+        # Calculate variance
+        physical = df.at[idx, "Physical Count"]
+        if pd.notna(physical) and str(physical).strip() != "":
+            try:
+                physical_val = float(physical)
+                df.at[idx, "Variance"] = physical_val - df.at[idx, "Closing Stock"]
+            except:
+                df.at[idx, "Variance"] = 0.0
+        else:
+            df.at[idx, "Variance"] = 0.0
+    
+    return df
+
 # --- PAGE CONFIG ---
 st.set_page_config(page_title="Restaurant 01 Pro", layout="wide")
 
@@ -91,10 +153,20 @@ tab_inv, tab_req, tab_pending, tab_received = st.tabs(["📋 Inventory Count", "
 # ===================== INVENTORY TAB =====================
 with tab_inv:
     st.markdown('<div class="section-title">📊 Daily Stock Take</div>', unsafe_allow_html=True)
+    
     if not st.session_state.inventory.empty:
-        if "Category" not in st.session_state.inventory.columns:
-            st.session_state.inventory["Category"] = "General"
-            
+        # Ensure standard columns exist
+        standard_cols = ["Product Name", "Category", "UOM", "Opening Stock"] + [str(i) for i in range(1, 32)] + ["Total Received", "Consumption", "Closing Stock", "Physical Count", "Variance"]
+        for col in standard_cols:
+            if col not in st.session_state.inventory.columns:
+                if col == "Category":
+                    st.session_state.inventory[col] = "General"
+                elif col == "UOM":
+                    st.session_state.inventory[col] = "pcs"
+                else:
+                    st.session_state.inventory[col] = 0.0 if col not in ["Physical Count"] else None
+        
+        # Category filter
         cats = ["All"] + sorted(st.session_state.inventory["Category"].unique().tolist())
         sel_cat = st.selectbox("Filter Category", cats, key="inv_cat")
         
@@ -102,24 +174,40 @@ with tab_inv:
         if sel_cat != "All":
             display_df = display_df[display_df["Category"] == sel_cat]
         
-        master_cols = ["Product Name", "UOM", "Opening Stock", "Total Received", "Physical Count", "Consumption", "Closing Stock"]
-        cols_to_show = [c for c in master_cols if c in display_df.columns]
+        # Display columns: Product, Category, UOM, Opening, Days 1-31, Total Received, Consumption, Closing, Physical Count, Variance
+        day_cols = [str(i) for i in range(1, 32)]
+        display_cols = ["Product Name", "Category", "UOM", "Opening Stock"] + day_cols + ["Total Received", "Consumption", "Closing Stock", "Physical Count", "Variance"]
+        display_cols_filtered = [c for c in display_cols if c in display_df.columns]
         
         edited_inv = st.data_editor(
-            display_df[cols_to_show],
+            display_df[display_cols_filtered],
             use_container_width=True,
-            disabled=["Product Name", "UOM", "Opening Stock", "Total Received", "Consumption", "Closing Stock"],
+            disabled=["Product Name", "Category", "UOM", "Opening Stock", "Total Received", "Closing Stock", "Variance"],
             hide_index=True,
-            key="inv_editor"
+            key="inv_editor",
+            height=500
         )
         
-        if st.button("💾 Save Daily Count", type="primary", use_container_width=True, key="save_inv"):
-            st.session_state.inventory.update(edited_inv)
-            save_to_sheet(st.session_state.inventory, "rest_01_inventory")
-            st.success("✅ Inventory saved!")
-            st.rerun()
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            if st.button("💾 Save Daily Count", type="primary", use_container_width=True, key="save_inv"):
+                st.session_state.inventory.update(edited_inv)
+                st.session_state.inventory = recalculate_inventory(st.session_state.inventory)
+                save_to_sheet(st.session_state.inventory, "rest_01_inventory")
+                st.success("✅ Inventory saved!")
+                st.rerun()
+        
+        with col2:
+            buf = io.BytesIO()
+            with pd.ExcelWriter(buf, engine='xlsxwriter') as writer:
+                st.session_state.inventory[display_cols_filtered].to_excel(writer, index=False, sheet_name='Inventory')
+            st.download_button("📥 Download Inventory", data=buf.getvalue(), file_name="Inventory_Count.xlsx", use_container_width=True, key="dl_inv")
+        
+        with col3:
+            st.info(f"📊 Total Items: {len(st.session_state.inventory)}")
     else:
-        st.warning("No inventory found. Please use sidebar to upload template.")
+        st.warning("⚠️ No inventory found. Please upload template from Settings.")
 
 # ===================== REQUISITION TAB =====================
 with tab_req:
@@ -128,17 +216,21 @@ with tab_req:
     with col_l:
         st.markdown('<div class="section-title">🛒 Add Items to Requisition</div>', unsafe_allow_html=True)
         if not st.session_state.inventory.empty:
-            search_item = st.text_input("🔍 Search Product", key="search_req").lower()
-            items = st.session_state.inventory[st.session_state.inventory["Product Name"].str.lower().str.contains(search_item, na=False)]
+            search_item = st.text_input("🔍 Search Product", key="search_req", placeholder="Type product name...").lower()
+            
+            if search_item:
+                items = st.session_state.inventory[st.session_state.inventory["Product Name"].str.lower().str.contains(search_item, na=False)]
+            else:
+                items = st.session_state.inventory
             
             for item_idx, (_, row) in enumerate(items.head(20).iterrows()):
                 c1, c2, c3 = st.columns([3, 1, 1])
                 product_name = row['Product Name']
                 uom = row['UOM']
+                closing_stock = row.get('Closing Stock', 0)
                 
-                c1.write(f"**{product_name}** ({uom})")
+                c1.write(f"**{product_name}** ({uom}) | Stock: {closing_stock}")
                 
-                # Use unique key with index to prevent duplicates
                 qty = c2.number_input(
                     "Qty", 
                     min_value=0.0, 
@@ -161,6 +253,9 @@ with tab_req:
         st.markdown('<div class="section-title">🛒 Cart</div>', unsafe_allow_html=True)
         
         if st.session_state.cart:
+            cart_total = sum([item['qty'] for item in st.session_state.cart])
+            st.metric("Total Items", len(st.session_state.cart))
+            
             for i, item in enumerate(st.session_state.cart):
                 st.markdown(f"""
                 <div class="cart-item">
@@ -283,9 +378,22 @@ with tab_received:
 # ===================== SIDEBAR =====================
 with st.sidebar:
     st.header("⚙️ Settings")
-    st.subheader("Upload Inventory Template")
+    st.subheader("📋 Create Standard Inventory")
     
-    inv_file = st.file_uploader("Upload Excel/CSV", type=["csv", "xlsx"], key="upload_inv")
+    st.info("""
+    📌 **Expected Format:**
+    - Row 5: Headers (ignored)
+    - Column B: Product Name
+    - Column C: UOM (Unit of Measure)
+    - Column D: Opening Stock
+    
+    ✅ The system will automatically create:
+    - Days 1-31 columns
+    - Total Received, Consumption
+    - Closing Stock, Physical Count, Variance
+    """)
+    
+    inv_file = st.file_uploader("📁 Upload Excel/CSV", type=["csv", "xlsx"], key="upload_inv")
     
     if inv_file:
         try:
@@ -294,30 +402,47 @@ with st.sidebar:
             else:
                 raw_df = pd.read_csv(inv_file, skiprows=4, header=None)
 
-            new_df = pd.DataFrame()
-            new_df["Product Name"] = raw_df[1]
-            new_df["UOM"] = raw_df[2]
-            new_df["Opening Stock"] = pd.to_numeric(raw_df[3], errors='coerce').fillna(0)
+            # Create standard format
+            standard_df = create_standard_inventory(raw_df)
+            standard_df = recalculate_inventory(standard_df)
 
-            required_logic = {
-                "Total Received": 0.0, "Physical Count": None,
-                "Consumption": 0.0, "Closing Stock": 0.0, "Category": "General"
-            }
-            for col, val in required_logic.items():
-                if col not in new_df.columns:
-                    new_df[col] = val
+            st.success(f"✅ Template validated: {len(standard_df)} items found")
+            
+            # Preview
+            preview_cols = ["Product Name", "Category", "UOM", "Opening Stock", "Closing Stock"]
+            preview_cols_filtered = [c for c in preview_cols if c in standard_df.columns]
+            
+            st.write("📊 Preview (first 5 items):")
+            st.dataframe(standard_df[preview_cols_filtered].head(), use_container_width=True)
 
-            new_df = new_df.dropna(subset=["Product Name"])
-
-            if st.button("🚀 Push Inventory", type="primary", use_container_width=True, key="push_inv_rest"):
-                if save_to_sheet(new_df, "rest_01_inventory"):
-                    st.session_state.inventory = new_df
-                    st.success(f"✅ Inventory created with {len(new_df)} items!")
+            if st.button("🚀 Create Inventory", type="primary", use_container_width=True, key="push_inv_rest"):
+                if save_to_sheet(standard_df, "rest_01_inventory"):
+                    st.session_state.inventory = standard_df
+                    st.success(f"✅ Inventory created with {len(standard_df)} items!")
+                    st.balloons()
                     st.rerun()
+                else:
+                    st.error("❌ Failed to save inventory")
 
         except Exception as e:
-            st.error(f"❌ Error: {e}")
-            
+            st.error(f"❌ Error processing file: {e}")
+    
+    st.divider()
+    st.subheader("🔄 Inventory Format")
+    st.write("""
+    **Standard Columns:**
+    - Product Name
+    - Category
+    - UOM
+    - Opening Stock
+    - Days 1-31
+    - Total Received
+    - Consumption
+    - Closing Stock
+    - Physical Count
+    - Variance
+    """)
+    
     st.divider()
     if st.button("🗑️ Clear Cache", use_container_width=True, key="clear_cache_rest"):
         st.cache_data.clear()
