@@ -17,11 +17,11 @@ def clean_dataframe(df):
     df.columns = [str(col).strip() for col in df.columns]
     return df
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=60)  # Reduced from 300 to 60 seconds for faster sync
 def load_from_sheet(worksheet_name, default_cols=None):
     """Safely load and clean data from Google Sheets with caching"""
     try:
-        df = conn.read(worksheet=worksheet_name, ttl="5m")
+        df = conn.read(worksheet=worksheet_name, ttl="1m")  # Changed to 1 minute
         df = clean_dataframe(df)
         if df is None or df.empty:
             return pd.DataFrame(columns=default_cols) if default_cols else pd.DataFrame()
@@ -37,7 +37,7 @@ def save_to_sheet(df, worksheet_name):
     df = clean_dataframe(df)
     try:
         conn.update(worksheet=worksheet_name, data=df)
-        st.cache_data.clear()
+        st.cache_data.clear()  # Clear ALL cache after save
         return True
     except Exception as e:
         st.error(f"Error saving to {worksheet_name}: {str(e)}")
@@ -518,6 +518,13 @@ st.markdown("""
     </div>
 """, unsafe_allow_html=True)
 
+# --- REFRESH BUTTON IN HEADER ---
+col_refresh, col_empty = st.columns([1, 5])
+with col_refresh:
+    if st.button("🔄 Refresh Data", use_container_width=True, key="refresh_all"):
+        st.cache_data.clear()
+        st.rerun()
+
 tab_ops, tab_req, tab_sup = st.tabs(["📊 Operations", "🚚 Requisitions", "📞 Suppliers"])
 
 with tab_ops:
@@ -640,7 +647,12 @@ with tab_ops:
 with tab_req:
     st.markdown('<span class="section-title">🚚 Restaurant Requisitions</span>', unsafe_allow_html=True)
     
-    all_reqs = load_from_sheet("restaurant_requisitions", ["ReqID", "Restaurant", "Item", "Qty", "Status", "DispatchQty", "Timestamp"])
+    # REFRESH DATA BUTTON
+    if st.button("🔄 Refresh Data", use_container_width=True, key="refresh_reqs"):
+        st.cache_data.clear()
+        st.rerun()
+    
+    all_reqs = load_from_sheet("restaurant_requisitions", ["ReqID", "Restaurant", "Item", "Qty", "Status", "DispatchQty", "Timestamp", "RequestedDate"])
     
     if not all_reqs.empty:
         status_filter = st.selectbox("Filter by Status", ["All", "Pending", "Dispatched", "Completed"], key="req_status_filter")
@@ -663,6 +675,7 @@ with tab_req:
                     status = row["Status"]
                     dispatch_qty = float(row.get("DispatchQty", 0))
                     req_id = row["ReqID"]
+                    req_date = row.get("RequestedDate", "N/A")
                     
                     stock_info = st.session_state.inventory[st.session_state.inventory["Product Name"] == item_name]
                     available_qty = float(stock_info["Closing Stock"].values[0]) if not stock_info.empty else 0.0
@@ -671,7 +684,7 @@ with tab_req:
                     
                     st.markdown(f"""
                     <div class="req-box {'req-pending' if status == 'Pending' else 'req-dispatched' if status == 'Dispatched' else 'req-completed'}">
-                        <b>{status_color} {item_name}</b> | Requested: {req_qty} | Available: {available_qty}
+                        <b>{status_color} {item_name}</b> | Requested: {req_qty} | Available: {available_qty} | Date: {req_date}
                     </div>
                     """, unsafe_allow_html=True)
                     
@@ -693,16 +706,12 @@ with tab_req:
                                     all_reqs.at[idx, "DispatchQty"] = dispatch_qty_input
                                     all_reqs.at[idx, "Status"] = "Dispatched"
                                     all_reqs.at[idx, "Timestamp"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                                    save_to_sheet(all_reqs, "restaurant_requisitions")
                                     
-                                    inv_idx = st.session_state.inventory[st.session_state.inventory["Product Name"] == item_name].index[0]
-                                    current_closing = st.session_state.inventory.at[inv_idx, "Closing Stock"]
-                                    st.session_state.inventory.at[inv_idx, "Closing Stock"] = float(current_closing) - float(dispatch_qty_input)
-                                    st.session_state.inventory.at[inv_idx, "Consumption"] = float(st.session_state.inventory.at[inv_idx, "Consumption"]) + float(dispatch_qty_input)
-                                    save_to_sheet(st.session_state.inventory, "persistent_inventory")
-                                    
-                                    st.success(f"✅ Dispatched {dispatch_qty_input} {item_name} to {restaurant}")
-                                    st.rerun()
+                                    # Save and clear cache immediately
+                                    if save_to_sheet(all_reqs, "restaurant_requisitions"):
+                                        st.success(f"✅ Dispatched {dispatch_qty_input} {item_name}")
+                                        st.cache_data.clear()
+                                        st.rerun()
                         with c3:
                             if st.button("❌ Cancel", key=f"cancel_btn_{req_id}", use_container_width=True):
                                 all_reqs = all_reqs.drop(idx)
@@ -762,6 +771,13 @@ with tab_sup:
 
 with st.sidebar:
     st.markdown('<h2 class="sidebar-title">☁️ Data Management</h2>', unsafe_allow_html=True)
+    
+    # REFRESH BUTTON IN SIDEBAR
+    if st.button("🔄 Refresh All Data", use_container_width=True, key="refresh_sidebar"):
+        st.cache_data.clear()
+        st.rerun()
+    
+    st.divider()
     
     with st.expander("📦 Inventory Master Sync"):
         inv_file = st.file_uploader("Upload XLSX/CSV", type=["csv", "xlsx"], key="inv_upload")
