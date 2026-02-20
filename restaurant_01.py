@@ -19,20 +19,35 @@ def load_from_sheet(worksheet_name, default_cols=None):
             return pd.DataFrame(columns=default_cols) if default_cols else pd.DataFrame()
         return df
     except Exception as e:
-        st.error(f"Error loading {worksheet_name}: {str(e)}")
+        st.warning(f"Sheet '{worksheet_name}' not found or empty. Creating with default columns...")
         return pd.DataFrame(columns=default_cols) if default_cols else pd.DataFrame()
 
 def save_to_sheet(df, worksheet_name):
-    """Save to Google Sheets with error handling"""
+    """Save to Google Sheets with automatic sheet creation"""
     try:
         if df is None or df.empty:
             st.error(f"Cannot save empty dataframe to {worksheet_name}")
             return False
         
         conn = get_connection()
-        conn.update(worksheet=worksheet_name, data=df)
-        st.cache_data.clear()
-        return True
+        
+        # Try to update existing sheet
+        try:
+            conn.update(worksheet=worksheet_name, data=df)
+            st.cache_data.clear()
+            return True
+        except Exception as update_error:
+            # If sheet doesn't exist, create it
+            st.info(f"📝 Creating new sheet: {worksheet_name}")
+            try:
+                conn.create(worksheet=worksheet_name, data=df)
+                st.cache_data.clear()
+                st.success(f"✅ Sheet '{worksheet_name}' created successfully!")
+                return True
+            except Exception as create_error:
+                st.error(f"❌ Could not create sheet: {str(create_error)}")
+                return False
+                
     except Exception as e:
         st.error(f"❌ Error saving to {worksheet_name}: {str(e)}")
         return False
@@ -282,7 +297,7 @@ with tab_req:
                 
             if st.button("🚀 Submit to Warehouse", type="primary", use_container_width=True, key="submit_req"):
                 try:
-                    # Load existing requisitions
+                    # Load existing requisitions or create new dataframe
                     all_reqs = load_from_sheet("restaurant_requisitions", ["ReqID", "Restaurant", "Item", "Qty", "Status", "DispatchQty", "Timestamp"])
                     
                     st.info(f"📤 Sending {len(st.session_state.cart)} items to warehouse...")
@@ -293,14 +308,19 @@ with tab_req:
                             "ReqID": str(uuid.uuid4())[:8],
                             "Restaurant": "Restaurant 01",
                             "Item": item['name'],
-                            "Qty": item['qty'],
+                            "Qty": float(item['qty']),
                             "Status": "Pending",
-                            "DispatchQty": 0,
+                            "DispatchQty": 0.0,
                             "Timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         }])
                         all_reqs = pd.concat([all_reqs, new_req], ignore_index=True)
                     
                     st.write(f"✅ Total records to save: {len(all_reqs)}")
+                    
+                    # Ensure correct data types
+                    all_reqs["Qty"] = pd.to_numeric(all_reqs["Qty"], errors='coerce')
+                    all_reqs["DispatchQty"] = pd.to_numeric(all_reqs["DispatchQty"], errors='coerce')
+                    all_reqs = all_reqs.reset_index(drop=True)
                     
                     # Save to sheet
                     if save_to_sheet(all_reqs, "restaurant_requisitions"):
@@ -309,10 +329,11 @@ with tab_req:
                         st.session_state.cart = []
                         st.rerun()
                     else:
-                        st.error("❌ Failed to send requisition. Please try again.")
+                        st.error("❌ Failed to send requisition. Please check your Google Sheets permissions.")
                 
                 except Exception as e:
                     st.error(f"❌ Error: {str(e)}")
+                    st.write("Please ensure your Google Sheet has proper permissions and try again.")
         else:
             st.write("🛒 Cart is empty")
         
@@ -342,7 +363,7 @@ with tab_pending:
         else:
             st.info("✅ No pending orders")
     else:
-        st.info("📭 No orders found")
+        st.info("📭 No orders found. Submit your first requisition!")
 
 # ===================== RECEIVED ITEMS TAB =====================
 with tab_received:
@@ -460,19 +481,16 @@ with st.sidebar:
             st.error(f"❌ Error processing file: {e}")
     
     st.divider()
-    st.subheader("🔄 Inventory Format")
+    st.subheader("📊 Quick Info")
     st.write("""
-    **Standard Columns:**
-    - Product Name
-    - Category
-    - UOM
-    - Opening Stock
-    - Days 1-31
-    - Total Received
-    - Consumption
-    - Closing Stock
-    - Physical Count
-    - Variance
+    **Google Sheets Setup:**
+    1. Create a spreadsheet
+    2. Share with your service account email
+    3. Add "rest_01_inventory" sheet manually (optional - will be auto-created)
+    
+    **Sheets Used:**
+    - rest_01_inventory (auto-created)
+    - restaurant_requisitions (auto-created)
     """)
     
     st.divider()
