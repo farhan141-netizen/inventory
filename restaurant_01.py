@@ -147,6 +147,7 @@ st.markdown("""
     .pending-pending { border-left: 5px solid #ffaa00; background: #3a2f1a; }
     .pending-dispatched { border-left: 5px solid #00d9ff; background: #1a2f3f; }
     .pending-completed { border-left: 5px solid #00ff00; background: #1a3a1a; }
+    .pending-followup { border-left: 5px solid #ff6b35; background: #3a2f1a; }
     
     .section-title { color: #ff6b35; font-size: 1.2em; font-weight: 700; margin-bottom: 15px; }
     .stButton>button { border-radius: 6px; font-weight: 600; }
@@ -309,7 +310,7 @@ with tab_req:
             if st.button("🚀 Submit to Warehouse", type="primary", use_container_width=True, key="submit_req"):
                 try:
                     # Load existing requisitions
-                    all_reqs = load_from_sheet("restaurant_requisitions", ["ReqID", "Restaurant", "Item", "Qty", "Status", "DispatchQty", "Timestamp", "RequestedDate"])
+                    all_reqs = load_from_sheet("restaurant_requisitions", ["ReqID", "Restaurant", "Item", "Qty", "Status", "DispatchQty", "Timestamp", "RequestedDate", "FollowupSent"])
                     
                     st.info(f"📤 Sending {len(st.session_state.cart)} items to warehouse...")
                     
@@ -323,7 +324,8 @@ with tab_req:
                             "Status": "Pending",
                             "DispatchQty": 0.0,
                             "Timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                            "RequestedDate": datetime.datetime.now().strftime("%Y-%m-%d")
+                            "RequestedDate": datetime.datetime.now().strftime("%Y-%m-%d"),
+                            "FollowupSent": False
                         }])
                         all_reqs = pd.concat([all_reqs, new_req], ignore_index=True)
                     
@@ -353,56 +355,100 @@ with tab_req:
 
 # ===================== PENDING ORDERS TAB =====================
 with tab_pending:
-    st.markdown('<div class="section-title">🚚 Pending Orders Status</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">🚚 Pending Orders Status (All Remaining Items)</div>', unsafe_allow_html=True)
     all_reqs = load_from_sheet("restaurant_requisitions")
     
     if not all_reqs.empty:
+        # Ensure FollowupSent column exists
+        if "FollowupSent" not in all_reqs.columns:
+            all_reqs["FollowupSent"] = False
+        
         # Calculate remaining qty for each row
         all_reqs["Remaining"] = all_reqs["Qty"] - all_reqs["DispatchQty"]
         
-        # Show items with remaining qty > 0 (partially or fully pending)
-        my_pending = all_reqs[(all_reqs["Restaurant"] == "Restaurant 01") & (all_reqs["Remaining"] > 0) & (all_reqs["Status"] != "Completed")]
+        # Show ALL items where remaining qty > 0 (regardless of status)
+        my_pending = all_reqs[(all_reqs["Restaurant"] == "Restaurant 01") & (all_reqs["Remaining"] > 0)]
         
         if not my_pending.empty:
-            st.metric("Total Pending", len(my_pending))
-            for pending_idx, (_, row) in enumerate(my_pending.iterrows()):
+            st.metric("Total Items Pending", len(my_pending))
+            st.divider()
+            
+            for pending_idx, (idx, row) in enumerate(my_pending.iterrows()):
                 item_name = row["Item"]
                 req_qty = float(row["Qty"])
                 dispatch_qty = float(row["DispatchQty"])
                 remaining_qty = float(row["Remaining"])
                 req_date = row.get("RequestedDate", "N/A")
                 status = row["Status"]
+                req_id = row["ReqID"]
+                followup_sent = row.get("FollowupSent", False)
                 
                 # Show status indicator
-                status_indicator = "🟡" if status == "Pending" else "🟠" if status == "Dispatched" else "🟢"
+                if status == "Pending":
+                    status_indicator = "🟡"
+                    status_text = "Pending"
+                elif status == "Dispatched":
+                    status_indicator = "🟠"
+                    status_text = "Partial Delivery"
+                else:
+                    status_indicator = "🟢"
+                    status_text = "Completed"
+                
+                followup_indicator = "⚠️ Follow-up Sent" if followup_sent else "⏳ No Follow-up"
                 
                 st.markdown(f"""
                 <div class="pending-box pending-pending">
-                    <b>{status_indicator} {item_name}</b> | Requested: {req_qty} | Dispatched: {dispatch_qty} | Remaining: {remaining_qty} | Date: {req_date}
+                    <b>{status_indicator} {item_name}</b><br>
+                    Requested: {req_qty} | Received: {dispatch_qty} | Remaining: {remaining_qty} | Date: {req_date}<br>
+                    <small>Status: {status_text} | {followup_indicator}</small>
                 </div>
                 """, unsafe_allow_html=True)
                 
-                if status == "Pending":
-                    st.write("⏳ Waiting for warehouse to process...")
-                elif status == "Dispatched":
-                    st.write(f"🟠 Partial delivery - {remaining_qty} units still pending")
+                c1, c2 = st.columns([1, 1])
+                
+                with c1:
+                    if st.button(f"🚩 Request Follow-up", key=f"followup_{pending_idx}_{req_id}", use_container_width=True):
+                        try:
+                            all_reqs.at[idx, "FollowupSent"] = True
+                            all_reqs.at[idx, "Timestamp"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                            save_to_sheet(all_reqs, "restaurant_requisitions")
+                            st.success(f"✅ Follow-up notification sent to Warehouse!")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"❌ Error: {str(e)}")
+                
+                with c2:
+                    if st.button(f"✅ Mark Complete", key=f"complete_{pending_idx}_{req_id}", use_container_width=True):
+                        try:
+                            # Only if all items are received (remaining = 0)
+                            if remaining_qty <= 0:
+                                all_reqs.at[idx, "Status"] = "Completed"
+                                save_to_sheet(all_reqs, "restaurant_requisitions")
+                                st.success(f"✅ {item_name} marked as complete!")
+                                st.rerun()
+                            else:
+                                st.warning(f"⚠️ Still {remaining_qty} units pending. Cannot mark as complete.")
+                        except Exception as e:
+                            st.error(f"❌ Error: {str(e)}")
                 
                 st.divider()
         else:
-            st.info("✅ No pending orders")
+            st.success("✅ All items received! No pending orders.")
     else:
         st.info("📭 No orders found. Submit your first requisition!")
 
 # ===================== RECEIVED ITEMS TAB =====================
 with tab_received:
-    st.markdown('<div class="section-title">📦 Received Items</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">📦 Received Items - Accept Dispatches</div>', unsafe_allow_html=True)
     all_reqs = load_from_sheet("restaurant_requisitions")
     
     if not all_reqs.empty:
         my_dispatched = all_reqs[(all_reqs["Restaurant"] == "Restaurant 01") & (all_reqs["Status"] == "Dispatched")]
         
         if not my_dispatched.empty:
-            st.metric("Total Dispatched", len(my_dispatched))
+            st.metric("Total Dispatched Items", len(my_dispatched))
+            st.divider()
+            
             for recv_idx, (original_idx, row) in enumerate(my_dispatched.iterrows()):
                 item_name = row["Item"]
                 dispatch_qty = float(row["DispatchQty"])
@@ -422,12 +468,15 @@ with tab_received:
                 c1, c2 = st.columns([1, 1])
                 
                 with c1:
-                    if st.button(f"✅ Accept", key=f"accept_{recv_idx}_{req_id}", use_container_width=True):
+                    if st.button(f"✅ Accept & Add to Inventory", key=f"accept_{recv_idx}_{req_id}", use_container_width=True):
                         try:
-                            # Update requisition status to Completed
-                            all_reqs.at[original_idx, "Status"] = "Completed"
+                            # Keep status as Dispatched if partial, Completed if all received
+                            if remaining_qty <= 0:
+                                all_reqs.at[original_idx, "Status"] = "Completed"
+                            else:
+                                all_reqs.at[original_idx, "Status"] = "Dispatched"  # Keep as dispatched for tracking
                             
-                            # Add to restaurant inventory - add to today's column (day 20, etc.)
+                            # Add to restaurant inventory - add to today's column
                             today = datetime.datetime.now().day
                             day_col = str(today)
                             
@@ -453,7 +502,7 @@ with tab_received:
                             save_to_sheet(all_reqs, "restaurant_requisitions")
                             save_to_sheet(st.session_state.inventory, "rest_01_inventory")
                             
-                            st.success(f"✅ {item_name} received and added to inventory on Day {today}!")
+                            st.success(f"✅ {item_name} ({dispatch_qty} units) received and added to inventory on Day {today}!")
                             st.rerun()
                         except Exception as e:
                             st.error(f"❌ Error: {str(e)}")
@@ -462,6 +511,7 @@ with tab_received:
                     if st.button(f"❌ Reject", key=f"reject_{recv_idx}_{req_id}", use_container_width=True):
                         try:
                             all_reqs.at[original_idx, "Status"] = "Pending"
+                            all_reqs.at[original_idx, "DispatchQty"] = 0
                             save_to_sheet(all_reqs, "restaurant_requisitions")
                             st.warning(f"❌ Returned to pending")
                             st.rerun()
@@ -523,6 +573,7 @@ with tab_history:
                     req_date = row.get("RequestedDate", "N/A")
                     timestamp = row.get("Timestamp", "N/A")
                     remaining = req_qty - dispatch_qty
+                    followup = row.get("FollowupSent", False)
                     
                     # Color based on status
                     if status == "Pending":
@@ -535,11 +586,13 @@ with tab_history:
                         status_color = "🟢"
                         box_class = "history-received"
                     
+                    followup_text = "⚠️ Follow-up Sent" if followup else ""
+                    
                     st.markdown(f"""
                     <div class="history-box {box_class}">
                         <b>{status_color} {item_name}</b><br>
                         Requested: {req_qty} | Received: {dispatch_qty} | Remaining: {remaining}<br>
-                        <small>Status: {status} | Requested: {req_date} | Updated: {timestamp}</small>
+                        <small>Status: {status} | Requested: {req_date} | Updated: {timestamp} | {followup_text}</small>
                     </div>
                     """, unsafe_allow_html=True)
             else:
@@ -619,7 +672,7 @@ with st.sidebar:
     
     **Requisition Tracking:**
     - Request & receive tracking
-    - Pending items history
+    - Pending items with follow-up
     - Complete requisition history
     """)
     
