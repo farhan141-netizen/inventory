@@ -357,21 +357,36 @@ with tab_pending:
     all_reqs = load_from_sheet("restaurant_requisitions")
     
     if not all_reqs.empty:
-        my_pending = all_reqs[(all_reqs["Restaurant"] == "Restaurant 01") & (all_reqs["Status"] == "Pending")]
+        # Calculate remaining qty for each row
+        all_reqs["Remaining"] = all_reqs["Qty"] - all_reqs["DispatchQty"]
+        
+        # Show items with remaining qty > 0 (partially or fully pending)
+        my_pending = all_reqs[(all_reqs["Restaurant"] == "Restaurant 01") & (all_reqs["Remaining"] > 0) & (all_reqs["Status"] != "Completed")]
         
         if not my_pending.empty:
             st.metric("Total Pending", len(my_pending))
             for pending_idx, (_, row) in enumerate(my_pending.iterrows()):
                 item_name = row["Item"]
-                req_qty = row["Qty"]
+                req_qty = float(row["Qty"])
+                dispatch_qty = float(row["DispatchQty"])
+                remaining_qty = float(row["Remaining"])
                 req_date = row.get("RequestedDate", "N/A")
+                status = row["Status"]
+                
+                # Show status indicator
+                status_indicator = "🟡" if status == "Pending" else "🟠" if status == "Dispatched" else "🟢"
                 
                 st.markdown(f"""
                 <div class="pending-box pending-pending">
-                    <b>🟡 {item_name}</b> | Requested: {req_qty} | Date: {req_date}
+                    <b>{status_indicator} {item_name}</b> | Requested: {req_qty} | Dispatched: {dispatch_qty} | Remaining: {remaining_qty} | Date: {req_date}
                 </div>
                 """, unsafe_allow_html=True)
-                st.write("⏳ Waiting for warehouse to process...")
+                
+                if status == "Pending":
+                    st.write("⏳ Waiting for warehouse to process...")
+                elif status == "Dispatched":
+                    st.write(f"🟠 Partial delivery - {remaining_qty} units still pending")
+                
                 st.divider()
         else:
             st.info("✅ No pending orders")
@@ -409,7 +424,7 @@ with tab_received:
                 with c1:
                     if st.button(f"✅ Accept", key=f"accept_{recv_idx}_{req_id}", use_container_width=True):
                         try:
-                            # Update requisition status
+                            # Update requisition status to Completed
                             all_reqs.at[original_idx, "Status"] = "Completed"
                             
                             # Add to restaurant inventory - add to today's column (day 20, etc.)
@@ -523,8 +538,8 @@ with tab_history:
                     st.markdown(f"""
                     <div class="history-box {box_class}">
                         <b>{status_color} {item_name}</b><br>
-                        Requested: {req_qty} | Dispatched: {dispatch_qty} | Remaining: {remaining}<br>
-                        <small>Requested: {req_date} | Updated: {timestamp}</small>
+                        Requested: {req_qty} | Received: {dispatch_qty} | Remaining: {remaining}<br>
+                        <small>Status: {status} | Requested: {req_date} | Updated: {timestamp}</small>
                     </div>
                     """, unsafe_allow_html=True)
             else:
