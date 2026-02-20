@@ -5,7 +5,7 @@ import datetime
 import uuid
 import io
 
-# --- CLOUD CONNECTION --- 
+# --- CLOUD CONNECTION ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def clean_dataframe(df):
@@ -35,218 +35,232 @@ def save_to_sheet(df, worksheet_name):
     st.cache_data.clear()
 
 # --- PAGE CONFIG ---
-st.set_page_config(page_title="Restaurant Cloud Pro", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Restaurant 01 Pro", layout="wide")
 
-# --- UI STYLING ---
+# --- CUSTOM CSS ---
 st.markdown("""
     <style>
-    .block-container { padding-top: 1rem; }
-    .header-bar { 
-        background: linear-gradient(90deg, #ff4b2b 0%, #ff416c 100%); 
-        border-radius: 12px; padding: 15px 25px; color: white; margin-bottom: 20px;
-        display: flex; justify-content: space-between; align-items: center;
-        box-shadow: 0 4px 15px rgba(255, 75, 43, 0.3);
+    .main { background-color: #0e1117; }
+    .stTabs [data-baseweb="tab-list"] { gap: 24px; }
+    .stTabs [data-baseweb="tab"] { 
+        height: 50px; background-color: #1e2130; 
+        border-radius: 5px 5px 0 0; padding: 10px 20px; color: white;
     }
-    .stTabs [data-baseweb="tab-list"] { gap: 8px; background: #1e1e26; padding: 8px; border-radius: 12px; }
-    .stTabs [data-baseweb="tab"] { padding: 6px 16px; border-radius: 8px; color: #a0a0a0; font-weight: 600; }
-    .stTabs [aria-selected="true"] { background: #ff4b2b22; color: #ff4b2b; border: 1px solid #ff4b2b44; }
-    
-    .section-title { color: #ff4b2b; font-size: 1.15em; font-weight: 700; margin-bottom: 12px; display: block; border-bottom: 1px solid #ff4b2b30; padding-bottom: 5px; }
-    
-    .log-container { max-height: 450px; overflow-y: auto; background: #1a1a1a; border-radius: 8px; padding: 10px; }
-    .log-entry { border-left: 3px solid #ff4b2b; background: #262626; padding: 8px; margin-bottom: 6px; border-radius: 4px; font-size: 0.85em; color: #e0e0e0; }
-    
-    .premium-card { background: #1a1f2e; border: 1px solid #2d3748; padding: 15px; border-radius: 12px; margin-bottom: 15px; }
+    .stTabs [aria-selected="true"] { background-color: #ffaa00 !important; color: #000 !important; }
+    .cart-container { 
+        padding: 20px; background-color: #1e2130; 
+        border-radius: 10px; border: 1px solid #ffaa00; margin-top: 20px;
+    }
+    .pending-box {
+        border-left: 5px solid #ffaa00; background: #262730;
+        padding: 10px; margin-bottom: 10px; border-radius: 4px;
+    }
     </style>
-""", unsafe_allow_html=True)
+    """, unsafe_allow_html=True)
 
-# --- APP LOGIC ---
-def recalculate_item(df, item_name):
-    """Restaurant Logic: Opening + Received - Consumption = Closing"""
-    if item_name not in df["Product Name"].values: return df
-    idx = df[df["Product Name"] == item_name].index[0]
-    
-    opening = pd.to_numeric(df.at[idx, "Opening Stock"], errors='coerce') or 0.0
-    received = pd.to_numeric(df.at[idx, "Total Received"], errors='coerce') or 0.0
-    consumption = pd.to_numeric(df.at[idx, "Consumption"], errors='coerce') or 0.0
-    
-    closing = opening + received - consumption
-    df.at[idx, "Closing Stock"] = closing
-    
-    # Calculate Variance if Physical Count exists
-    if "Physical Count" in df.columns:
-        phys = df.at[idx, "Physical Count"]
-        if pd.notna(phys) and str(phys).strip() != "":
-            df.at[idx, "Variance"] = pd.to_numeric(phys) - closing
-    return df
-
-# --- UI HEADER ---
-st.markdown('<div class="header-bar"><div><h2 style="margin:0;">🍴 Restaurant Cloud Pro</h2><p style="margin:0; opacity:0.8;">Centralized Outlet Inventory & Requisitions</p></div></div>', unsafe_allow_html=True)
-
-# --- SESSION STATE & INITIAL LOAD ---
+# --- INITIALIZATION ---
 if 'inventory' not in st.session_state:
     st.session_state.inventory = load_from_sheet("rest_01_inventory")
 
-# --- TABS ---
-tab_inv, tab_req, tab_set = st.tabs(["📋 Dashboard", "📦 Requisitions", "⚙️ Control Panel"])
+if 'cart' not in st.session_state:
+    st.session_state.cart = []
+
+# --- CALCULATION ENGINE ---
+def recalculate_rest_item(df, item_name):
+    if item_name not in df["Product Name"].values: return df
+    idx = df[df["Product Name"] == item_name].index[0]
+    
+    opening = pd.to_numeric(df.at[idx, "Opening Stock"], errors='coerce') or 0
+    received = pd.to_numeric(df.at[idx, "Total Received"], errors='coerce') or 0
+    physical = pd.to_numeric(df.at[idx, "Physical Count"], errors='coerce')
+    
+    if pd.notna(physical):
+        df.at[idx, "Consumption"] = (opening + received) - physical
+        df.at[idx, "Closing Stock"] = physical
+    else:
+        df.at[idx, "Closing Stock"] = opening + received
+    return df
+
+# --- MAIN APP ---
+st.title("🍴 Restaurant 01 | Operations Portal")
+
+tab_inv, tab_req, tab_pending = st.tabs(["📋 Inventory Count", "🛒 New Requisition", "🚚 Pending Orders"])
 
 with tab_inv:
-    col_main, col_logs = st.columns([3, 1])
-    
-    with col_main:
-        st.markdown('<span class="section-title">📊 Inventory & Consumption Tracker</span>', unsafe_allow_html=True)
-        df_inv = st.session_state.inventory.copy()
+    st.subheader("Daily Stock Take")
+    if not st.session_state.inventory.empty:
+        # Category Filter (Safe check)
+        if "Category" not in st.session_state.inventory.columns:
+            st.session_state.inventory["Category"] = "General"
+            
+        cats = ["All"] + sorted(st.session_state.inventory["Category"].unique().tolist())
+        sel_cat = st.selectbox("Filter Category", cats)
         
-        # Category Filter
-        cats = ["All"] + sorted(df_inv["Category"].unique().tolist()) if "Category" in df_inv.columns else ["All"]
-        c1, c2 = st.columns([1, 2])
-        with c1:
-            sel_cat = st.selectbox("Filter Category", cats, label_visibility="collapsed")
-        
+        display_df = st.session_state.inventory.copy()
         if sel_cat != "All":
-            df_inv = df_inv[df_inv["Category"] == sel_cat]
-            
-        # Define display columns
-        disp_cols = ["Category", "Product Name", "UOM", "Opening Stock", "Total Received", "Consumption", "Closing Stock"]
-        if "Physical Count" in df_inv.columns: disp_cols.append("Physical Count")
-        if "Variance" in df_inv.columns: disp_cols.append("Variance")
-            
-        edited_df = st.data_editor(
-            df_inv[disp_cols], 
-            use_container_width=True, 
-            hide_index=True, 
-            height=450, 
-            disabled=["Category", "Product Name", "UOM", "Closing Stock", "Variance"]
-        )
+            display_df = display_df[display_df["Category"] == sel_cat]
         
-        if st.button("💾 Sync & Save Changes", type="primary", use_container_width=True):
-            st.session_state.inventory.update(edited_df)
-            # Recalculate logic for all items
-            for item in st.session_state.inventory["Product Name"]:
-                st.session_state.inventory = recalculate_item(st.session_state.inventory, item)
-            save_to_sheet(st.session_state.inventory, "rest_01_inventory")
-            st.rerun()
-
-    with col_logs:
-        st.markdown('<span class="section-title">🕒 Activity</span>', unsafe_allow_html=True)
-        logs = load_from_sheet("rest_01_logs")
-        if not logs.empty:
-            st.markdown('<div class="log-container">', unsafe_allow_html=True)
-            for _, row in logs.iloc[::-1].head(30).iterrows():
-                # Handling flexible log columns
-                act = row.get("Action", "Update")
-                st.markdown(f'<div class="log-entry"><b>{row["Item"]}</b><br>{row["Qty"]} {act} @ {row["Timestamp"]}</div>', unsafe_allow_html=True)
-            st.markdown('</div>', unsafe_allow_html=True)
-        else:
-            st.info("No logs recorded yet.")
-
-with tab_req:
-    # --- COMPACT REQUISITION PORTAL ---
-    st.markdown('<span class="section-title">🚚 Create New Requisition</span>', unsafe_allow_html=True)
-    
-    # Quick Entry Bar (Single Line)
-    r1, r2, r3 = st.columns([3, 1, 1])
-    with r1:
-        req_item = st.selectbox("Select Product", options=[""] + sorted(st.session_state.inventory["Product Name"].tolist()), key="req_item_sel", label_visibility="collapsed")
-    with r2:
-        req_qty = st.number_input("Order Qty", min_value=0.0, step=1.0, key="req_qty_val", label_visibility="collapsed")
-    with r3:
-        if st.button("➕ Create Order", use_container_width=True, type="primary"):
-            if req_item and req_qty > 0:
-                orders = load_from_sheet("rest_01_orders", ["Date", "Product Name", "Qty", "Status", "OrderID"])
-                new_row = pd.DataFrame([{
-                    "Date": datetime.datetime.now().strftime("%Y-%m-%d"),
-                    "Product Name": req_item,
-                    "Qty": req_qty,
-                    "Status": "Pending",
-                    "OrderID": str(uuid.uuid4())[:8]
-                }])
-                save_to_sheet(pd.concat([orders, new_row], ignore_index=True), "rest_01_orders")
-                st.rerun()
-
-    st.markdown('<hr>', unsafe_allow_html=True)
-    st.markdown('<span class="section-title">⏳ Pending Orders (Date Sorted)</span>', unsafe_allow_html=True)
-    
-    orders_df = load_from_sheet("rest_01_orders")
-    if not orders_df.empty:
-        # Sort logic: Ensure date exists, then sort newest first
-        if "Date" in orders_df.columns:
-            orders_df = orders_df.sort_values(by="Date", ascending=False)
+        # SAFETY CHECK: Only show columns that actually exist in the dataframe
+        master_cols = ["Product Name", "UOM", "Opening Stock", "Total Received", "Physical Count", "Consumption", "Closing Stock"]
+        cols_to_show = [c for c in master_cols if c in display_df.columns]
         
-        updated_orders = st.data_editor(
-            orders_df,
+        edited_inv = st.data_editor(
+            display_df[cols_to_show],
             use_container_width=True,
+            disabled=["Product Name", "UOM", "Opening Stock", "Total Received", "Consumption", "Closing Stock"],
             hide_index=True,
-            height=400,
-            column_config={
-                "Status": st.column_config.SelectboxColumn("Status", options=["Pending", "Ordered", "Received", "Cancelled"], required=True),
-                "OrderID": st.column_config.TextColumn("ID", disabled=True),
-                "Date": st.column_config.TextColumn("Date", disabled=True),
-                "Product Name": st.column_config.TextColumn("Product", disabled=True)
-            }
+            key="inv_editor"
         )
         
-        if st.button("💾 Save Order Updates", type="primary"):
-            save_to_sheet(updated_orders, "rest_01_orders")
+        if st.button("💾 Save Daily Count", type="primary"):
+            st.session_state.inventory.update(edited_inv)
+            for item in st.session_state.inventory["Product Name"]:
+                st.session_state.inventory = recalculate_rest_item(st.session_state.inventory, item)
+            save_to_sheet(st.session_state.inventory, "rest_01_inventory")
+            st.success("Cloud Sync Complete!")
             st.rerun()
     else:
-        st.info("No requisition history found.")
+        st.warning("No inventory found. Please use the Sidebar to upload your template.")
 
-with tab_set:
-    st.markdown('<span class="section-title">⚙️ Advanced Tools</span>', unsafe_allow_html=True)
-    
-    col_l, col_r = st.columns(2)
+with tab_req:
+    col_l, col_r = st.columns([2, 1])
     
     with col_l:
-        st.markdown('<div class="premium-card">', unsafe_allow_html=True)
-        st.subheader("📥 Master Import")
-        st.caption("Standard layout: B=Name, C=UOM, D=Opening Stock")
-        up_file = st.file_uploader("Upload Master File", type=["xlsx", "csv"])
-        if up_file:
-            try:
-                # Use res v1 logic for skipping headers
-                raw = pd.read_excel(up_file, skiprows=4, header=None) if up_file.name.endswith('.xlsx') else pd.read_csv(up_file, skiprows=4, header=None)
-                new_df = pd.DataFrame()
-                new_df["Product Name"] = raw[1]
-                new_df["UOM"] = raw[2]
-                new_df["Opening Stock"] = pd.to_numeric(raw[3], errors='coerce').fillna(0)
-                new_df["Category"] = "General"
-                new_df["Total Received"] = 0.0
-                new_df["Consumption"] = 0.0
-                new_df["Closing Stock"] = new_df["Opening Stock"]
-                new_df["Physical Count"] = None
-                new_df["Variance"] = 0.0
-                
-                if st.button("🚀 Push to Restaurant Cloud", type="primary"):
-                    save_to_sheet(new_df.dropna(subset=["Product Name"]), "rest_01_inventory")
-                    st.success("Master Inventory Initialized!")
-                    st.rerun()
-            except Exception as e:
-                st.error(f"Import Error: {e}")
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.subheader("Add Items to Requisition")
+        if not st.session_state.inventory.empty:
+            search_item = st.text_input("🔍 Search Product").lower()
+            items = st.session_state.inventory[st.session_state.inventory["Product Name"].str.lower().str.contains(search_item, na=False)]
+            
+            for _, row in items.head(20).iterrows(): # Show top 20 for performance
+                c1, c2, c3 = st.columns([3, 1, 1])
+                c1.write(f"**{row['Product Name']}** ({row['UOM']})")
+                qty = c2.number_input("Qty", min_value=0.0, key=f"req_{row['Product Name']}")
+                if c3.button("Add ➕", key=f"btn_{row['Product Name']}"):
+                    if qty > 0:
+                        st.session_state.cart.append({'name': row['Product Name'], 'qty': qty, 'uom': row['UOM']})
+                        st.toast(f"Added {row['Product Name']}")
 
     with col_r:
-        st.markdown('<div class="premium-card">', unsafe_allow_html=True)
-        st.subheader("🧹 System Reset")
-        st.warning("This will permanently clear all cloud data.")
-        if st.button("Clear All Sheets", type="secondary", use_container_width=True):
-            save_to_sheet(pd.DataFrame(columns=["Category", "Product Name", "UOM", "Opening Stock", "Total Received", "Consumption", "Closing Stock", "Physical Count", "Variance"]), "rest_01_inventory")
-            save_to_sheet(pd.DataFrame(columns=["Date", "Product Name", "Qty", "Status", "OrderID"]), "rest_01_orders")
-            save_to_sheet(pd.DataFrame(columns=["Timestamp", "Item", "Qty", "Action"]), "rest_01_logs")
-            st.rerun()
+        st.markdown('<div class="cart-container">', unsafe_allow_html=True)
+        st.subheader("🛒 Current Cart")
+        if st.session_state.cart:
+            for i, item in enumerate(st.session_state.cart):
+                st.write(f"- {item['name']}: {item['qty']} {item['uom']}")
+            
+            if st.button("🗑️ Clear Cart"):
+                st.session_state.cart = []
+                st.rerun()
+                
+            if st.button("🚀 Submit Order to Warehouse", type="primary", use_container_width=True):
+                orders_df = load_from_sheet("orders_db", ["Product Name", "Qty", "Supplier", "Status", "FollowUp"])
+                new_entries = []
+                for item in st.session_state.cart:
+                    new_entries.append({
+                        "Product Name": item['name'], "Qty": item['qty'],
+                        "Supplier": "Main Warehouse", "Status": "Pending", "FollowUp": False
+                    })
+                updated_orders = pd.concat([orders_df, pd.DataFrame(new_entries)], ignore_index=True)
+                save_to_sheet(updated_orders, "orders_db")
+                st.session_state.cart = []
+                st.success("Order pushed to Cloud!")
+                st.rerun()
+        else:
+            st.write("Cart is empty.")
         st.markdown('</div>', unsafe_allow_html=True)
 
+with tab_pending:
+    st.subheader("Your Requisitions at Warehouse")
+    orders_df = load_from_sheet("orders_db")
+    
+    # SAFETY 1: Ensure columns exist
+    for col in ["Supplier", "Status", "FollowUp", "Product Name", "Qty"]:
+        if col not in orders_df.columns:
+            orders_df[col] = False if col == "FollowUp" else "Unknown"
+
+    if not orders_df.empty:
+        # Filter for Main Warehouse orders
+        my_orders = orders_df[orders_df["Supplier"] == "Main Warehouse"]
+        
+        if my_orders.empty:
+            st.info("No active requisitions found for this restaurant.")
+        
+        for idx, row in my_orders.iterrows():
+            with st.container():
+                # Get values safely with fallbacks
+                item_name = row.get('Product Name', 'Unknown Item')
+                item_qty = row.get('Qty', 0)
+                item_status = row.get('Status', 'Pending')
+                
+                # SAFETY 2: Force FollowUp to be True or False (Fixes the TypeError)
+                fup_val = row.get("FollowUp")
+                fup_needed = bool(fup_val) if pd.notna(fup_val) else False
+                
+                st.markdown(f"""
+                <div class="pending-box">
+                    <b>{item_name}</b> | Qty: {item_qty} | Status: <span style="color:#ffaa00">{item_status}</span>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                c1, c2 = st.columns(2)
+                
+                # Only show actions if still Pending
+                if item_status == "Pending":
+                    if c1.button("Mark Received ✅", key=f"recv_{idx}"):
+                        orders_df.at[idx, "Status"] = "Received"
+                        save_to_sheet(orders_df, "orders_db")
+                        st.rerun()
+                    
+                    fup_label = "⚠️ Follow Up Sent" if fup_needed else "🚩 Request Follow Up"
+                    # The 'disabled' parameter now receives a guaranteed boolean
+                    if c2.button(fup_label, key=f"fup_{idx}", disabled=fup_needed):
+                        orders_df.at[idx, "FollowUp"] = True
+                        save_to_sheet(orders_df, "orders_db")
+                        st.toast("Warehouse notified!")
+                        st.rerun()
+    else:
+        st.info("No orders found in the cloud.")
+
+# --- SIDEBAR (DYNAMIC IMPORT) ---
 with st.sidebar:
-    st.markdown("### 🏬 Outlet Info")
-    st.info("Instance: **Restaurant Outlet 01**")
-    st.markdown("---")
-    if st.button("🔄 Full System Refresh"):
+    st.header("Admin Settings")
+    st.subheader("1. Dynamic Template Import")
+    inv_file = st.file_uploader("Upload Inventory Excel", type=["csv", "xlsx"])
+    
+    if inv_file:
+        try:
+            # Load raw data based on your specific template (skiprows=4)
+            if inv_file.name.endswith('.xlsx'):
+                raw_df = pd.read_excel(inv_file, skiprows=4, header=None)
+            else:
+                raw_df = pd.read_csv(inv_file, skiprows=4, header=None)
+
+            # Map based on standard column positions (B=Name, C=UOM, D=Opening)
+            new_df = pd.DataFrame()
+            new_df["Product Name"] = raw_df[1]
+            new_df["UOM"] = raw_df[2]
+            new_df["Opening Stock"] = pd.to_numeric(raw_df[3], errors='coerce').fillna(0)
+
+            # DYNAMIC COLUMN ADDITION: Ensure required logic columns exist
+            required_logic = {
+                "Total Received": 0.0, "Physical Count": None,
+                "Consumption": 0.0, "Closing Stock": 0.0, "Category": "General"
+            }
+            for col, val in required_logic.items():
+                if col not in new_df.columns:
+                    new_df[col] = val
+
+            # Clean up empty rows
+            new_df = new_df.dropna(subset=["Product Name"])
+
+            if st.button("🚀 Push to Restaurant Cloud"):
+                save_to_sheet(new_df, "rest_01_inventory")
+                st.success(f"Sheet Created with {len(new_df)} items!")
+                st.rerun()
+
+        except Exception as e:
+            st.error(f"Mapping Error: {e}. Check if column B is Product Name and C is UOM.")
+            
+    st.divider()
+    if st.button("🗑️ Reset Application Cache"):
         st.cache_data.clear()
         st.rerun()
-    
-    st.markdown("### 📊 Quick Stats")
-    if not st.session_state.inventory.empty:
-        low_stock = len(st.session_state.inventory[st.session_state.inventory["Closing Stock"] < 5])
-        st.metric("Low Stock Items", low_stock)
-        st.metric("Total SKU Count", len(st.session_state.inventory))
-
