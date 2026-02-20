@@ -1,38 +1,10 @@
 import streamlit as st
-from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 import datetime
 import uuid
 import io
 
-# --- CLOUD CONNECTION ---
-conn = st.connection("gsheets", type=GSheetsConnection)
-
-def clean_dataframe(df):
-    """Ensures unique columns and removes ghost columns from Google Sheets"""
-    if df is None or df.empty: return df
-    df = df.loc[:, ~df.columns.str.contains('^Unnamed', na=False)]
-    df = df.dropna(axis=1, how='all')
-    df = df.loc[:, ~df.columns.duplicated()]
-    df.columns = [str(col).strip() for col in df.columns]
-    return df
-
-def load_from_sheet(worksheet_name, default_cols=None):
-    """Safely load and clean data from Google Sheets"""
-    try:
-        df = conn.read(worksheet=worksheet_name, ttl="2s")
-        df = clean_dataframe(df)
-        if df is None or df.empty:
-            return pd.DataFrame(columns=default_cols) if default_cols else pd.DataFrame()
-        return df
-    except Exception:
-        return pd.DataFrame(columns=default_cols) if default_cols else pd.DataFrame()
-
-def save_to_sheet(df, worksheet_name):
-    """Save cleaned data to Google Sheets and clear cache"""
-    df = clean_dataframe(df)
-    conn.update(worksheet=worksheet_name, data=df)
-    st.cache_data.clear()
+from utils import load_from_sheet, save_to_sheet
 
 # --- PAGE CONFIG ---
 st.set_page_config(page_title="Warehouse Pro Cloud v8.5", layout="wide", initial_sidebar_state="expanded")
@@ -175,12 +147,34 @@ def add_item_modal():
         uom = st.selectbox("📏 Unit", ["pcs", "kg", "box", "ltr", "pkt", "can", "bot"])
     with col2:
         opening = st.number_input("📊 Opening Stock", min_value=0.0, value=0.0)
+
+    st.markdown("**🏭 Supplier Details**")
+    sup_col1, sup_col2 = st.columns(2)
+    with sup_col1:
+        supplier = st.text_input("🏪 Supplier Name")
+        contact = st.text_input("📞 Contact / Phone")
+    with sup_col2:
+        category = st.text_input("🗂️ Category", value="General")
+        lead_time = st.text_input("🕐 Lead Time (days)")
+
     if st.button("✅ Create Product", use_container_width=True, type="primary"):
         if name:
             new_row = {str(i): 0.0 for i in range(1, 32)}
             new_row.update({"Product Name": name, "UOM": uom, "Opening Stock": opening, "Total Received": 0.0, "Consumption": 0.0, "Closing Stock": opening, "Physical Count": None, "Variance": 0.0})
             st.session_state.inventory = pd.concat([st.session_state.inventory, pd.DataFrame([new_row])], ignore_index=True)
             save_to_sheet(st.session_state.inventory, "persistent_inventory")
+
+            # Also save supplier details to product_metadata
+            meta_df = load_from_sheet("product_metadata", ["Product Name", "UOM", "Supplier", "Contact", "Category", "Lead Time"])
+            new_meta = pd.DataFrame([{
+                "Product Name": name, "UOM": uom,
+                "Supplier": supplier, "Contact": contact,
+                "Category": category, "Lead Time": lead_time
+            }])
+            # Remove existing entry for this product if present, then append updated row
+            if not meta_df.empty and "Product Name" in meta_df.columns:
+                meta_df = meta_df[meta_df["Product Name"] != name]
+            save_to_sheet(pd.concat([meta_df, new_meta], ignore_index=True), "product_metadata")
             st.rerun()
 
 @st.dialog("📂 Archive Explorer")
