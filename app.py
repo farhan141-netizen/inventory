@@ -1,56 +1,38 @@
 import streamlit as st
+from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 import datetime
 import uuid
 import io
-import gspread
-from google.oauth2.service_account import Credentials
 
-# --- GOOGLE SHEETS CONNECTION ---
-@st.cache_resource
-def get_gsheet_client():
-    """Connect to Google Sheets using service account"""
-    try:
-        # Streamlit Secrets Management
-        credentials_dict = st.secrets["gcp_service_account"]
-        credentials = Credentials.from_service_account_info(
-            credentials_dict,
-            scopes=['https://www.googleapis.com/auth/spreadsheets',
-                   'https://www.googleapis.com/auth/drive']
-        )
-        return gspread.authorize(credentials)
-    except:
-        st.error("Google Sheets credentials not configured in secrets.toml")
-        return None
+# --- CLOUD CONNECTION ---
+conn = st.connection("gsheets", type=GSheetsConnection)
+
+def clean_dataframe(df):
+    """Ensures unique columns and removes ghost columns from Google Sheets"""
+    if df is None or df.empty: return df
+    df = df.loc[:, ~df.columns.str.contains('^Unnamed', na=False)]
+    df = df.dropna(axis=1, how='all')
+    df = df.loc[:, ~df.columns.duplicated()]
+    df.columns = [str(col).strip() for col in df.columns]
+    return df
 
 def load_from_sheet(worksheet_name, default_cols=None):
-    """Load data from Google Sheets"""
+    """Safely load and clean data from Google Sheets"""
     try:
-        client = get_gsheet_client()
-        if not client:
+        df = conn.read(worksheet=worksheet_name, ttl="2s")
+        df = clean_dataframe(df)
+        if df is None or df.empty:
             return pd.DataFrame(columns=default_cols) if default_cols else pd.DataFrame()
-        
-        # Open spreadsheet (replace with your spreadsheet name)
-        sheet = client.open("Inventory Master").worksheet(worksheet_name)
-        data = sheet.get_all_records()
-        df = pd.DataFrame(data)
-        return df if not df.empty else pd.DataFrame(columns=default_cols)
-    except:
+        return df
+    except Exception:
         return pd.DataFrame(columns=default_cols) if default_cols else pd.DataFrame()
 
 def save_to_sheet(df, worksheet_name):
-    """Save data to Google Sheets"""
-    try:
-        client = get_gsheet_client()
-        if not client:
-            return
-        
-        sheet = client.open("Inventory Master").worksheet(worksheet_name)
-        sheet.clear()
-        sheet.update([df.columns.values.tolist()] + df.values.tolist())
-        st.cache_data.clear()
-    except Exception as e:
-        st.warning(f"Save error: {e}")
+    """Save cleaned data to Google Sheets and clear cache"""
+    df = clean_dataframe(df)
+    conn.update(worksheet=worksheet_name, data=df)
+    st.cache_data.clear()
 
 # --- PAGE CONFIG ---
 st.set_page_config(page_title="Warehouse Pro Cloud v8.5", layout="wide", initial_sidebar_state="expanded")
@@ -58,10 +40,13 @@ st.set_page_config(page_title="Warehouse Pro Cloud v8.5", layout="wide", initial
 # --- COMPACT SOPHISTICATED CSS ---
 st.markdown("""
     <style>
+    /* Remove default Streamlit header space */
     .block-container { padding-top: 1rem; padding-bottom: 1rem; }
+    
     * { margin: 0; padding: 0; box-sizing: border-box; }
     .main { background: #0f1419; }
     
+    /* Compact Top Header Bar */
     .header-bar { 
         background: linear-gradient(90deg, #00d9ff 0%, #0095ff 100%); 
         border-radius: 10px; 
@@ -112,7 +97,10 @@ st.markdown("""
         display: block; 
     }
     .sidebar-title { color: #00d9ff; font-weight: 700; font-size: 1em; margin-bottom: 8px; }
+    
+    /* Compact buttons */
     .stButton>button { border-radius: 6px; font-size: 0.85em; padding: 2px 10px; transition: all 0.2s ease; }
+    
     hr { margin: 12px 0; opacity: 0.1; }
     </style>
     """, unsafe_allow_html=True)
@@ -187,32 +175,12 @@ def add_item_modal():
         uom = st.selectbox("📏 Unit", ["pcs", "kg", "box", "ltr", "pkt", "can", "bot"])
     with col2:
         opening = st.number_input("📊 Opening Stock", min_value=0.0, value=0.0)
-
-    st.markdown("**🏭 Supplier Details**")
-    sup_col1, sup_col2 = st.columns(2)
-    with sup_col1:
-        supplier = st.text_input("🏪 Supplier Name")
-        contact = st.text_input("📞 Contact / Phone")
-    with sup_col2:
-        category = st.text_input("🗂️ Category", value="General")
-        lead_time = st.text_input("🕐 Lead Time (days)")
-
     if st.button("✅ Create Product", use_container_width=True, type="primary"):
         if name:
             new_row = {str(i): 0.0 for i in range(1, 32)}
             new_row.update({"Product Name": name, "UOM": uom, "Opening Stock": opening, "Total Received": 0.0, "Consumption": 0.0, "Closing Stock": opening, "Physical Count": None, "Variance": 0.0})
             st.session_state.inventory = pd.concat([st.session_state.inventory, pd.DataFrame([new_row])], ignore_index=True)
             save_to_sheet(st.session_state.inventory, "persistent_inventory")
-
-            meta_df = load_from_sheet("product_metadata", ["Product Name", "UOM", "Supplier", "Contact", "Category", "Lead Time"])
-            new_meta = pd.DataFrame([{
-                "Product Name": name, "UOM": uom,
-                "Supplier": supplier, "Contact": contact,
-                "Category": category, "Lead Time": lead_time
-            }])
-            if not meta_df.empty and "Product Name" in meta_df.columns:
-                meta_df = meta_df[meta_df["Product Name"] != name]
-            save_to_sheet(pd.concat([meta_df, new_meta], ignore_index=True), "product_metadata")
             st.rerun()
 
 @st.dialog("📂 Archive Explorer")
@@ -253,6 +221,7 @@ if 'log_page' not in st.session_state:
     st.session_state.log_page = 0
 
 # --- MAIN UI ---
+# Replaced Header Card with Slim Header Bar
 st.markdown("""
     <div class="header-bar">
         <h1>📦 Warehouse Pro Cloud</h1>
@@ -263,6 +232,7 @@ st.markdown("""
 tab_ops, tab_req, tab_sup = st.tabs(["📊 Operations", "🚚 Requisitions", "📞 Suppliers"])
 
 with tab_ops:
+    # --- TOP ROW: RECEIPT (3) & QUICK ACTIONS (1) ---
     col_receipt_main, col_quick_main = st.columns([3, 1])
 
     with col_receipt_main:
@@ -290,6 +260,7 @@ with tab_ops:
         with ac3: 
             if st.button("🔒 Close", use_container_width=True, type="primary", help="Close Month"): close_month_modal()
 
+    # --- STATUS & LOGS (Side-by-side to save vertical space) ---
     st.markdown('<hr>', unsafe_allow_html=True)
     
     log_col, stat_col = st.columns([1.2, 2.8])
@@ -322,6 +293,7 @@ with tab_ops:
                             undo_entry(row['LogID'])
             st.markdown('</div>', unsafe_allow_html=True)
             
+            # Slimmer pagination
             p_prev, p_next = st.columns(2)
             with p_prev:
                 if st.button("◀", disabled=st.session_state.log_page == 0, use_container_width=True):
@@ -338,6 +310,7 @@ with tab_ops:
         for col in disp_cols: 
             if col not in df_status.columns: df_status[col] = 0.0
         
+        # Reduced height to fit on screen
         edited_df = st.data_editor(df_status[disp_cols], height=380, use_container_width=True, disabled=["Product Name", "UOM", "Total Received", "Closing Stock", "Variance"], hide_index=True)
         
         sc1, sc2, sc3 = st.columns(3)
@@ -359,6 +332,7 @@ with tab_ops:
                 df_status[full_cols].to_excel(writer, index=False, sheet_name='Details')
             st.download_button("📂 Details", data=buf_f.getvalue(), file_name="Full_Report.xlsx", use_container_width=True)
 
+    # --- ANALYTICS ---
     with st.expander("📈 Weekly Par Analysis", expanded=False):
         df_hist = load_from_sheet("monthly_history")
         if not df_hist.empty and not st.session_state.inventory.empty:
