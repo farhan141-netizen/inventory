@@ -150,6 +150,10 @@ st.markdown("""
     
     .section-title { color: #ff6b35; font-size: 1.2em; font-weight: 700; margin-bottom: 15px; }
     .stButton>button { border-radius: 6px; font-weight: 600; }
+    
+    .history-box { background: #1a2f3f; border-left: 4px solid #00d9ff; padding: 12px; margin-bottom: 10px; border-radius: 6px; }
+    .history-pending { border-left: 4px solid #ffaa00; background: #3a2f1a; }
+    .history-received { border-left: 4px solid #00ff00; background: #1a3a1a; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -169,7 +173,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- TABS ---
-tab_inv, tab_req, tab_pending, tab_received = st.tabs(["📋 Inventory Count", "🛒 Send Requisition", "🚚 Pending Orders", "📦 Received Items"])
+tab_inv, tab_req, tab_pending, tab_received, tab_history = st.tabs(["📋 Inventory Count", "🛒 Send Requisition", "🚚 Pending Orders", "📦 Received Items", "📊 History"])
 
 # ===================== INVENTORY TAB =====================
 with tab_inv:
@@ -297,8 +301,8 @@ with tab_req:
                 
             if st.button("🚀 Submit to Warehouse", type="primary", use_container_width=True, key="submit_req"):
                 try:
-                    # Load existing requisitions or create new dataframe
-                    all_reqs = load_from_sheet("restaurant_requisitions", ["ReqID", "Restaurant", "Item", "Qty", "Status", "DispatchQty", "Timestamp"])
+                    # Load existing requisitions
+                    all_reqs = load_from_sheet("restaurant_requisitions", ["ReqID", "Restaurant", "Item", "Qty", "Status", "DispatchQty", "Timestamp", "RequestedDate"])
                     
                     st.info(f"📤 Sending {len(st.session_state.cart)} items to warehouse...")
                     
@@ -311,7 +315,8 @@ with tab_req:
                             "Qty": float(item['qty']),
                             "Status": "Pending",
                             "DispatchQty": 0.0,
-                            "Timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                            "Timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                            "RequestedDate": datetime.datetime.now().strftime("%Y-%m-%d")
                         }])
                         all_reqs = pd.concat([all_reqs, new_req], ignore_index=True)
                     
@@ -352,10 +357,11 @@ with tab_pending:
             for pending_idx, (_, row) in enumerate(my_pending.iterrows()):
                 item_name = row["Item"]
                 req_qty = row["Qty"]
+                req_date = row.get("RequestedDate", "N/A")
                 
                 st.markdown(f"""
                 <div class="pending-box pending-pending">
-                    <b>🟡 {item_name}</b> | Requested: {req_qty}
+                    <b>🟡 {item_name}</b> | Requested: {req_qty} | Date: {req_date}
                 </div>
                 """, unsafe_allow_html=True)
                 st.write("⏳ Waiting for warehouse to process...")
@@ -377,12 +383,17 @@ with tab_received:
             st.metric("Total Dispatched", len(my_dispatched))
             for recv_idx, (original_idx, row) in enumerate(my_dispatched.iterrows()):
                 item_name = row["Item"]
-                dispatch_qty = row["DispatchQty"]
+                dispatch_qty = float(row["DispatchQty"])
+                req_qty = float(row["Qty"])
                 req_id = row["ReqID"]
+                remaining_qty = req_qty - dispatch_qty
+                
+                # Color based on whether all items are received
+                status_indicator = "🟢" if remaining_qty == 0 else "🟡"
                 
                 st.markdown(f"""
                 <div class="pending-box pending-dispatched">
-                    <b>🟢 {item_name}</b> | Dispatched: {dispatch_qty}
+                    <b>{status_indicator} {item_name}</b> | Requested: {req_qty} | Dispatched: {dispatch_qty} | Remaining: {remaining_qty}
                 </div>
                 """, unsafe_allow_html=True)
                 
@@ -394,19 +405,33 @@ with tab_received:
                             # Update requisition status
                             all_reqs.at[original_idx, "Status"] = "Completed"
                             
-                            # Add to restaurant inventory
+                            # Add to restaurant inventory - add to today's column (day 20, etc.)
+                            today = datetime.datetime.now().day
+                            day_col = str(today)
+                            
                             inv_idx = st.session_state.inventory[st.session_state.inventory["Product Name"] == item_name].index
                             if len(inv_idx) > 0:
                                 idx_val = inv_idx[0]
-                                current_closing = st.session_state.inventory.at[idx_val, "Closing Stock"]
-                                st.session_state.inventory.at[idx_val, "Closing Stock"] = float(current_closing) + float(dispatch_qty)
-                                st.session_state.inventory.at[idx_val, "Total Received"] = float(st.session_state.inventory.at[idx_val, "Total Received"]) + float(dispatch_qty)
+                                
+                                # Add to today's day column
+                                current_day_qty = st.session_state.inventory.at[idx_val, day_col]
+                                st.session_state.inventory.at[idx_val, day_col] = float(current_day_qty if pd.notna(current_day_qty) else 0) + dispatch_qty
+                                
+                                # Update Total Received and Closing Stock
+                                current_total = st.session_state.inventory.at[idx_val, "Total Received"]
+                                st.session_state.inventory.at[idx_val, "Total Received"] = float(current_total) + dispatch_qty
+                                
+                                # Recalculate closing stock
+                                opening = float(st.session_state.inventory.at[idx_val, "Opening Stock"])
+                                total_received = float(st.session_state.inventory.at[idx_val, "Total Received"])
+                                consumption = float(st.session_state.inventory.at[idx_val, "Consumption"])
+                                st.session_state.inventory.at[idx_val, "Closing Stock"] = opening + total_received - consumption
                             
                             # Save both
                             save_to_sheet(all_reqs, "restaurant_requisitions")
                             save_to_sheet(st.session_state.inventory, "rest_01_inventory")
                             
-                            st.success(f"✅ {item_name} received and added to inventory!")
+                            st.success(f"✅ {item_name} received and added to inventory on Day {today}!")
                             st.rerun()
                         except Exception as e:
                             st.error(f"❌ Error: {str(e)}")
@@ -426,6 +451,81 @@ with tab_received:
             st.info("📭 No dispatched items")
     else:
         st.info("📭 No orders found")
+
+# ===================== HISTORY TAB =====================
+with tab_history:
+    st.markdown('<div class="section-title">📊 Requisition History</div>', unsafe_allow_html=True)
+    
+    all_reqs = load_from_sheet("restaurant_requisitions")
+    
+    if not all_reqs.empty:
+        my_history = all_reqs[all_reqs["Restaurant"] == "Restaurant 01"]
+        
+        if not my_history.empty:
+            # Filters
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                filter_status = st.multiselect("Filter by Status", ["Pending", "Dispatched", "Completed"], default=["Pending", "Dispatched", "Completed"], key="hist_status")
+            
+            with col2:
+                filter_item = st.text_input("Filter by Item", placeholder="Type item name...", key="hist_item").lower()
+            
+            with col3:
+                sort_by = st.selectbox("Sort by", ["Latest First", "Oldest First", "Item Name"], key="hist_sort")
+            
+            # Apply filters
+            filtered_history = my_history[my_history["Status"].isin(filter_status)]
+            
+            if filter_item:
+                filtered_history = filtered_history[filtered_history["Item"].str.lower().str.contains(filter_item, na=False)]
+            
+            # Apply sorting
+            if sort_by == "Latest First":
+                filtered_history = filtered_history.sort_values("Timestamp", ascending=False)
+            elif sort_by == "Oldest First":
+                filtered_history = filtered_history.sort_values("Timestamp", ascending=True)
+            else:
+                filtered_history = filtered_history.sort_values("Item", ascending=True)
+            
+            if not filtered_history.empty:
+                st.metric("Total Records", len(filtered_history))
+                st.divider()
+                
+                # Display history
+                for hist_idx, (_, row) in enumerate(filtered_history.iterrows()):
+                    item_name = row["Item"]
+                    req_qty = float(row["Qty"])
+                    dispatch_qty = float(row["DispatchQty"])
+                    status = row["Status"]
+                    req_date = row.get("RequestedDate", "N/A")
+                    timestamp = row.get("Timestamp", "N/A")
+                    remaining = req_qty - dispatch_qty
+                    
+                    # Color based on status
+                    if status == "Pending":
+                        status_color = "🟡"
+                        box_class = "history-pending"
+                    elif status == "Dispatched":
+                        status_color = "🟠"
+                        box_class = "pending-dispatched"
+                    else:  # Completed
+                        status_color = "🟢"
+                        box_class = "history-received"
+                    
+                    st.markdown(f"""
+                    <div class="history-box {box_class}">
+                        <b>{status_color} {item_name}</b><br>
+                        Requested: {req_qty} | Dispatched: {dispatch_qty} | Remaining: {remaining}<br>
+                        <small>Requested: {req_date} | Updated: {timestamp}</small>
+                    </div>
+                    """, unsafe_allow_html=True)
+            else:
+                st.info("📭 No records match your filters")
+        else:
+            st.info("📭 No history found")
+    else:
+        st.info("📭 No orders yet")
 
 # ===================== SIDEBAR =====================
 with st.sidebar:
@@ -483,14 +583,15 @@ with st.sidebar:
     st.divider()
     st.subheader("📊 Quick Info")
     st.write("""
-    **Google Sheets Setup:**
-    1. Create a spreadsheet
-    2. Share with your service account email
-    3. Add "rest_01_inventory" sheet manually (optional - will be auto-created)
+    **Inventory Features:**
+    - Days 1-31 tracking
+    - Auto-calculation of totals
+    - Daily stock updates
     
-    **Sheets Used:**
-    - rest_01_inventory (auto-created)
-    - restaurant_requisitions (auto-created)
+    **Requisition Tracking:**
+    - Request & receive tracking
+    - Pending items history
+    - Complete requisition history
     """)
     
     st.divider()
