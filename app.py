@@ -25,30 +25,24 @@ def load_from_sheet(worksheet_name, default_cols=None):
         if df is None or df.empty:
             return pd.DataFrame(columns=default_cols) if default_cols else pd.DataFrame()
         return df
-    except Exception:
+    except Exception as e:
+        st.warning(f"Could not load {worksheet_name}: {str(e)}")
         return pd.DataFrame(columns=default_cols) if default_cols else pd.DataFrame()
 
 def save_to_sheet(df, worksheet_name):
     """Save cleaned data to Google Sheets and clear cache"""
+    if df is None or df.empty:
+        st.warning(f"No data to save to {worksheet_name}")
+        return False
+    
     df = clean_dataframe(df)
     try:
         conn.update(worksheet=worksheet_name, data=df)
+        st.cache_data.clear()
+        return True
     except Exception as e:
-        if "WorksheetNotFound" in str(e):
-            st.warning(f"⚠️ Creating new worksheet: '{worksheet_name}'")
-            # Create worksheet by adding empty data first
-            empty_df = pd.DataFrame({col: [] for col in df.columns})
-            try:
-                conn.create(worksheet=worksheet_name, data=empty_df)
-                st.info(f"✅ Worksheet '{worksheet_name}' created! Saving data...")
-                conn.update(worksheet=worksheet_name, data=df)
-            except Exception as create_error:
-                st.error(f"❌ Could not create worksheet: {create_error}")
-                return
-        else:
-            st.error(f"Error saving to sheet: {e}")
-            return
-    st.cache_data.clear()
+        st.error(f"Error saving to {worksheet_name}: {str(e)}")
+        return False
 
 # --- PAGE CONFIG ---
 st.set_page_config(page_title="Warehouse Pro Cloud v8.5", layout="wide", initial_sidebar_state="expanded")
@@ -187,76 +181,95 @@ def undo_entry(log_id):
 def add_category_modal():
     st.subheader("🗂️ Add New Category")
     
-    category_name = st.text_input("📌 Category Name", placeholder="e.g., Vegetables, Grains, Dairy")
-    description = st.text_area("📝 Description", placeholder="Brief description of this category", height=100)
+    category_name = st.text_input("📌 Category Name", placeholder="e.g., Vegetables, Grains, Dairy", key="cat_name_input")
+    description = st.text_area("📝 Description", placeholder="Brief description of this category", height=100, key="cat_desc_input")
     
-    if st.button("✅ Add Category", use_container_width=True, type="primary"):
-        if category_name:
-            # Load existing categories
-            categories_df = load_from_sheet("categories_master", ["Category Name", "Description"])
-            
-            # Check if category already exists
-            if not categories_df.empty and "Category Name" in categories_df.columns:
-                existing = categories_df[categories_df["Category Name"] == category_name]
-                if not existing.empty:
-                    st.error(f"❌ Category '{category_name}' already exists!")
-                    return
-            
-            # Add new category
-            new_category = pd.DataFrame([{
-                "Category Name": category_name,
-                "Description": description
-            }])
-            
-            categories_df = pd.concat([categories_df, new_category], ignore_index=True)
-            save_to_sheet(categories_df, "categories_master")
-            
+    if st.button("✅ Add Category", use_container_width=True, type="primary", key="add_cat_btn"):
+        if not category_name or not category_name.strip():
+            st.error("❌ Please fill in Category Name")
+            return
+        
+        category_name = category_name.strip()
+        
+        # Load existing categories - use product_metadata instead of separate sheet
+        meta_df = load_from_sheet("product_metadata")
+        
+        # Get unique categories from product_metadata
+        existing_categories = set()
+        if not meta_df.empty and "Category" in meta_df.columns:
+            existing_categories = set(meta_df["Category"].dropna().unique().tolist())
+        
+        # Check if category already exists
+        if category_name in existing_categories:
+            st.error(f"❌ Category '{category_name}' already exists!")
+            return
+        
+        # Add category by creating a record in product_metadata
+        new_category = pd.DataFrame([{
+            "Product Name": f"CATEGORY_{category_name}",
+            "UOM": "",
+            "Supplier": "",
+            "Contact": "",
+            "Email": "",
+            "Category": category_name,
+            "Lead Time": "",
+            "Price": 0,
+            "Currency": "",
+        }])
+        
+        meta_df = pd.concat([meta_df, new_category], ignore_index=True)
+        
+        if save_to_sheet(meta_df, "product_metadata"):
             st.success(f"✅ Category '{category_name}' added successfully!")
+            st.balloons()
             st.rerun()
         else:
-            st.error("❌ Please fill in Category Name")
+            st.error("❌ Failed to save category")
 
 @st.dialog("➕ Add New Product")
 def add_item_modal():
     st.subheader("📦 Product Details")
     col1, col2 = st.columns(2)
     with col1:
-        name = st.text_input("📦 Item Name", placeholder="e.g., Tomato, Rice")
-        uom = st.selectbox("📏 Unit of Measure", ["pcs", "kg", "box", "ltr", "pkt", "can", "bot", "bag", "carton"])
+        name = st.text_input("📦 Item Name", placeholder="e.g., Tomato, Rice", key="item_name_input")
+        uom = st.selectbox("📏 Unit of Measure", ["pcs", "kg", "box", "ltr", "pkt", "can", "bot", "bag", "carton"], key="uom_select")
     with col2:
-        opening = st.number_input("📊 Opening Stock", min_value=0.0, value=0.0)
+        opening = st.number_input("📊 Opening Stock", min_value=0.0, value=0.0, key="opening_input")
         
-        # Load categories
-        categories_df = load_from_sheet("categories_master")
+        # Load categories from product_metadata
+        meta_df = load_from_sheet("product_metadata")
         category_list = ["General"]
-        if not categories_df.empty and "Category Name" in categories_df.columns:
-            category_list = sorted(categories_df["Category Name"].dropna().tolist())
+        if not meta_df.empty and "Category" in meta_df.columns:
+            all_cats = meta_df["Category"].dropna().unique().tolist()
+            # Filter out system categories (those starting with CATEGORY_)
+            user_cats = [cat for cat in all_cats if not str(cat).startswith("CATEGORY_")]
+            if user_cats:
+                category_list = sorted(set(user_cats))
+            if "General" not in category_list:
+                category_list.insert(0, "General")
         
-        category = st.selectbox("🗂️ Category", category_list)
+        category = st.selectbox("🗂️ Category", category_list, key="cat_select")
 
     col3, col4 = st.columns(2)
     with col3:
-        price = st.number_input("💵 Unit Price", min_value=0.0, value=0.0, step=0.01)
+        price = st.number_input("💵 Unit Price", min_value=0.0, value=0.0, step=0.01, key="price_input")
     with col4:
-        currency = st.text_input("💱 Currency", value="USD", placeholder="e.g., USD, INR")
+        currency = st.text_input("💱 Currency", value="USD", placeholder="e.g., USD, INR", key="currency_input")
 
     st.divider()
     st.subheader("🏭 Supplier Details")
     
-    # Load existing suppliers - Check both column names
+    # Load existing suppliers
     meta_df = load_from_sheet("product_metadata")
     existing_suppliers = []
     supplier_column = None
     
-    if not meta_df.empty:
-        if "Supplier" in meta_df.columns:
-            supplier_column = "Supplier"
-            existing_suppliers = sorted(meta_df["Supplier"].dropna().unique().tolist())
-        elif "Supplier Name" in meta_df.columns:
-            supplier_column = "Supplier Name"
-            existing_suppliers = sorted(meta_df["Supplier Name"].dropna().unique().tolist())
+    if not meta_df.empty and "Supplier" in meta_df.columns:
+        all_suppliers = meta_df["Supplier"].dropna().unique().tolist()
+        # Filter out empty suppliers
+        existing_suppliers = sorted([s for s in all_suppliers if s and str(s).strip()])
     
-    supplier_choice = st.radio("Supplier Option:", ["Select Existing Supplier", "Create New Supplier"], horizontal=True)
+    supplier_choice = st.radio("Supplier Option:", ["Select Existing Supplier", "Create New Supplier"], horizontal=True, key="supp_choice")
     
     supplier = None
     contact = ""
@@ -265,16 +278,16 @@ def add_item_modal():
     
     if supplier_choice == "Select Existing Supplier":
         if existing_suppliers:
-            supplier = st.selectbox("🏪 Choose Supplier", existing_suppliers)
+            supplier = st.selectbox("🏪 Choose Supplier", existing_suppliers, key="supp_select")
             
             # FETCH ALL DETAILS FROM EXISTING SUPPLIER
             if supplier:
-                supplier_row = meta_df[meta_df[supplier_column] == supplier].iloc[0] if len(meta_df[meta_df[supplier_column] == supplier]) > 0 else None
-                if supplier_row is not None:
-                    # Get all available details from the supplier record
-                    contact = supplier_row.get("Contact", "")
-                    email = supplier_row.get("Email", "")
-                    lead_time = supplier_row.get("Lead Time", "")
+                supplier_rows = meta_df[meta_df["Supplier"] == supplier]
+                if not supplier_rows.empty:
+                    current_data = supplier_rows.iloc[0]
+                    contact = current_data.get("Contact", "")
+                    email = current_data.get("Email", "")
+                    lead_time = current_data.get("Lead Time", "")
                     
                     # Display the fetched details
                     st.info(f"✅ **Contact:** {contact}\n\n📧 **Email:** {email}\n\n⏱️ **Lead Time:** {lead_time}")
@@ -282,90 +295,104 @@ def add_item_modal():
             st.warning("⚠️ No suppliers found. Please create a new one.")
             supplier = None
     else:
-        supplier = st.text_input("🏪 New Supplier Name", placeholder="e.g., ABC Trading")
-        contact = st.text_input("📞 Contact / Phone", placeholder="e.g., +1-234-567-8900")
-        email = st.text_input("📧 Email", placeholder="e.g., supplier@abc.com")
-        lead_time = st.text_input("🕐 Lead Time (days)", placeholder="e.g., 2-3")
+        supplier = st.text_input("🏪 New Supplier Name", placeholder="e.g., ABC Trading", key="new_supp_input")
+        contact = st.text_input("📞 Contact / Phone", placeholder="e.g., +1-234-567-8900", key="contact_input")
+        email = st.text_input("📧 Email", placeholder="e.g., supplier@abc.com", key="email_input")
+        lead_time = st.text_input("🕐 Lead Time (days)", placeholder="e.g., 2-3", key="lead_time_input")
 
-    if st.button("✅ Create Product", use_container_width=True, type="primary"):
-        if name and supplier:
-            # Add to inventory
-            new_row = {str(i): 0.0 for i in range(1, 32)}
-            new_row.update({
-                "Product Name": name, 
-                "UOM": uom, 
-                "Opening Stock": opening, 
-                "Total Received": 0.0, 
-                "Consumption": 0.0, 
-                "Closing Stock": opening, 
-                "Physical Count": None, 
-                "Variance": 0.0,
-                "Category": category
-            })
-            st.session_state.inventory = pd.concat([st.session_state.inventory, pd.DataFrame([new_row])], ignore_index=True)
-            save_to_sheet(st.session_state.inventory, "persistent_inventory")
-            
-            # Add to supplier metadata - Save ALL supplier details including price
-            supplier_meta = pd.DataFrame([{
-                "Product Name": name,
-                "UOM": uom,
-                "Supplier": supplier,
-                "Contact": contact,
-                "Email": email,
-                "Category": category,
-                "Lead Time": lead_time,
-                "Price": price,
-                "Currency": currency
-            }])
-            meta_df = load_from_sheet("product_metadata")
-            meta_df = pd.concat([meta_df, supplier_meta], ignore_index=True)
-            save_to_sheet(meta_df, "product_metadata")
-            
-            st.success(f"✅ Product '{name}' created with supplier '{supplier}' at {currency} {price}!")
-            st.rerun()
-        else:
-            st.error("❌ Please fill in Product Name and Supplier")
+    if st.button("✅ Create Product", use_container_width=True, type="primary", key="create_prod_btn"):
+        if not name or not name.strip():
+            st.error("❌ Please fill in Product Name")
+            return
+        if not supplier or not supplier.strip():
+            st.error("❌ Please fill in Supplier Name")
+            return
+        
+        name = name.strip()
+        supplier = supplier.strip()
+        
+        # Add to inventory
+        new_row = {str(i): 0.0 for i in range(1, 32)}
+        new_row.update({
+            "Product Name": name, 
+            "UOM": uom, 
+            "Opening Stock": opening, 
+            "Total Received": 0.0, 
+            "Consumption": 0.0, 
+            "Closing Stock": opening, 
+            "Physical Count": None, 
+            "Variance": 0.0,
+            "Category": category
+        })
+        st.session_state.inventory = pd.concat([st.session_state.inventory, pd.DataFrame([new_row])], ignore_index=True)
+        save_to_sheet(st.session_state.inventory, "persistent_inventory")
+        
+        # Add to supplier metadata
+        supplier_meta = pd.DataFrame([{
+            "Product Name": name,
+            "UOM": uom,
+            "Supplier": supplier,
+            "Contact": contact,
+            "Email": email,
+            "Category": category,
+            "Lead Time": lead_time,
+            "Price": price,
+            "Currency": currency
+        }])
+        meta_df = load_from_sheet("product_metadata")
+        meta_df = pd.concat([meta_df, supplier_meta], ignore_index=True)
+        save_to_sheet(meta_df, "product_metadata")
+        
+        st.success(f"✅ Product '{name}' created with supplier '{supplier}' at {currency} {price}!")
+        st.balloons()
+        st.rerun()
 
 @st.dialog("➕ Add New Supplier")
 def add_supplier_modal():
     st.subheader("🏭 Add New Supplier")
     
-    supplier_name = st.text_input("🏪 Supplier Name", placeholder="e.g., ABC Trading")
-    contact = st.text_input("📞 Contact / Phone", placeholder="e.g., +1-234-567-8900")
-    email = st.text_input("📧 Email", placeholder="e.g., supplier@abc.com")
+    supplier_name = st.text_input("🏪 Supplier Name", placeholder="e.g., ABC Trading", key="add_supp_name")
+    contact = st.text_input("📞 Contact / Phone", placeholder="e.g., +1-234-567-8900", key="add_supp_contact")
+    email = st.text_input("📧 Email", placeholder="e.g., supplier@abc.com", key="add_supp_email")
     
-    if st.button("✅ Add Supplier", use_container_width=True, type="primary"):
-        if supplier_name:
-            # Load existing product metadata
-            meta_df = load_from_sheet("product_metadata")
-            
-            # Check if supplier already exists
-            if not meta_df.empty and "Supplier" in meta_df.columns:
-                existing = meta_df[meta_df["Supplier"] == supplier_name]
-                if not existing.empty:
-                    st.error(f"❌ Supplier '{supplier_name}' already exists!")
-                    return
-            
-            # Add supplier to a unique record (we'll create a placeholder product entry)
-            supplier_entry = pd.DataFrame([{
-                "Product Name": f"{supplier_name}_INFO",
-                "Supplier": supplier_name,
-                "Contact": contact,
-                "Email": email,
-                "Category": "Supplier_Master",
-                "UOM": "",
-                "Price": 0,
-                "Currency": "",
-                "Lead Time": ""
-            }])
-            
-            meta_df = pd.concat([meta_df, supplier_entry], ignore_index=True)
-            save_to_sheet(meta_df, "product_metadata")
-            
+    if st.button("✅ Add Supplier", use_container_width=True, type="primary", key="add_supp_btn"):
+        if not supplier_name or not supplier_name.strip():
+            st.error("❌ Please fill in Supplier Name")
+            return
+        
+        supplier_name = supplier_name.strip()
+        
+        # Load existing product metadata
+        meta_df = load_from_sheet("product_metadata")
+        
+        # Check if supplier already exists
+        if not meta_df.empty and "Supplier" in meta_df.columns:
+            existing = meta_df[meta_df["Supplier"] == supplier_name]
+            if not existing.empty:
+                st.error(f"❌ Supplier '{supplier_name}' already exists!")
+                return
+        
+        # Add supplier record
+        supplier_entry = pd.DataFrame([{
+            "Product Name": f"SUPPLIER_{supplier_name}",
+            "Supplier": supplier_name,
+            "Contact": contact,
+            "Email": email,
+            "Category": "Supplier_Master",
+            "UOM": "",
+            "Price": 0,
+            "Currency": "",
+            "Lead Time": ""
+        }])
+        
+        meta_df = pd.concat([meta_df, supplier_entry], ignore_index=True)
+        
+        if save_to_sheet(meta_df, "product_metadata"):
             st.success(f"✅ Supplier '{supplier_name}' added successfully!")
+            st.balloons()
             st.rerun()
         else:
-            st.error("❌ Please fill in Supplier Name")
+            st.error("❌ Failed to save supplier")
 
 @st.dialog("✏️ Update Supplier Details")
 def update_supplier_modal(supplier_name):
@@ -381,25 +408,28 @@ def update_supplier_modal(supplier_name):
     # Get first record for this supplier
     current_data = supplier_data.iloc[0]
     
-    contact = st.text_input("📞 Contact / Phone", value=current_data.get("Contact", ""), placeholder="e.g., +1-234-567-8900")
-    email = st.text_input("📧 Email", value=current_data.get("Email", ""), placeholder="e.g., supplier@abc.com")
-    lead_time = st.text_input("🕐 Lead Time (days)", value=current_data.get("Lead Time", ""), placeholder="e.g., 2-3")
+    contact = st.text_input("📞 Contact / Phone", value=str(current_data.get("Contact", "")), placeholder="e.g., +1-234-567-8900", key="upd_contact")
+    email = st.text_input("📧 Email", value=str(current_data.get("Email", "")), placeholder="e.g., supplier@abc.com", key="upd_email")
+    lead_time = st.text_input("🕐 Lead Time (days)", value=str(current_data.get("Lead Time", "")), placeholder="e.g., 2-3", key="upd_lead_time")
     
-    if st.button("✅ Update Supplier", use_container_width=True, type="primary"):
+    if st.button("✅ Update Supplier", use_container_width=True, type="primary", key="upd_supp_btn"):
         # Update all records for this supplier
         meta_df.loc[meta_df["Supplier"] == supplier_name, "Contact"] = contact
         meta_df.loc[meta_df["Supplier"] == supplier_name, "Email"] = email
         meta_df.loc[meta_df["Supplier"] == supplier_name, "Lead Time"] = lead_time
         
-        save_to_sheet(meta_df, "product_metadata")
-        st.success(f"✅ Supplier '{supplier_name}' updated successfully!")
-        st.rerun()
+        if save_to_sheet(meta_df, "product_metadata"):
+            st.success(f"✅ Supplier '{supplier_name}' updated successfully!")
+            st.balloons()
+            st.rerun()
+        else:
+            st.error("❌ Failed to update supplier")
 
 @st.dialog("📂 Archive Explorer")
 def archive_explorer_modal():
     hist_df = load_from_sheet("monthly_history")
     if not hist_df.empty and "Month_Period" in hist_df.columns:
-        selected_month = st.selectbox("📅 Select Month Period", options=sorted(hist_df["Month_Period"].unique().tolist(), reverse=True))
+        selected_month = st.selectbox("📅 Select Month Period", options=sorted(hist_df["Month_Period"].unique().tolist(), reverse=True), key="arch_month")
         month_data = hist_df[hist_df["Month_Period"] == selected_month].drop(columns=["Month_Period"])
         buf = io.BytesIO()
         with pd.ExcelWriter(buf, engine='xlsxwriter') as writer:
@@ -410,8 +440,8 @@ def archive_explorer_modal():
 @st.dialog("🔒 Close Month & Rollover")
 def close_month_modal():
     st.warning("⚠️ Physical Counts will become new Opening Stocks.")
-    month_label = st.text_input("📅 Month Label", value=datetime.datetime.now().strftime("%b %Y"))
-    if st.button("✅ Confirm Monthly Close", type="primary", use_container_width=True):
+    month_label = st.text_input("📅 Month Label", value=datetime.datetime.now().strftime("%b %Y"), key="month_label_input")
+    if st.button("✅ Confirm Monthly Close", type="primary", use_container_width=True, key="close_month_btn"):
         df = st.session_state.inventory.copy()
         hist_df = load_from_sheet("monthly_history")
         archive_df = df.copy(); archive_df["Month_Period"] = month_label
@@ -453,7 +483,7 @@ with tab_ops:
             with c2: day_in = st.number_input("Day", 1, 31, datetime.datetime.now().day, key="receipt_day", label_visibility="collapsed")
             with c3: qty_in = st.number_input("Qty", min_value=0.0, key="receipt_qty", label_visibility="collapsed")
             with c4:
-                if st.button("✅ Confirm", use_container_width=True, type="primary"):
+                if st.button("✅ Confirm", use_container_width=True, type="primary", key="receipt_confirm"):
                     if sel_item and qty_in > 0:
                         apply_transaction(sel_item, day_in, qty_in)
                         st.rerun()
@@ -506,10 +536,10 @@ with tab_ops:
             
             p_prev, p_next = st.columns(2)
             with p_prev:
-                if st.button("◀", disabled=st.session_state.log_page == 0, use_container_width=True):
+                if st.button("◀", disabled=st.session_state.log_page == 0, use_container_width=True, key="log_prev"):
                     st.session_state.log_page -= 1; st.rerun()
             with p_next:
-                if st.button("▶", disabled=st.session_state.log_page >= total_pages - 1, use_container_width=True):
+                if st.button("▶", disabled=st.session_state.log_page >= total_pages - 1, use_container_width=True, key="log_next"):
                     st.session_state.log_page += 1; st.rerun()
         else: st.caption("📭 No logs.")
 
@@ -524,7 +554,7 @@ with tab_ops:
         
         sc1, sc2, sc3 = st.columns(3)
         with sc1:
-            if st.button("💾 Update Stock", use_container_width=True, type="primary"):
+            if st.button("💾 Update Stock", use_container_width=True, type="primary", key="update_stock"):
                 df_status.update(edited_df)
                 for item in df_status["Product Name"]: df_status = recalculate_item(df_status, item)
                 save_to_sheet(df_status, "persistent_inventory"); st.rerun()
@@ -532,7 +562,7 @@ with tab_ops:
             buf = io.BytesIO()
             with pd.ExcelWriter(buf, engine='xlsxwriter') as writer:
                 df_status[disp_cols].to_excel(writer, index=False, sheet_name='Summary')
-            st.download_button("📥 Summary", data=buf.getvalue(), file_name="Summary.xlsx", use_container_width=True)
+            st.download_button("📥 Summary", data=buf.getvalue(), file_name="Summary.xlsx", use_container_width=True, key="dl_summary")
         with sc3:
             day_cols = [str(i) for i in range(1, 32)]
             existing_day_cols = [col for col in day_cols if col in df_status.columns]
@@ -543,7 +573,7 @@ with tab_ops:
                 buf_f = io.BytesIO()
                 with pd.ExcelWriter(buf_f, engine='xlsxwriter') as writer:
                     df_status[full_cols].to_excel(writer, index=False, sheet_name='Details')
-                st.download_button("📂 Details", data=buf_f.getvalue(), file_name="Full_Report.xlsx", use_container_width=True)
+                st.download_button("📂 Details", data=buf_f.getvalue(), file_name="Full_Report.xlsx", use_container_width=True, key="dl_details")
             else:
                 st.warning("⚠️ No data columns available for export")
 
@@ -563,10 +593,10 @@ with tab_req:
     st.markdown('<span class="section-title">🚚 Requisition System</span>', unsafe_allow_html=True)
     meta_df = load_from_sheet("product_metadata")
     r1, r2, r3 = st.columns([2, 1, 1])
-    with r1: r_item = st.selectbox("Product", options=[""] + sorted(meta_df["Product Name"].tolist()) if not meta_df.empty else [""], label_visibility="collapsed")
-    with r2: r_qty = st.number_input("Order Qty", min_value=0.0, label_visibility="collapsed")
+    with r1: r_item = st.selectbox("Product", options=[""] + sorted(meta_df["Product Name"].tolist()) if not meta_df.empty else [""], label_visibility="collapsed", key="req_item")
+    with r2: r_qty = st.number_input("Order Qty", min_value=0.0, label_visibility="collapsed", key="req_qty")
     with r3:
-        if st.button("➕ Add Order", use_container_width=True, type="primary"):
+        if st.button("➕ Add Order", use_container_width=True, type="primary", key="add_order"):
             if r_item and r_qty > 0:
                 orders = load_from_sheet("orders_db", ["Product Name", "Qty", "Supplier", "Status"])
                 sup = meta_df[meta_df["Product Name"] == r_item]["Supplier"].values[0] if r_item in meta_df["Product Name"].values else "Unknown"
@@ -580,23 +610,32 @@ with tab_sup:
     # Top action buttons
     col_btn1, col_btn2, col_btn3 = st.columns([1, 1, 3])
     with col_btn1:
-        if st.button("➕ Add Supplier", use_container_width=True):
+        if st.button("➕ Add Supplier", use_container_width=True, key="btn_add_supp"):
             add_supplier_modal()
     
     with col_btn2:
         # Dropdown to select supplier for update
         meta_df = load_from_sheet("product_metadata")
         if not meta_df.empty and "Supplier" in meta_df.columns:
-            suppliers_list = sorted(meta_df["Supplier"].dropna().unique().tolist())
-            selected_supplier = st.selectbox("Select Supplier to Update", suppliers_list, label_visibility="collapsed")
-            if st.button("✏️ Update Details", use_container_width=True):
-                update_supplier_modal(selected_supplier)
+            all_suppliers = meta_df["Supplier"].dropna().unique().tolist()
+            suppliers_list = sorted([s for s in all_suppliers if s and str(s).strip()])
+            if suppliers_list:
+                selected_supplier = st.selectbox("Select Supplier to Update", suppliers_list, label_visibility="collapsed", key="upd_supp_select")
+                if st.button("✏️ Update Details", use_container_width=True, key="btn_upd_supp"):
+                    update_supplier_modal(selected_supplier)
     
     st.divider()
     
     meta = load_from_sheet("product_metadata")
-    search = st.text_input("🔍 Filter...", placeholder="Item or Supplier...")
-    filtered = meta if not search else meta[meta["Product Name"].str.lower().str.contains(search.lower(), na=False) | meta["Supplier"].str.lower().str.contains(search.lower(), na=False)]
+    search = st.text_input("🔍 Filter...", placeholder="Item or Supplier...", key="sup_search")
+    
+    # Filter out system categories and suppliers
+    if not meta.empty:
+        filtered = meta[~meta["Product Name"].str.startswith("CATEGORY_", na=False) & ~meta["Product Name"].str.startswith("SUPPLIER_", na=False)]
+        if search:
+            filtered = filtered[filtered["Product Name"].str.lower().str.contains(search.lower(), na=False) | filtered["Supplier"].str.lower().str.contains(search.lower(), na=False)]
+    else:
+        filtered = meta
     
     # Ensure Price and Currency columns are visible
     if not filtered.empty:
@@ -606,15 +645,15 @@ with tab_sup:
     else:
         filtered_display = filtered
     
-    edited_meta = st.data_editor(filtered_display, num_rows="dynamic", use_container_width=True, hide_index=True, height=500)
-    if st.button("💾 Save Directory", use_container_width=True, type="primary"):
+    edited_meta = st.data_editor(filtered_display, num_rows="dynamic", use_container_width=True, hide_index=True, height=500, key="sup_editor")
+    if st.button("💾 Save Directory", use_container_width=True, type="primary", key="save_sup_dir"):
         save_to_sheet(edited_meta, "product_metadata"); st.rerun()
 
 with st.sidebar:
     st.markdown('<h2 class="sidebar-title">☁️ Data Management</h2>', unsafe_allow_html=True)
     
     with st.expander("📦 Inventory Master Sync"):
-        inv_file = st.file_uploader("Upload XLSX/CSV", type=["csv", "xlsx"])
+        inv_file = st.file_uploader("Upload XLSX/CSV", type=["csv", "xlsx"], key="inv_upload")
         if inv_file:
             try:
                 raw = pd.read_excel(inv_file, skiprows=4, header=None) if inv_file.name.endswith('.xlsx') else pd.read_csv(inv_file, skiprows=4, header=None)
@@ -622,18 +661,18 @@ with st.sidebar:
                 new_inv["Product Name"] = raw[1]; new_inv["UOM"] = raw[2]; new_inv["Opening Stock"] = pd.to_numeric(raw[3], errors='coerce').fillna(0.0)
                 for i in range(1, 32): new_inv[str(i)] = 0.0
                 new_inv["Total Received"] = 0.0; new_inv["Consumption"] = 0.0; new_inv["Closing Stock"] = new_inv["Opening Stock"]
-                if st.button("🚀 Push Inventory", type="primary", use_container_width=True):
+                if st.button("🚀 Push Inventory", type="primary", use_container_width=True, key="push_inv"):
                     save_to_sheet(new_inv.dropna(subset=["Product Name"]), "persistent_inventory"); st.rerun()
             except Exception as e: st.error(f"Error: {e}")
 
     with st.expander("📞 Supplier Metadata Sync"):
-        meta_file = st.file_uploader("Upload Product Data", type=["csv", "xlsx"])
+        meta_file = st.file_uploader("Upload Product Data", type=["csv", "xlsx"], key="meta_upload")
         if meta_file:
             try:
                 new_meta = pd.read_excel(meta_file) if meta_file.name.endswith('.xlsx') else pd.read_csv(meta_file)
-                if st.button("🚀 Push Metadata", type="primary", use_container_width=True):
+                if st.button("🚀 Push Metadata", type="primary", use_container_width=True, key="push_meta"):
                     save_to_sheet(new_meta, "product_metadata"); st.rerun()
             except Exception as e: st.error(f"Error: {e}")
 
     st.markdown('<hr>', unsafe_allow_html=True)
-    if st.button("🗑️ Clear Cache", use_container_width=True): st.cache_data.clear(); st.rerun()
+    if st.button("🗑️ Clear Cache", use_container_width=True, key="clear_cache"): st.cache_data.clear(); st.rerun()
