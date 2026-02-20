@@ -18,17 +18,23 @@ def load_from_sheet(worksheet_name, default_cols=None):
         if df is None or df.empty:
             return pd.DataFrame(columns=default_cols) if default_cols else pd.DataFrame()
         return df
-    except:
+    except Exception as e:
+        st.error(f"Error loading {worksheet_name}: {str(e)}")
         return pd.DataFrame(columns=default_cols) if default_cols else pd.DataFrame()
 
 def save_to_sheet(df, worksheet_name):
-    """Save to Google Sheets"""
+    """Save to Google Sheets with error handling"""
     try:
+        if df is None or df.empty:
+            st.error(f"Cannot save empty dataframe to {worksheet_name}")
+            return False
+        
         conn = get_connection()
         conn.update(worksheet=worksheet_name, data=df)
         st.cache_data.clear()
         return True
-    except:
+    except Exception as e:
+        st.error(f"❌ Error saving to {worksheet_name}: {str(e)}")
         return False
 
 def create_standard_inventory(df):
@@ -174,7 +180,7 @@ with tab_inv:
         if sel_cat != "All":
             display_df = display_df[display_df["Category"] == sel_cat]
         
-        # Display columns: Product, Category, UOM, Opening, Days 1-31, Total Received, Consumption, Closing, Physical Count, Variance
+        # Display columns
         day_cols = [str(i) for i in range(1, 32)]
         display_cols = ["Product Name", "Category", "UOM", "Opening Stock"] + day_cols + ["Total Received", "Consumption", "Closing Stock", "Physical Count", "Variance"]
         display_cols_filtered = [c for c in display_cols if c in display_df.columns]
@@ -194,9 +200,9 @@ with tab_inv:
             if st.button("💾 Save Daily Count", type="primary", use_container_width=True, key="save_inv"):
                 st.session_state.inventory.update(edited_inv)
                 st.session_state.inventory = recalculate_inventory(st.session_state.inventory)
-                save_to_sheet(st.session_state.inventory, "rest_01_inventory")
-                st.success("✅ Inventory saved!")
-                st.rerun()
+                if save_to_sheet(st.session_state.inventory, "rest_01_inventory"):
+                    st.success("✅ Inventory saved!")
+                    st.rerun()
         
         with col2:
             buf = io.BytesIO()
@@ -255,6 +261,7 @@ with tab_req:
         if st.session_state.cart:
             cart_total = sum([item['qty'] for item in st.session_state.cart])
             st.metric("Total Items", len(st.session_state.cart))
+            st.metric("Total Qty", f"{cart_total}")
             
             for i, item in enumerate(st.session_state.cart):
                 st.markdown(f"""
@@ -274,24 +281,38 @@ with tab_req:
                 st.rerun()
                 
             if st.button("🚀 Submit to Warehouse", type="primary", use_container_width=True, key="submit_req"):
-                all_reqs = load_from_sheet("restaurant_requisitions", ["ReqID", "Restaurant", "Item", "Qty", "Status", "DispatchQty", "Timestamp"])
+                try:
+                    # Load existing requisitions
+                    all_reqs = load_from_sheet("restaurant_requisitions", ["ReqID", "Restaurant", "Item", "Qty", "Status", "DispatchQty", "Timestamp"])
+                    
+                    st.info(f"📤 Sending {len(st.session_state.cart)} items to warehouse...")
+                    
+                    # Add each item from cart
+                    for item in st.session_state.cart:
+                        new_req = pd.DataFrame([{
+                            "ReqID": str(uuid.uuid4())[:8],
+                            "Restaurant": "Restaurant 01",
+                            "Item": item['name'],
+                            "Qty": item['qty'],
+                            "Status": "Pending",
+                            "DispatchQty": 0,
+                            "Timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        }])
+                        all_reqs = pd.concat([all_reqs, new_req], ignore_index=True)
+                    
+                    st.write(f"✅ Total records to save: {len(all_reqs)}")
+                    
+                    # Save to sheet
+                    if save_to_sheet(all_reqs, "restaurant_requisitions"):
+                        st.success("✅ Requisition sent to Warehouse successfully!")
+                        st.balloons()
+                        st.session_state.cart = []
+                        st.rerun()
+                    else:
+                        st.error("❌ Failed to send requisition. Please try again.")
                 
-                for item in st.session_state.cart:
-                    new_req = pd.DataFrame([{
-                        "ReqID": str(uuid.uuid4())[:8],
-                        "Restaurant": "Restaurant 01",
-                        "Item": item['name'],
-                        "Qty": item['qty'],
-                        "Status": "Pending",
-                        "DispatchQty": 0,
-                        "Timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    }])
-                    all_reqs = pd.concat([all_reqs, new_req], ignore_index=True)
-                
-                if save_to_sheet(all_reqs, "restaurant_requisitions"):
-                    st.session_state.cart = []
-                    st.success("✅ Requisition sent to Warehouse!")
-                    st.rerun()
+                except Exception as e:
+                    st.error(f"❌ Error: {str(e)}")
         else:
             st.write("🛒 Cart is empty")
         
@@ -306,6 +327,7 @@ with tab_pending:
         my_pending = all_reqs[(all_reqs["Restaurant"] == "Restaurant 01") & (all_reqs["Status"] == "Pending")]
         
         if not my_pending.empty:
+            st.metric("Total Pending", len(my_pending))
             for pending_idx, (_, row) in enumerate(my_pending.iterrows()):
                 item_name = row["Item"]
                 req_qty = row["Qty"]
@@ -331,6 +353,7 @@ with tab_received:
         my_dispatched = all_reqs[(all_reqs["Restaurant"] == "Restaurant 01") & (all_reqs["Status"] == "Dispatched")]
         
         if not my_dispatched.empty:
+            st.metric("Total Dispatched", len(my_dispatched))
             for recv_idx, (original_idx, row) in enumerate(my_dispatched.iterrows()):
                 item_name = row["Item"]
                 dispatch_qty = row["DispatchQty"]
@@ -346,28 +369,36 @@ with tab_received:
                 
                 with c1:
                     if st.button(f"✅ Accept", key=f"accept_{recv_idx}_{req_id}", use_container_width=True):
-                        # Update requisition status
-                        all_reqs.at[original_idx, "Status"] = "Completed"
-                        save_to_sheet(all_reqs, "restaurant_requisitions")
-                        
-                        # Add to restaurant inventory
-                        inv_idx = st.session_state.inventory[st.session_state.inventory["Product Name"] == item_name].index
-                        if len(inv_idx) > 0:
-                            idx_val = inv_idx[0]
-                            current_closing = st.session_state.inventory.at[idx_val, "Closing Stock"]
-                            st.session_state.inventory.at[idx_val, "Closing Stock"] = float(current_closing) + float(dispatch_qty)
-                            st.session_state.inventory.at[idx_val, "Total Received"] = float(st.session_state.inventory.at[idx_val, "Total Received"]) + float(dispatch_qty)
+                        try:
+                            # Update requisition status
+                            all_reqs.at[original_idx, "Status"] = "Completed"
+                            
+                            # Add to restaurant inventory
+                            inv_idx = st.session_state.inventory[st.session_state.inventory["Product Name"] == item_name].index
+                            if len(inv_idx) > 0:
+                                idx_val = inv_idx[0]
+                                current_closing = st.session_state.inventory.at[idx_val, "Closing Stock"]
+                                st.session_state.inventory.at[idx_val, "Closing Stock"] = float(current_closing) + float(dispatch_qty)
+                                st.session_state.inventory.at[idx_val, "Total Received"] = float(st.session_state.inventory.at[idx_val, "Total Received"]) + float(dispatch_qty)
+                            
+                            # Save both
+                            save_to_sheet(all_reqs, "restaurant_requisitions")
                             save_to_sheet(st.session_state.inventory, "rest_01_inventory")
-                        
-                        st.success(f"✅ {item_name} received and added to inventory!")
-                        st.rerun()
+                            
+                            st.success(f"✅ {item_name} received and added to inventory!")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"❌ Error: {str(e)}")
                 
                 with c2:
                     if st.button(f"❌ Reject", key=f"reject_{recv_idx}_{req_id}", use_container_width=True):
-                        all_reqs.at[original_idx, "Status"] = "Pending"
-                        save_to_sheet(all_reqs, "restaurant_requisitions")
-                        st.warning(f"❌ Returned to pending")
-                        st.rerun()
+                        try:
+                            all_reqs.at[original_idx, "Status"] = "Pending"
+                            save_to_sheet(all_reqs, "restaurant_requisitions")
+                            st.warning(f"❌ Returned to pending")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"❌ Error: {str(e)}")
                 
                 st.divider()
         else:
@@ -416,13 +447,14 @@ with st.sidebar:
             st.dataframe(standard_df[preview_cols_filtered].head(), use_container_width=True)
 
             if st.button("🚀 Create Inventory", type="primary", use_container_width=True, key="push_inv_rest"):
-                if save_to_sheet(standard_df, "rest_01_inventory"):
-                    st.session_state.inventory = standard_df
-                    st.success(f"✅ Inventory created with {len(standard_df)} items!")
-                    st.balloons()
-                    st.rerun()
-                else:
-                    st.error("❌ Failed to save inventory")
+                try:
+                    if save_to_sheet(standard_df, "rest_01_inventory"):
+                        st.session_state.inventory = standard_df
+                        st.success(f"✅ Inventory created with {len(standard_df)} items!")
+                        st.balloons()
+                        st.rerun()
+                except Exception as e:
+                    st.error(f"❌ Error saving inventory: {str(e)}")
 
         except Exception as e:
             st.error(f"❌ Error processing file: {e}")
