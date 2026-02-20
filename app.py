@@ -3,32 +3,54 @@ import pandas as pd
 import datetime
 import uuid
 import io
-from streamlit_gsheets import GSheetsConnection
+import gspread
+from google.oauth2.service_account import Credentials
 
-# --- CONNECTION ---
+# --- GOOGLE SHEETS CONNECTION ---
 @st.cache_resource
-def get_connection():
-    return st.connection("gsheets", type=GSheetsConnection)
+def get_gsheet_client():
+    """Connect to Google Sheets using service account"""
+    try:
+        # Streamlit Secrets Management
+        credentials_dict = st.secrets["gcp_service_account"]
+        credentials = Credentials.from_service_account_info(
+            credentials_dict,
+            scopes=['https://www.googleapis.com/auth/spreadsheets',
+                   'https://www.googleapis.com/auth/drive']
+        )
+        return gspread.authorize(credentials)
+    except:
+        st.error("Google Sheets credentials not configured in secrets.toml")
+        return None
 
 def load_from_sheet(worksheet_name, default_cols=None):
-    """Load from Google Sheets"""
+    """Load data from Google Sheets"""
     try:
-        conn = get_connection()
-        df = conn.read(worksheet=worksheet_name, ttl="2s")
-        if df is None or df.empty:
+        client = get_gsheet_client()
+        if not client:
             return pd.DataFrame(columns=default_cols) if default_cols else pd.DataFrame()
-        return df
+        
+        # Open spreadsheet (replace with your spreadsheet name)
+        sheet = client.open("Inventory Master").worksheet(worksheet_name)
+        data = sheet.get_all_records()
+        df = pd.DataFrame(data)
+        return df if not df.empty else pd.DataFrame(columns=default_cols)
     except:
         return pd.DataFrame(columns=default_cols) if default_cols else pd.DataFrame()
 
 def save_to_sheet(df, worksheet_name):
-    """Save to Google Sheets"""
+    """Save data to Google Sheets"""
     try:
-        conn = get_connection()
-        conn.update(worksheet=worksheet_name, data=df)
+        client = get_gsheet_client()
+        if not client:
+            return
+        
+        sheet = client.open("Inventory Master").worksheet(worksheet_name)
+        sheet.clear()
+        sheet.update([df.columns.values.tolist()] + df.values.tolist())
         st.cache_data.clear()
-    except:
-        pass
+    except Exception as e:
+        st.warning(f"Save error: {e}")
 
 # --- PAGE CONFIG ---
 st.set_page_config(page_title="Warehouse Pro Cloud v8.5", layout="wide", initial_sidebar_state="expanded")
@@ -36,13 +58,10 @@ st.set_page_config(page_title="Warehouse Pro Cloud v8.5", layout="wide", initial
 # --- COMPACT SOPHISTICATED CSS ---
 st.markdown("""
     <style>
-    /* Remove default Streamlit header space */
     .block-container { padding-top: 1rem; padding-bottom: 1rem; }
-    
     * { margin: 0; padding: 0; box-sizing: border-box; }
     .main { background: #0f1419; }
     
-    /* Compact Top Header Bar */
     .header-bar { 
         background: linear-gradient(90deg, #00d9ff 0%, #0095ff 100%); 
         border-radius: 10px; 
@@ -93,10 +112,7 @@ st.markdown("""
         display: block; 
     }
     .sidebar-title { color: #00d9ff; font-weight: 700; font-size: 1em; margin-bottom: 8px; }
-    
-    /* Compact buttons */
     .stButton>button { border-radius: 6px; font-size: 0.85em; padding: 2px 10px; transition: all 0.2s ease; }
-    
     hr { margin: 12px 0; opacity: 0.1; }
     </style>
     """, unsafe_allow_html=True)
@@ -188,7 +204,6 @@ def add_item_modal():
             st.session_state.inventory = pd.concat([st.session_state.inventory, pd.DataFrame([new_row])], ignore_index=True)
             save_to_sheet(st.session_state.inventory, "persistent_inventory")
 
-            # Also save supplier details to product_metadata
             meta_df = load_from_sheet("product_metadata", ["Product Name", "UOM", "Supplier", "Contact", "Category", "Lead Time"])
             new_meta = pd.DataFrame([{
                 "Product Name": name, "UOM": uom,
