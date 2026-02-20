@@ -175,12 +175,16 @@ def add_item_modal():
         uom = st.selectbox("📏 Unit", ["pcs", "kg", "box", "ltr", "pkt", "can", "bot"])
     with col2:
         opening = st.number_input("📊 Opening Stock", min_value=0.0, value=0.0)
+        supplier = st.text_input("🏭 Supplier")
     if st.button("✅ Create Product", use_container_width=True, type="primary"):
         if name:
             new_row = {str(i): 0.0 for i in range(1, 32)}
             new_row.update({"Product Name": name, "UOM": uom, "Opening Stock": opening, "Total Received": 0.0, "Consumption": 0.0, "Closing Stock": opening, "Physical Count": None, "Variance": 0.0})
             st.session_state.inventory = pd.concat([st.session_state.inventory, pd.DataFrame([new_row])], ignore_index=True)
             save_to_sheet(st.session_state.inventory, "persistent_inventory")
+            meta_df = load_from_sheet("product_metadata", ["Product Name", "Supplier"])
+            new_meta_row = pd.DataFrame([{"Product Name": name, "Supplier": supplier}])
+            save_to_sheet(pd.concat([meta_df, new_meta_row], ignore_index=True), "product_metadata")
             st.rerun()
 
 @st.dialog("📂 Archive Explorer")
