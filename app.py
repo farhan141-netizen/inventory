@@ -31,7 +31,23 @@ def load_from_sheet(worksheet_name, default_cols=None):
 def save_to_sheet(df, worksheet_name):
     """Save cleaned data to Google Sheets and clear cache"""
     df = clean_dataframe(df)
-    conn.update(worksheet=worksheet_name, data=df)
+    try:
+        conn.update(worksheet=worksheet_name, data=df)
+    except Exception as e:
+        if "WorksheetNotFound" in str(e):
+            st.warning(f"⚠️ Creating new worksheet: '{worksheet_name}'")
+            # Create worksheet by adding empty data first
+            empty_df = pd.DataFrame({col: [] for col in df.columns})
+            try:
+                conn.create(worksheet=worksheet_name, data=empty_df)
+                st.info(f"✅ Worksheet '{worksheet_name}' created! Saving data...")
+                conn.update(worksheet=worksheet_name, data=df)
+            except Exception as create_error:
+                st.error(f"❌ Could not create worksheet: {create_error}")
+                return
+        else:
+            st.error(f"Error saving to sheet: {e}")
+            return
     st.cache_data.clear()
 
 # --- PAGE CONFIG ---
