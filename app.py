@@ -47,14 +47,45 @@ st.markdown("""
     .stTabs [aria-selected="true"] { color: #00d9ff; background: linear-gradient(90deg, #00d9ff20 0%, #0095ff20 100%); border: 1px solid #00d9ff; }
     .header-card { background: linear-gradient(135deg, #00d9ff 0%, #0095ff 100%); border-radius: 16px; padding: 32px; color: white; margin-bottom: 24px; box-shadow: 0 8px 32px rgba(0, 217, 255, 0.3); text-align: center; }
     .header-card h1 { font-size: 2.5em; margin-bottom: 8px; font-weight: 800; letter-spacing: -1px; }
-    .log-row { display: flex; justify-content: space-between; align-items: center; background: linear-gradient(90deg, #1a1f2e 0%, #252d3d 100%); padding: 14px 16px; border-radius: 10px; margin-bottom: 10px; border: 1px solid #2d3748; border-left: 4px solid #00d9ff; transition: all 0.3s ease; }
-    .log-row-undone { border-left: 4px solid #ff6b6b; opacity: 0.6; background: linear-gradient(90deg, #1a1f2e80 0%, #252d3d80 100%); }
-    .log-info { font-size: 0.9rem; color: #e0e7ff; font-weight: 500; }
-    .log-time { font-size: 0.8rem; color: #8892b0; margin-left: 12px; display: inline-block; }
+    
+    /* Compact Scrollable Log Styling */
+    .log-container {
+        max-height: 480px;
+        overflow-y: auto;
+        overflow-x: auto;
+        padding-right: 5px;
+        margin-bottom: 10px;
+        border: 1px solid #2d3748;
+        border-radius: 10px;
+        background: rgba(26, 31, 46, 0.4);
+    }
+    
+    .log-row { 
+        display: flex; 
+        justify-content: space-between; 
+        align-items: center; 
+        background: linear-gradient(90deg, #1a1f2e 0%, #252d3d 100%); 
+        padding: 8px 12px; 
+        border-radius: 8px; 
+        margin-bottom: 6px; 
+        border: 1px solid #2d3748; 
+        border-left: 3px solid #00d9ff; 
+        min-width: 300px;
+    }
+    .log-row-undone { border-left: 3px solid #ff6b6b; opacity: 0.6; background: linear-gradient(90deg, #1a1f2e80 0%, #252d3d80 100%); }
+    .log-info { font-size: 0.82rem; color: #e0e7ff; line-height: 1.2; }
+    .log-time { font-size: 0.75rem; color: #8892b0; margin-left: 8px; font-style: italic; }
+    
     .section-title { color: #00d9ff; font-size: 1.4em; font-weight: 700; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 2px solid #00d9ff; display: inline-block; }
     .sidebar-title { color: #00d9ff; font-weight: 700; font-size: 1.2em; margin-bottom: 12px; }
     .stButton>button { border-radius: 10px; font-weight: 600; padding: 8px 20px; transition: all 0.3s ease; }
     hr { border: none; height: 1px; background: linear-gradient(90deg, transparent, #2d3748, transparent); margin: 20px 0; }
+    
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #1a1f2e; }
+    ::-webkit-scrollbar-thumb { background: #2d3748; border-radius: 10px; }
+    ::-webkit-scrollbar-thumb:hover { background: #00d9ff; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -170,6 +201,9 @@ def close_month_modal():
 if 'inventory' not in st.session_state:
     st.session_state.inventory = load_from_sheet("persistent_inventory")
 
+if 'log_page' not in st.session_state:
+    st.session_state.log_page = 0
+
 # --- MAIN UI ---
 st.markdown('<div class="header-card"><h1>📦 Warehouse Pro Management</h1><p>v8.5 • Cloud-Powered Inventory System</p></div>', unsafe_allow_html=True)
 
@@ -224,18 +258,47 @@ with tab_ops:
         st.markdown('<h2 class="section-title">📜 Recent Activity</h2>', unsafe_allow_html=True)
         logs = load_from_sheet("activity_logs")
         if not logs.empty:
-            for _, row in logs.iloc[::-1].head(10).iterrows():
+            # Reverse for latest first
+            full_logs = logs.iloc[::-1]
+            
+            # Pagination logic
+            items_per_page = 10
+            total_pages = (len(full_logs) - 1) // items_per_page + 1
+            
+            start_idx = st.session_state.log_page * items_per_page
+            end_idx = start_idx + items_per_page
+            current_logs = full_logs.iloc[start_idx:end_idx]
+            
+            # Scrollable Container
+            st.markdown('<div class="log-container">', unsafe_allow_html=True)
+            for _, row in current_logs.iterrows():
                 is_undone = row['Status'] == "Undone"
                 row_class = "log-row-undone" if is_undone else ""
-                col_txt, col_undo = st.columns([4, 1.5])
-                with col_txt:
-                    # Constructing HTML in a way that avoids syntax highlighting color bleed
+                
+                col_row = st.container()
+                c_txt, c_undo = col_row.columns([3.5, 1.2])
+                with c_txt:
                     h_item, h_qty, h_day, h_time = row['Item'], row['Qty'], row['Day'], row['Timestamp']
                     l_html = f'<div class="log-row {row_class}"><div class="log-info"><b>📦 {h_item}</b><br>Qty: {h_qty} | Day: {h_day} <span class="log-time">[{h_time}]</span></div></div>'
                     st.markdown(l_html, unsafe_allow_html=True)
-                with col_undo:
-                    if not is_undone and st.button("↩️ Undo", key=f"rev_{row['LogID']}", use_container_width=True):
-                        undo_entry(row['LogID'])
+                with c_undo:
+                    if not is_undone:
+                        if st.button("↩️", key=f"rev_{row['LogID']}", use_container_width=True, help="Undo this entry"):
+                            undo_entry(row['LogID'])
+            st.markdown('</div>', unsafe_allow_html=True)
+            
+            # Pagination Controls
+            p_prev, p_info, p_next = st.columns([1, 2, 1])
+            with p_prev:
+                if st.button("◀", disabled=st.session_state.log_page == 0, use_container_width=True):
+                    st.session_state.log_page -= 1
+                    st.rerun()
+            with p_info:
+                st.markdown(f"<p style='text-align:center; color:#8892b0; font-size:0.85em; margin-top:5px;'>Page {st.session_state.log_page + 1} of {total_pages}</p>", unsafe_allow_html=True)
+            with p_next:
+                if st.button("▶", disabled=st.session_state.log_page >= total_pages - 1, use_container_width=True):
+                    st.session_state.log_page += 1
+                    st.rerun()
         else: st.caption("📭 No activity logs.")
 
     with stat_col:
@@ -244,7 +307,7 @@ with tab_ops:
         disp_cols = ["Product Name", "UOM", "Opening Stock", "Total Received", "Closing Stock", "Consumption", "Physical Count", "Variance"]
         for col in disp_cols: 
             if col not in df_status.columns: df_status[col] = 0.0
-        edited_df = st.data_editor(df_status[disp_cols], use_container_width=True, disabled=["Product Name", "UOM", "Total Received", "Closing Stock", "Variance"], hide_index=True)
+        edited_df = st.data_editor(df_status[disp_cols], height=480, use_container_width=True, disabled=["Product Name", "UOM", "Total Received", "Closing Stock", "Variance"], hide_index=True)
         
         st.markdown('<hr>', unsafe_allow_html=True)
         c1, c2, c3 = st.columns(3)
