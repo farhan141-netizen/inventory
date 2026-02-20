@@ -221,7 +221,7 @@ def add_item_modal():
                     lead_time = supplier_row.get("Lead Time", "")
                     
                     # Display the fetched details
-                    st.info(f"✅ **Contact:** {contact}\n\n📧 **Email:** {email}\n\n⏱�� **Lead Time:** {lead_time}")
+                    st.info(f"✅ **Contact:** {contact}\n\n📧 **Email:** {email}\n\n⏱️ **Lead Time:** {lead_time}")
         else:
             st.warning("⚠️ No suppliers found. Please create a new one.")
             supplier = None
@@ -269,6 +269,75 @@ def add_item_modal():
             st.rerun()
         else:
             st.error("❌ Please fill in Product Name and Supplier")
+
+@st.dialog("�� Add New Supplier")
+def add_supplier_modal():
+    st.subheader("🏭 Add New Supplier")
+    
+    supplier_name = st.text_input("🏪 Supplier Name", placeholder="e.g., ABC Trading")
+    contact = st.text_input("📞 Contact / Phone", placeholder="e.g., +1-234-567-8900")
+    email = st.text_input("📧 Email", placeholder="e.g., supplier@abc.com")
+    
+    if st.button("✅ Add Supplier", use_container_width=True, type="primary"):
+        if supplier_name:
+            # Load existing product metadata
+            meta_df = load_from_sheet("product_metadata")
+            
+            # Check if supplier already exists
+            if not meta_df.empty and "Supplier" in meta_df.columns:
+                existing = meta_df[meta_df["Supplier"] == supplier_name]
+                if not existing.empty:
+                    st.error(f"❌ Supplier '{supplier_name}' already exists!")
+                    return
+            
+            # Add supplier to a unique record (we'll create a placeholder product entry)
+            supplier_entry = pd.DataFrame([{
+                "Product Name": f"{supplier_name}_INFO",
+                "Supplier": supplier_name,
+                "Contact": contact,
+                "Email": email,
+                "Category": "Supplier_Master",
+                "UOM": "",
+                "Price": 0,
+                "Currency": "",
+                "Lead Time": ""
+            }])
+            
+            meta_df = pd.concat([meta_df, supplier_entry], ignore_index=True)
+            save_to_sheet(meta_df, "product_metadata")
+            
+            st.success(f"✅ Supplier '{supplier_name}' added successfully!")
+            st.rerun()
+        else:
+            st.error("❌ Please fill in Supplier Name")
+
+@st.dialog("✏️ Update Supplier Details")
+def update_supplier_modal(supplier_name):
+    st.subheader(f"Update Supplier: {supplier_name}")
+    
+    meta_df = load_from_sheet("product_metadata")
+    supplier_data = meta_df[meta_df["Supplier"] == supplier_name]
+    
+    if supplier_data.empty:
+        st.error("Supplier not found")
+        return
+    
+    # Get first record for this supplier
+    current_data = supplier_data.iloc[0]
+    
+    contact = st.text_input("📞 Contact / Phone", value=current_data.get("Contact", ""), placeholder="e.g., +1-234-567-8900")
+    email = st.text_input("📧 Email", value=current_data.get("Email", ""), placeholder="e.g., supplier@abc.com")
+    lead_time = st.text_input("🕐 Lead Time (days)", value=current_data.get("Lead Time", ""), placeholder="e.g., 2-3")
+    
+    if st.button("✅ Update Supplier", use_container_width=True, type="primary"):
+        # Update all records for this supplier
+        meta_df.loc[meta_df["Supplier"] == supplier_name, "Contact"] = contact
+        meta_df.loc[meta_df["Supplier"] == supplier_name, "Email"] = email
+        meta_df.loc[meta_df["Supplier"] == supplier_name, "Lead Time"] = lead_time
+        
+        save_to_sheet(meta_df, "product_metadata")
+        st.success(f"✅ Supplier '{supplier_name}' updated successfully!")
+        st.rerun()
 
 @st.dialog("📂 Archive Explorer")
 def archive_explorer_modal():
@@ -449,6 +518,24 @@ with tab_req:
 
 with tab_sup:
     st.markdown('<span class="section-title">📞 Supplier Directory</span>', unsafe_allow_html=True)
+    
+    # Top action buttons
+    col_btn1, col_btn2, col_btn3 = st.columns([1, 1, 3])
+    with col_btn1:
+        if st.button("➕ Add Supplier", use_container_width=True):
+            add_supplier_modal()
+    
+    with col_btn2:
+        # Dropdown to select supplier for update
+        meta_df = load_from_sheet("product_metadata")
+        if not meta_df.empty and "Supplier" in meta_df.columns:
+            suppliers_list = sorted(meta_df["Supplier"].dropna().unique().tolist())
+            selected_supplier = st.selectbox("Select Supplier to Update", suppliers_list, label_visibility="collapsed")
+            if st.button("✏️ Update Details", use_container_width=True):
+                update_supplier_modal(selected_supplier)
+    
+    st.divider()
+    
     meta = load_from_sheet("product_metadata")
     search = st.text_input("🔍 Filter...", placeholder="Item or Supplier...")
     filtered = meta if not search else meta[meta["Product Name"].str.lower().str.contains(search.lower(), na=False) | meta["Supplier"].str.lower().str.contains(search.lower(), na=False)]
