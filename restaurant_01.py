@@ -3,8 +3,32 @@ import pandas as pd
 import datetime
 import uuid
 import io
+from streamlit_gsheets import GSheetsConnection
 
-from utils import load_from_sheet, save_to_sheet
+# --- CONNECTION ---
+@st.cache_resource
+def get_connection():
+    return st.connection("gsheets", type=GSheetsConnection)
+
+def load_from_sheet(worksheet_name, default_cols=None):
+    """Load from Google Sheets"""
+    try:
+        conn = get_connection()
+        df = conn.read(worksheet=worksheet_name, ttl="2s")
+        if df is None or df.empty:
+            return pd.DataFrame(columns=default_cols) if default_cols else pd.DataFrame()
+        return df
+    except:
+        return pd.DataFrame(columns=default_cols) if default_cols else pd.DataFrame()
+
+def save_to_sheet(df, worksheet_name):
+    """Save to Google Sheets"""
+    try:
+        conn = get_connection()
+        conn.update(worksheet=worksheet_name, data=df)
+        st.cache_data.clear()
+    except:
+        pass
 
 # --- PAGE CONFIG ---
 st.set_page_config(page_title="Restaurant 01 Pro", layout="wide")
