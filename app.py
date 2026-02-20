@@ -178,54 +178,130 @@ def undo_entry(log_id):
             st.rerun()
 
 # --- MODALS ---
-@st.dialog("➕ Add New Category")
-def add_category_modal():
-    st.subheader("🗂️ Add New Category")
+@st.dialog("🗂️ Manage Categories")
+def manage_categories_modal():
+    st.subheader("🗂️ Category Manager")
     
-    category_name = st.text_input("📌 Category Name", placeholder="e.g., Vegetables, Grains, Dairy", key="cat_name_input")
-    description = st.text_area("📝 Description", placeholder="Brief description of this category", height=100, key="cat_desc_input")
+    # Load existing categories
+    meta_df = load_from_sheet("product_metadata")
+    existing_categories = []
+    if not meta_df.empty and "Category" in meta_df.columns:
+        all_cats = meta_df["Category"].dropna().unique().tolist()
+        # Filter out system categories
+        existing_categories = sorted([cat for cat in all_cats if not str(cat).startswith("CATEGORY_") and cat != "Supplier_Master" and cat != "General"])
     
-    if st.button("✅ Add Category", use_container_width=True, type="primary", key="add_cat_btn"):
-        if not category_name or not category_name.strip():
-            st.error("❌ Please fill in Category Name")
-            return
+    # Tabs for Add, Modify, Delete
+    tab1, tab2, tab3 = st.tabs(["➕ Add", "✏️ Modify", "🗑️ Delete"])
+    
+    with tab1:
+        st.subheader("Add New Category")
+        category_name = st.text_input("📌 Category Name", placeholder="e.g., Vegetables, Grains, Dairy", key="cat_add_name")
+        description = st.text_area("📝 Description", placeholder="Brief description of this category", height=80, key="cat_add_desc")
         
-        category_name = category_name.strip()
-        
-        # Load existing categories
-        meta_df = load_from_sheet("product_metadata")
-        
-        # Get unique categories from product_metadata
-        existing_categories = set()
-        if not meta_df.empty and "Category" in meta_df.columns:
-            existing_categories = set(meta_df["Category"].dropna().unique().tolist())
-        
-        # Check if category already exists
-        if category_name in existing_categories:
-            st.error(f"❌ Category '{category_name}' already exists!")
-            return
-        
-        # Add category by creating a record in product_metadata
-        new_category = pd.DataFrame([{
-            "Product Name": f"CATEGORY_{category_name}",
-            "UOM": "",
-            "Supplier": "",
-            "Contact": "",
-            "Email": "",
-            "Category": category_name,
-            "Lead Time": "",
-            "Price": 0,
-            "Currency": "",
-        }])
-        
-        meta_df = pd.concat([meta_df, new_category], ignore_index=True)
-        
-        if save_to_sheet(meta_df, "product_metadata"):
-            st.success(f"✅ Category '{category_name}' added successfully!")
-            st.balloons()
-            st.rerun()
+        if st.button("✅ Add Category", use_container_width=True, type="primary", key="add_cat_confirm"):
+            if not category_name or not category_name.strip():
+                st.error("❌ Please fill in Category Name")
+                return
+            
+            category_name = category_name.strip()
+            
+            # Check if category already exists
+            if category_name in existing_categories:
+                st.error(f"❌ Category '{category_name}' already exists!")
+                return
+            
+            # Add category
+            new_category = pd.DataFrame([{
+                "Product Name": f"CATEGORY_{category_name}",
+                "UOM": "",
+                "Supplier": "",
+                "Contact": "",
+                "Email": "",
+                "Category": category_name,
+                "Lead Time": "",
+                "Price": 0,
+                "Currency": "",
+            }])
+            
+            meta_df = pd.concat([meta_df, new_category], ignore_index=True)
+            
+            if save_to_sheet(meta_df, "product_metadata"):
+                st.success(f"✅ Category '{category_name}' added successfully!")
+                st.balloons()
+                st.rerun()
+            else:
+                st.error("❌ Failed to save category")
+    
+    with tab2:
+        st.subheader("Modify Category")
+        if existing_categories:
+            selected_cat = st.selectbox("Select Category to Modify", existing_categories, key="cat_modify_select")
+            
+            # Get existing description
+            cat_records = meta_df[meta_df["Category"] == selected_cat]
+            current_desc = ""
+            if not cat_records.empty:
+                current_desc = cat_records.iloc[0].get("Product Name", "").replace(f"CATEGORY_{selected_cat}", "").strip()
+            
+            new_name = st.text_input("📌 New Category Name", value=selected_cat, key="cat_new_name")
+            new_desc = st.text_area("📝 New Description", value=current_desc, height=80, key="cat_new_desc")
+            
+            if st.button("✅ Update Category", use_container_width=True, type="primary", key="modify_cat_confirm"):
+                if not new_name or not new_name.strip():
+                    st.error("❌ Please fill in Category Name")
+                    return
+                
+                new_name = new_name.strip()
+                
+                # Check if new name conflicts with existing categories
+                if new_name != selected_cat and new_name in existing_categories:
+                    st.error(f"❌ Category '{new_name}' already exists!")
+                    return
+                
+                # Update all records with this category
+                meta_df.loc[meta_df["Category"] == selected_cat, "Category"] = new_name
+                
+                # Update the CATEGORY_ marker
+                for idx in meta_df[meta_df["Category"] == new_name].index:
+                    if str(meta_df.at[idx, "Product Name"]).startswith("CATEGORY_"):
+                        meta_df.at[idx, "Product Name"] = f"CATEGORY_{new_name}"
+                
+                if save_to_sheet(meta_df, "product_metadata"):
+                    st.success(f"✅ Category '{selected_cat}' renamed to '{new_name}'!")
+                    st.balloons()
+                    st.rerun()
+                else:
+                    st.error("❌ Failed to update category")
         else:
-            st.error("❌ Failed to save category")
+            st.info("📭 No categories to modify")
+    
+    with tab3:
+        st.subheader("Delete Category")
+        if existing_categories:
+            selected_cat = st.selectbox("Select Category to Delete", existing_categories, key="cat_delete_select")
+            
+            # Check if category is in use
+            cat_usage = meta_df[meta_df["Category"] == selected_cat]
+            product_count = len(cat_usage[~cat_usage["Product Name"].str.startswith("CATEGORY_", na=False)])
+            
+            if product_count > 0:
+                st.warning(f"⚠️ This category is used by {product_count} product(s). Products will be reassigned to 'General'.")
+            
+            if st.button("🗑️ Delete Category", use_container_width=True, type="secondary", key="delete_cat_confirm"):
+                # Reassign products to General
+                meta_df.loc[(meta_df["Category"] == selected_cat) & (~meta_df["Product Name"].str.startswith("CATEGORY_", na=False)), "Category"] = "General"
+                
+                # Delete the CATEGORY_ marker
+                meta_df = meta_df[~meta_df["Product Name"].str.startswith(f"CATEGORY_{selected_cat}", na=False)]
+                
+                if save_to_sheet(meta_df, "product_metadata"):
+                    st.success(f"✅ Category '{selected_cat}' deleted successfully!")
+                    st.balloons()
+                    st.rerun()
+                else:
+                    st.error("❌ Failed to delete category")
+        else:
+            st.info("📭 No categories to delete")
 
 @st.dialog("➕ Add New Product")
 def add_item_modal():
@@ -243,7 +319,7 @@ def add_item_modal():
         if not meta_df.empty and "Category" in meta_df.columns:
             all_cats = meta_df["Category"].dropna().unique().tolist()
             # Filter out system categories (those starting with CATEGORY_)
-            user_cats = [cat for cat in all_cats if not str(cat).startswith("CATEGORY_")]
+            user_cats = [cat for cat in all_cats if not str(cat).startswith("CATEGORY_") and cat != "Supplier_Master"]
             if user_cats:
                 category_list = sorted(set(user_cats))
             if "General" not in category_list:
@@ -496,7 +572,7 @@ with tab_ops:
         with ac1: 
             if st.button("➕ Item", use_container_width=True, help="New Product", key="btn_add_item"): add_item_modal()
         with ac2: 
-            if st.button("🗂️ Cat", use_container_width=True, help="New Category", key="btn_add_cat"): add_category_modal()
+            if st.button("🗂️ Cat", use_container_width=True, help="Manage Categories", key="btn_add_cat"): manage_categories_modal()
         with ac3: 
             if st.button("📂 Exp", use_container_width=True, help="Explorer", key="btn_exp"): archive_explorer_modal()
         with ac4: 
