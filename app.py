@@ -3,8 +3,32 @@ import pandas as pd
 import datetime
 import uuid
 import io
+from streamlit_gsheets import GSheetsConnection
 
-from utils import load_from_sheet, save_to_sheet
+# --- CONNECTION ---
+@st.cache_resource
+def get_connection():
+    return st.connection("gsheets", type=GSheetsConnection)
+
+def load_from_sheet(worksheet_name, default_cols=None):
+    """Load from Google Sheets"""
+    try:
+        conn = get_connection()
+        df = conn.read(worksheet=worksheet_name, ttl="2s")
+        if df is None or df.empty:
+            return pd.DataFrame(columns=default_cols) if default_cols else pd.DataFrame()
+        return df
+    except:
+        return pd.DataFrame(columns=default_cols) if default_cols else pd.DataFrame()
+
+def save_to_sheet(df, worksheet_name):
+    """Save to Google Sheets"""
+    try:
+        conn = get_connection()
+        conn.update(worksheet=worksheet_name, data=df)
+        st.cache_data.clear()
+    except:
+        pass
 
 # --- PAGE CONFIG ---
 st.set_page_config(page_title="Warehouse Pro Cloud v8.5", layout="wide", initial_sidebar_state="expanded")
@@ -171,7 +195,6 @@ def add_item_modal():
                 "Supplier": supplier, "Contact": contact,
                 "Category": category, "Lead Time": lead_time
             }])
-            # Remove existing entry for this product if present, then append updated row
             if not meta_df.empty and "Product Name" in meta_df.columns:
                 meta_df = meta_df[meta_df["Product Name"] != name]
             save_to_sheet(pd.concat([meta_df, new_meta], ignore_index=True), "product_metadata")
@@ -215,7 +238,6 @@ if 'log_page' not in st.session_state:
     st.session_state.log_page = 0
 
 # --- MAIN UI ---
-# Replaced Header Card with Slim Header Bar
 st.markdown("""
     <div class="header-bar">
         <h1>📦 Warehouse Pro Cloud</h1>
@@ -226,7 +248,6 @@ st.markdown("""
 tab_ops, tab_req, tab_sup = st.tabs(["📊 Operations", "🚚 Requisitions", "📞 Suppliers"])
 
 with tab_ops:
-    # --- TOP ROW: RECEIPT (3) & QUICK ACTIONS (1) ---
     col_receipt_main, col_quick_main = st.columns([3, 1])
 
     with col_receipt_main:
@@ -254,7 +275,6 @@ with tab_ops:
         with ac3: 
             if st.button("🔒 Close", use_container_width=True, type="primary", help="Close Month"): close_month_modal()
 
-    # --- STATUS & LOGS (Side-by-side to save vertical space) ---
     st.markdown('<hr>', unsafe_allow_html=True)
     
     log_col, stat_col = st.columns([1.2, 2.8])
@@ -287,7 +307,6 @@ with tab_ops:
                             undo_entry(row['LogID'])
             st.markdown('</div>', unsafe_allow_html=True)
             
-            # Slimmer pagination
             p_prev, p_next = st.columns(2)
             with p_prev:
                 if st.button("◀", disabled=st.session_state.log_page == 0, use_container_width=True):
@@ -304,7 +323,6 @@ with tab_ops:
         for col in disp_cols: 
             if col not in df_status.columns: df_status[col] = 0.0
         
-        # Reduced height to fit on screen
         edited_df = st.data_editor(df_status[disp_cols], height=380, use_container_width=True, disabled=["Product Name", "UOM", "Total Received", "Closing Stock", "Variance"], hide_index=True)
         
         sc1, sc2, sc3 = st.columns(3)
@@ -326,7 +344,6 @@ with tab_ops:
                 df_status[full_cols].to_excel(writer, index=False, sheet_name='Details')
             st.download_button("📂 Details", data=buf_f.getvalue(), file_name="Full_Report.xlsx", use_container_width=True)
 
-    # --- ANALYTICS ---
     with st.expander("📈 Weekly Par Analysis", expanded=False):
         df_hist = load_from_sheet("monthly_history")
         if not df_hist.empty and not st.session_state.inventory.empty:
