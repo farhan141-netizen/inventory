@@ -5,7 +5,7 @@ import datetime
 import uuid
 import io
 
-# --- CLOUD CONNECTION ---
+# --- CLOUD CONNECTION --- 
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def clean_dataframe(df):
@@ -249,3 +249,4 @@ with st.sidebar:
         low_stock = len(st.session_state.inventory[st.session_state.inventory["Closing Stock"] < 5])
         st.metric("Low Stock Items", low_stock)
         st.metric("Total SKU Count", len(st.session_state.inventory))
+
