@@ -172,6 +172,13 @@ st.markdown("""
     </div>
 """, unsafe_allow_html=True)
 
+# --- REFRESH BUTTON IN HEADER ---
+col_refresh, col_empty = st.columns([1, 5])
+with col_refresh:
+    if st.button("🔄 Refresh Data", use_container_width=True, key="refresh_all"):
+        st.cache_data.clear()
+        st.rerun()
+
 # --- TABS ---
 tab_inv, tab_req, tab_pending, tab_received, tab_history = st.tabs(["📋 Inventory Count", "🛒 Send Requisition", "🚚 Pending Orders", "📦 Received Items", "📊 History"])
 
@@ -530,6 +537,13 @@ with tab_history:
 # ===================== SIDEBAR =====================
 with st.sidebar:
     st.header("⚙️ Settings")
+    
+    # REFRESH BUTTON IN SIDEBAR
+    if st.button("🔄 Refresh All Data", use_container_width=True, key="refresh_sidebar"):
+        st.cache_data.clear()
+        st.rerun()
+    
+    st.divider()
     st.subheader("📋 Create Standard Inventory")
     
     st.info("""
