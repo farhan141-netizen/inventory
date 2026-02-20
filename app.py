@@ -48,7 +48,6 @@ st.markdown("""
     .header-card { background: linear-gradient(135deg, #00d9ff 0%, #0095ff 100%); border-radius: 16px; padding: 32px; color: white; margin-bottom: 24px; box-shadow: 0 8px 32px rgba(0, 217, 255, 0.3); text-align: center; }
     .header-card h1 { font-size: 2.5em; margin-bottom: 8px; font-weight: 800; letter-spacing: -1px; }
     
-    /* Compact Scrollable Log Styling */
     .log-container {
         max-height: 480px;
         overflow-y: auto;
@@ -81,7 +80,6 @@ st.markdown("""
     .stButton>button { border-radius: 10px; font-weight: 600; padding: 8px 20px; transition: all 0.3s ease; }
     hr { border: none; height: 1px; background: linear-gradient(90deg, transparent, #2d3748, transparent); margin: 20px 0; }
     
-    /* Custom Scrollbar */
     ::-webkit-scrollbar { width: 6px; height: 6px; }
     ::-webkit-scrollbar-track { background: #1a1f2e; }
     ::-webkit-scrollbar-thumb { background: #2d3748; border-radius: 10px; }
@@ -210,29 +208,30 @@ st.markdown('<div class="header-card"><h1>📦 Warehouse Pro Management</h1><p>v
 tab_ops, tab_req, tab_sup = st.tabs(["📊 Operations", "🚚 Requisitions", "📞 Suppliers"])
 
 with tab_ops:
-    # --- RECEIPT ---
-    st.markdown('<h2 class="section-title">📥 Daily Receipt Portal</h2>', unsafe_allow_html=True)
-    if not st.session_state.inventory.empty:
-        col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
-        with col1: sel_item = st.selectbox("🔍 Select Item", options=[""] + sorted(st.session_state.inventory["Product Name"].unique().tolist()), key="receipt_item")
-        with col2: day_in = st.number_input("📅 Day", 1, 31, datetime.datetime.now().day, key="receipt_day")
-        with col3: qty_in = st.number_input("📊 Qty", min_value=0.0, key="receipt_qty")
-        with col4:
-            if st.button("✅ Confirm", use_container_width=True, type="primary"):
-                if sel_item and qty_in > 0:
-                    apply_transaction(sel_item, day_in, qty_in)
-                    st.success("✅ Added!"); st.rerun()
-    
-    st.markdown('<hr>', unsafe_allow_html=True)
-    
-    # --- QUICK ACTIONS ---
-    st.markdown('<h2 class="section-title">⚙️ Quick Actions</h2>', unsafe_allow_html=True)
-    q1, q2, q3 = st.columns(3)
-    with q1:
-        if st.button("➕ Add New Product", use_container_width=True): add_item_modal()
-    with q2:
-        if st.button("📂 Archive Explorer", use_container_width=True): archive_explorer_modal()
-    with q3:
+    # --- COMBINED TOP SECTION: RECEIPT (3) & QUICK ACTIONS (1) ---
+    col_receipt_main, col_quick_main = st.columns([3, 1])
+
+    with col_receipt_main:
+        st.markdown('<h2 class="section-title">📥 Daily Receipt Portal</h2>', unsafe_allow_html=True)
+        if not st.session_state.inventory.empty:
+            c1, c2, c3, c4 = st.columns([2, 0.8, 0.8, 1])
+            with c1: sel_item = st.selectbox("🔍 Select Item", options=[""] + sorted(st.session_state.inventory["Product Name"].unique().tolist()), key="receipt_item")
+            with c2: day_in = st.number_input("📅 Day", 1, 31, datetime.datetime.now().day, key="receipt_day")
+            with c3: qty_in = st.number_input("📊 Qty", min_value=0.0, key="receipt_qty")
+            with c4:
+                st.markdown("<div style='margin-top:28px;'></div>", unsafe_allow_html=True)
+                if st.button("✅ Confirm", use_container_width=True, type="primary"):
+                    if sel_item and qty_in > 0:
+                        apply_transaction(sel_item, day_in, qty_in)
+                        st.success("✅ Added!"); st.rerun()
+        else:
+            st.info("Please initialize inventory first.")
+
+    with col_quick_main:
+        st.markdown('<h2 class="section-title">⚙️ Actions</h2>', unsafe_allow_html=True)
+        # Vertical stacking of action buttons
+        if st.button("➕ New Product", use_container_width=True): add_item_modal()
+        if st.button("📂 Explorer", use_container_width=True): archive_explorer_modal()
         if st.button("🔒 Close Month", use_container_width=True, type="primary"): close_month_modal()
 
     st.markdown('<hr>', unsafe_allow_html=True)
@@ -258,18 +257,13 @@ with tab_ops:
         st.markdown('<h2 class="section-title">📜 Recent Activity</h2>', unsafe_allow_html=True)
         logs = load_from_sheet("activity_logs")
         if not logs.empty:
-            # Reverse for latest first
             full_logs = logs.iloc[::-1]
-            
-            # Pagination logic
             items_per_page = 10
             total_pages = (len(full_logs) - 1) // items_per_page + 1
-            
             start_idx = st.session_state.log_page * items_per_page
             end_idx = start_idx + items_per_page
             current_logs = full_logs.iloc[start_idx:end_idx]
             
-            # Scrollable Container
             st.markdown('<div class="log-container">', unsafe_allow_html=True)
             for _, row in current_logs.iterrows():
                 is_undone = row['Status'] == "Undone"
@@ -287,7 +281,6 @@ with tab_ops:
                             undo_entry(row['LogID'])
             st.markdown('</div>', unsafe_allow_html=True)
             
-            # Pagination Controls
             p_prev, p_info, p_next = st.columns([1, 2, 1])
             with p_prev:
                 if st.button("◀", disabled=st.session_state.log_page == 0, use_container_width=True):
