@@ -196,19 +196,33 @@ def add_item_modal():
     
     supplier_choice = st.radio("Supplier Option:", ["Select Existing Supplier", "Create New Supplier"], horizontal=True)
     
+    supplier = None
+    contact = ""
+    email = ""
+    lead_time = ""
+    
     if supplier_choice == "Select Existing Supplier":
         if existing_suppliers:
             supplier = st.selectbox("🏪 Choose Supplier", existing_suppliers)
-            contact = ""
-            lead_time = ""
+            
+            # FETCH ALL DETAILS FROM EXISTING SUPPLIER
+            if supplier:
+                supplier_row = meta_df[meta_df[supplier_column] == supplier].iloc[0] if len(meta_df[meta_df[supplier_column] == supplier]) > 0 else None
+                if supplier_row is not None:
+                    # Get all available details from the supplier record
+                    contact = supplier_row.get("Contact", "")
+                    email = supplier_row.get("Email", "")
+                    lead_time = supplier_row.get("Lead Time", "")
+                    
+                    # Display the fetched details
+                    st.info(f"✅ **Contact:** {contact}\n\n📧 **Email:** {email}\n\n⏱️ **Lead Time:** {lead_time}")
         else:
             st.warning("⚠️ No suppliers found. Please create a new one.")
             supplier = None
-            contact = ""
-            lead_time = ""
     else:
         supplier = st.text_input("🏪 New Supplier Name", placeholder="e.g., ABC Trading")
         contact = st.text_input("📞 Contact / Phone", placeholder="e.g., +1-234-567-8900")
+        email = st.text_input("📧 Email", placeholder="e.g., supplier@abc.com")
         lead_time = st.text_input("🕐 Lead Time (days)", placeholder="e.g., 2-3")
 
     if st.button("✅ Create Product", use_container_width=True, type="primary"):
@@ -229,12 +243,13 @@ def add_item_modal():
             st.session_state.inventory = pd.concat([st.session_state.inventory, pd.DataFrame([new_row])], ignore_index=True)
             save_to_sheet(st.session_state.inventory, "persistent_inventory")
             
-            # Add to supplier metadata - Use correct column name
+            # Add to supplier metadata - Save ALL supplier details
             supplier_meta = pd.DataFrame([{
                 "Product Name": name,
                 "UOM": uom,
-                "Supplier": supplier,  # Using "Supplier" to match existing sheets
+                "Supplier": supplier,
                 "Contact": contact,
+                "Email": email,
                 "Category": category,
                 "Lead Time": lead_time
             }])
