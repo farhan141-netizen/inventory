@@ -131,18 +131,35 @@ with tab_req:
             search_item = st.text_input("🔍 Search Product", key="search_req").lower()
             items = st.session_state.inventory[st.session_state.inventory["Product Name"].str.lower().str.contains(search_item, na=False)]
             
-            for _, row in items.head(20).iterrows():
+            for item_idx, (_, row) in enumerate(items.head(20).iterrows()):
                 c1, c2, c3 = st.columns([3, 1, 1])
-                c1.write(f"**{row['Product Name']}** ({row['UOM']})")
-                qty = c2.number_input("Qty", min_value=0.0, key=f"req_{row['Product Name']}", label_visibility="collapsed")
-                if c3.button("Add ➕", key=f"btn_{row['Product Name']}", use_container_width=True):
+                product_name = row['Product Name']
+                uom = row['UOM']
+                
+                c1.write(f"**{product_name}** ({uom})")
+                
+                # Use unique key with index to prevent duplicates
+                qty = c2.number_input(
+                    "Qty", 
+                    min_value=0.0, 
+                    key=f"req_qty_{item_idx}_{search_item}",
+                    label_visibility="collapsed"
+                )
+                
+                if c3.button("Add ➕", key=f"btn_add_{item_idx}_{search_item}", use_container_width=True):
                     if qty > 0:
-                        st.session_state.cart.append({'name': row['Product Name'], 'qty': qty, 'uom': row['UOM']})
-                        st.toast(f"✅ Added {row['Product Name']}")
+                        st.session_state.cart.append({
+                            'name': product_name, 
+                            'qty': qty, 
+                            'uom': uom
+                        })
+                        st.toast(f"✅ Added {product_name}")
+                        st.rerun()
 
     with col_r:
         st.markdown('<div class="cart-container">', unsafe_allow_html=True)
         st.markdown('<div class="section-title">🛒 Cart</div>', unsafe_allow_html=True)
+        
         if st.session_state.cart:
             for i, item in enumerate(st.session_state.cart):
                 st.markdown(f"""
@@ -150,11 +167,13 @@ with tab_req:
                     {item['name']}: {item['qty']} {item['uom']}
                 </div>
                 """, unsafe_allow_html=True)
-                if st.button(f"Remove {item['name']}", key=f"rm_{i}", use_container_width=True):
+                
+                if st.button(f"Remove", key=f"rm_{i}", use_container_width=True):
                     st.session_state.cart.pop(i)
                     st.rerun()
             
             st.divider()
+            
             if st.button("🗑️ Clear Cart", use_container_width=True, key="clear_cart"):
                 st.session_state.cart = []
                 st.rerun()
@@ -180,6 +199,7 @@ with tab_req:
                     st.rerun()
         else:
             st.write("🛒 Cart is empty")
+        
         st.markdown('</div>', unsafe_allow_html=True)
 
 # ===================== PENDING ORDERS TAB =====================
@@ -191,7 +211,7 @@ with tab_pending:
         my_pending = all_reqs[(all_reqs["Restaurant"] == "Restaurant 01") & (all_reqs["Status"] == "Pending")]
         
         if not my_pending.empty:
-            for idx, row in my_pending.iterrows():
+            for pending_idx, (_, row) in enumerate(my_pending.iterrows()):
                 item_name = row["Item"]
                 req_qty = row["Qty"]
                 
@@ -216,7 +236,7 @@ with tab_received:
         my_dispatched = all_reqs[(all_reqs["Restaurant"] == "Restaurant 01") & (all_reqs["Status"] == "Dispatched")]
         
         if not my_dispatched.empty:
-            for idx, row in my_dispatched.iterrows():
+            for recv_idx, (original_idx, row) in enumerate(my_dispatched.iterrows()):
                 item_name = row["Item"]
                 dispatch_qty = row["DispatchQty"]
                 req_id = row["ReqID"]
@@ -228,10 +248,11 @@ with tab_received:
                 """, unsafe_allow_html=True)
                 
                 c1, c2 = st.columns([1, 1])
+                
                 with c1:
-                    if st.button(f"✅ Accept {item_name}", key=f"accept_{req_id}", use_container_width=True):
+                    if st.button(f"✅ Accept", key=f"accept_{recv_idx}_{req_id}", use_container_width=True):
                         # Update requisition status
-                        all_reqs.at[idx, "Status"] = "Completed"
+                        all_reqs.at[original_idx, "Status"] = "Completed"
                         save_to_sheet(all_reqs, "restaurant_requisitions")
                         
                         # Add to restaurant inventory
@@ -247,8 +268,8 @@ with tab_received:
                         st.rerun()
                 
                 with c2:
-                    if st.button(f"❌ Reject {item_name}", key=f"reject_{req_id}", use_container_width=True):
-                        all_reqs.at[idx, "Status"] = "Pending"
+                    if st.button(f"❌ Reject", key=f"reject_{recv_idx}_{req_id}", use_container_width=True):
+                        all_reqs.at[original_idx, "Status"] = "Pending"
                         save_to_sheet(all_reqs, "restaurant_requisitions")
                         st.warning(f"❌ Returned to pending")
                         st.rerun()
@@ -290,6 +311,7 @@ with st.sidebar:
 
             if st.button("🚀 Push Inventory", type="primary", use_container_width=True, key="push_inv_rest"):
                 if save_to_sheet(new_df, "rest_01_inventory"):
+                    st.session_state.inventory = new_df
                     st.success(f"✅ Inventory created with {len(new_df)} items!")
                     st.rerun()
 
