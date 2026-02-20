@@ -659,13 +659,13 @@ with tab_req:
                 
                 for idx, row in rest_reqs.iterrows():
                     item_name = row["Item"]
-                    req_qty = row["Qty"]
+                    req_qty = float(row["Qty"])
                     status = row["Status"]
-                    dispatch_qty = row.get("DispatchQty", 0)
+                    dispatch_qty = float(row.get("DispatchQty", 0))
                     req_id = row["ReqID"]
                     
                     stock_info = st.session_state.inventory[st.session_state.inventory["Product Name"] == item_name]
-                    available_qty = stock_info["Closing Stock"].values[0] if not stock_info.empty else 0
+                    available_qty = float(stock_info["Closing Stock"].values[0]) if not stock_info.empty else 0.0
                     
                     status_color = "🟡" if status == "Pending" else "🟢" if status == "Dispatched" else "🔵"
                     
@@ -678,7 +678,15 @@ with tab_req:
                     if status == "Pending":
                         c1, c2, c3 = st.columns([2, 1, 1])
                         with c1:
-                            dispatch_qty_input = st.number_input(f"Dispatch Qty for {item_name}", min_value=0.0, max_value=float(available_qty), value=float(req_qty), key=f"dispatch_{req_id}")
+                            # FIX: Set value to min(req_qty, available_qty) to ensure value <= max_value
+                            default_dispatch = min(req_qty, available_qty)
+                            dispatch_qty_input = st.number_input(
+                                f"Dispatch Qty for {item_name}", 
+                                min_value=0.0, 
+                                max_value=available_qty, 
+                                value=default_dispatch,
+                                key=f"dispatch_{req_id}"
+                            )
                         with c2:
                             if st.button("🚀 Dispatch", key=f"dispatch_btn_{req_id}", use_container_width=True):
                                 if dispatch_qty_input > 0:
