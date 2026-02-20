@@ -2,5 +2,6 @@ streamlit
 pandas
 streamlit-gsheets
 git+https://github.com/streamlit/gsheets-connection
+st-gsheets-connection
 openpyxl
 xlsxwriter
