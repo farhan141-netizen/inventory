@@ -35,31 +35,237 @@ def save_to_sheet(df, worksheet_name):
     st.cache_data.clear()
 
 # --- PAGE CONFIG ---
-st.set_page_config(page_title="Warehouse Pro Cloud v8.5", layout="wide")
+st.set_page_config(page_title="Warehouse Pro Cloud v8.5", layout="wide", initial_sidebar_state="expanded")
 
-# --- COMPACT DYNAMIC CSS ---
+# --- MODERN SOPHISTICATED CSS ---
 st.markdown("""
     <style>
-    .main { background-color: #0e1117; }
+    * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+    }
+    
+    .main {
+        background: linear-gradient(135deg, #0f1419 0%, #1a1f2e 50%, #0f1419 100%);
+        padding: 20px;
+    }
+    
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 24px;
+        background: linear-gradient(90deg, #1a1f2e 0%, #252d3d 100%);
+        padding: 10px 20px;
+        border-radius: 12px;
+        margin-bottom: 20px;
+        border: 1px solid #2d3748;
+    }
+    
+    .stTabs [data-baseweb="tab"] {
+        padding: 8px 20px;
+        font-weight: 600;
+        color: #8892b0;
+        border-radius: 8px;
+        transition: all 0.3s ease;
+    }
+    
+    .stTabs [aria-selected="true"] {
+        color: #00d9ff;
+        background: linear-gradient(90deg, #00d9ff20 0%, #0095ff20 100%);
+        border: 1px solid #00d9ff;
+    }
+    
+    .premium-card {
+        background: linear-gradient(135deg, #1a1f2e 0%, #252d3d 100%);
+        border: 1px solid #2d3748;
+        border-radius: 16px;
+        padding: 24px;
+        margin-bottom: 20px;
+        box-shadow: 0 4px 20px rgba(0, 217, 255, 0.1);
+        transition: all 0.3s ease;
+    }
+    
+    .premium-card:hover {
+        border-color: #00d9ff;
+        box-shadow: 0 8px 32px rgba(0, 217, 255, 0.15);
+        transform: translateY(-2px);
+    }
+    
+    .header-card {
+        background: linear-gradient(135deg, #00d9ff 0%, #0095ff 100%);
+        border-radius: 16px;
+        padding: 32px;
+        color: white;
+        margin-bottom: 24px;
+        box-shadow: 0 8px 32px rgba(0, 217, 255, 0.3);
+        text-align: center;
+    }
+    
+    .header-card h1 {
+        font-size: 2.5em;
+        margin-bottom: 8px;
+        font-weight: 800;
+        letter-spacing: -1px;
+    }
+    
+    .header-card p {
+        font-size: 0.95em;
+        opacity: 0.95;
+        font-weight: 500;
+    }
+    
+    .action-button {
+        background: linear-gradient(135deg, #00d9ff 0%, #0095ff 100%);
+        border: none;
+        border-radius: 10px;
+        padding: 12px 20px;
+        color: white;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        box-shadow: 0 4px 15px rgba(0, 217, 255, 0.3);
+    }
+    
+    .action-button:hover {
+        box-shadow: 0 8px 25px rgba(0, 217, 255, 0.4);
+        transform: translateY(-2px);
+    }
+    
     .log-row {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        background: #1c2128;
-        padding: 6px 12px;
-        border-radius: 6px;
-        margin-bottom: 5px;
-        border-left: 3px solid #00ffcc;
+        background: linear-gradient(90deg, #1a1f2e 0%, #252d3d 100%);
+        padding: 14px 16px;
+        border-radius: 10px;
+        margin-bottom: 10px;
+        border-left: 4px solid #00d9ff;
+        border: 1px solid #2d3748;
+        border-left: 4px solid #00d9ff;
+        transition: all 0.3s ease;
     }
-    .log-row-undone { border-left: 3px solid #ff4b4b; opacity: 0.5; }
-    .log-info { font-size: 0.8rem; color: #e6edf3; }
-    .log-time { font-size: 0.7rem; color: #8b949e; margin-left: 10px; }
-    .receipt-card, .action-card, .par-card { 
-        background-color: #161b22; 
-        padding: 5px; 
-        border-radius: 10px; 
-        border: 1px solid #30363d; 
-        margin-bottom: 5px; 
+    
+    .log-row:hover {
+        border-color: #00d9ff;
+        box-shadow: 0 4px 15px rgba(0, 217, 255, 0.1);
+    }
+    
+    .log-row-undone {
+        border-left: 4px solid #ff6b6b;
+        opacity: 0.6;
+        background: linear-gradient(90deg, #1a1f2e80 0%, #252d3d80 100%);
+    }
+    
+    .log-info {
+        font-size: 0.9rem;
+        color: #e0e7ff;
+        font-weight: 500;
+    }
+    
+    .log-time {
+        font-size: 0.8rem;
+        color: #8892b0;
+        margin-left: 12px;
+        display: inline-block;
+    }
+    
+    .stat-item {
+        background: linear-gradient(135deg, #1a1f2e 0%, #252d3d 100%);
+        border: 1px solid #2d3748;
+        border-radius: 12px;
+        padding: 16px;
+        text-align: center;
+        transition: all 0.3s ease;
+    }
+    
+    .stat-item:hover {
+        border-color: #00d9ff;
+        box-shadow: 0 4px 15px rgba(0, 217, 255, 0.1);
+        transform: translateY(-2px);
+    }
+    
+    .stat-label {
+        color: #8892b0;
+        font-size: 0.85rem;
+        font-weight: 600;
+        margin-bottom: 8px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    
+    .stat-value {
+        color: #00d9ff;
+        font-size: 1.8rem;
+        font-weight: 700;
+    }
+    
+    .section-title {
+        color: #e0e7ff;
+        font-size: 1.4em;
+        font-weight: 700;
+        margin-bottom: 16px;
+        padding-bottom: 12px;
+        border-bottom: 2px solid #00d9ff;
+        display: inline-block;
+    }
+    
+    .input-group {
+        display: flex;
+        gap: 12px;
+        margin-bottom: 16px;
+    }
+    
+    .stSelectbox, .stNumberInput, .stTextInput {
+        border-radius: 10px;
+    }
+    
+    .stButton>button {
+        border-radius: 10px;
+        font-weight: 600;
+        padding: 10px 24px;
+        transition: all 0.3s ease;
+    }
+    
+    .stButton>button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 15px rgba(0, 217, 255, 0.3);
+    }
+    
+    .data-table {
+        background: linear-gradient(135deg, #1a1f2e 0%, #252d3d 100%);
+        border-radius: 12px;
+        border: 1px solid #2d3748;
+        padding: 16px;
+    }
+    
+    .expander-header {
+        color: #00d9ff;
+        font-weight: 700;
+        font-size: 1.1em;
+    }
+    
+    .sidebar-title {
+        color: #00d9ff;
+        font-weight: 700;
+        font-size: 1.2em;
+        margin-top: 20px;
+        margin-bottom: 12px;
+    }
+    
+    .quick-stat {
+        background: linear-gradient(135deg, #00d9ff20 0%, #0095ff20 100%);
+        border: 1px solid #00d9ff;
+        border-radius: 10px;
+        padding: 12px 16px;
+        margin-bottom: 8px;
+        color: #00d9ff;
+        font-weight: 600;
+    }
+    
+    hr {
+        border: none;
+        height: 1px;
+        background: linear-gradient(90deg, transparent, #2d3748, transparent);
+        margin: 20px 0;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -134,14 +340,15 @@ def undo_entry(log_id):
 # --- MODALS ---
 @st.dialog("➕ Add New Product")
 def add_item_modal():
+    st.markdown('<div class="premium-card">', unsafe_allow_html=True)
     col1, col2 = st.columns(2)
     with col1:
-        name = st.text_input("Item Name*")
-        uom = st.selectbox("Unit", ["pcs", "kg", "box", "ltr", "pkt", "can", "bot"])
+        name = st.text_input("📦 Item Name", placeholder="Enter product name")
+        uom = st.selectbox("📏 Unit of Measurement", ["pcs", "kg", "box", "ltr", "pkt", "can", "bot"])
     with col2:
-        opening = st.number_input("Opening Stock", min_value=0.0)
+        opening = st.number_input("📊 Opening Stock", min_value=0.0, value=0.0)
     
-    if st.button("✅ Create Product", use_container_width=True):
+    if st.button("✅ Create Product", use_container_width=True, type="primary"):
         if name:
             new_row = {str(i): 0.0 for i in range(1, 32)}
             new_row.update({"Product Name": name, "UOM": uom, "Opening Stock": opening, 
@@ -150,26 +357,30 @@ def add_item_modal():
             st.session_state.inventory = pd.concat([st.session_state.inventory, pd.DataFrame([new_row])], ignore_index=True)
             save_to_sheet(st.session_state.inventory, "persistent_inventory")
             st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
 
 @st.dialog("📂 Archive Explorer")
 def archive_explorer_modal():
+    st.markdown('<div class="premium-card">', unsafe_allow_html=True)
     hist_df = load_from_sheet("monthly_history")
     if not hist_df.empty and "Month_Period" in hist_df.columns:
         available_months = sorted(hist_df["Month_Period"].unique().tolist(), reverse=True)
-        selected_month = st.selectbox("Month Period", options=available_months)
+        selected_month = st.selectbox("📅 Select Month Period", options=available_months)
         month_data = hist_df[hist_df["Month_Period"] == selected_month].drop(columns=["Month_Period"])
         buf_month = io.BytesIO()
         with pd.ExcelWriter(buf_month, engine='xlsxwriter') as writer:
             month_data.to_excel(writer, index=False, sheet_name="Archive")
-        st.download_button(label=f"📥 Download {selected_month}", data=buf_month.getvalue(), file_name=f"Inventory_{selected_month}.xlsx", use_container_width=True)
+        st.download_button(label=f"📥 Download {selected_month}", data=buf_month.getvalue(), file_name=f"Inventory_{selected_month}.xlsx", use_container_width=True, type="primary")
     else:
-        st.info("No historical records found.")
+        st.info("📭 No historical records found.")
+    st.markdown('</div>', unsafe_allow_html=True)
 
 @st.dialog("🔒 Close Month & Rollover")
 def close_month_modal():
-    st.warning("Physical Counts will become new Opening Stocks.")
-    month_label = st.text_input("Month Label", datetime.datetime.now().strftime("%b %Y"))
-    if st.button("Confirm Monthly Close", type="primary", use_container_width=True):
+    st.markdown('<div class="premium-card">', unsafe_allow_html=True)
+    st.warning("⚠️ Physical Counts will become new Opening Stocks.", icon="⚠️")
+    month_label = st.text_input("📅 Month Label", value=datetime.datetime.now().strftime("%b %Y"))
+    if st.button("✅ Confirm Monthly Close", type="primary", use_container_width=True):
         df = st.session_state.inventory.copy()
         history_df = load_from_sheet("monthly_history")
         archive_df = df.copy()
@@ -185,40 +396,68 @@ def close_month_modal():
         new_df["Physical Count"] = None; new_df["Variance"] = 0.0
         save_to_sheet(new_df, "persistent_inventory")
         st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
 
 # --- INITIALIZATION ---
 if 'inventory' not in st.session_state:
     st.session_state.inventory = load_from_sheet("persistent_inventory")
 
 # --- MAIN UI ---
-st.title("📦 Warehouse Pro Management v8.5")
+st.markdown("""
+    <div class="header-card">
+        <h1>📦 Warehouse Pro Management</h1>
+        <p>v8.5 • Cloud-Powered Inventory System</p>
+    </div>
+    """, unsafe_allow_html=True)
+
 tab_ops, tab_req, tab_sup = st.tabs(["📊 Operations", "🚚 Requisitions", "📞 Suppliers"])
 
 with tab_ops:
-    m_col, a_col = st.columns([3, 1])
-    with m_col:
-        st.markdown('<div class="receipt-card">', unsafe_allow_html=True)
-        st.subheader("📥 Daily Receipt Portal")
-        if not st.session_state.inventory.empty:
-            item_list = sorted(st.session_state.inventory["Product Name"].unique().tolist())
-            c1, c2, c3 = st.columns([2, 1, 1])
-            with c1: sel_item = st.selectbox("Search Item", options=[""] + item_list)
-            with c2: day_in = st.number_input("Day", 1, 31, datetime.datetime.now().day)
-            with c3: qty_in = st.number_input("Qty", min_value=0.0)
-            if st.button("✅ Confirm Receipt", type="primary", use_container_width=True):
-                if sel_item and qty_in > 0: apply_transaction(sel_item, day_in, qty_in); st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
-
-    with a_col:
-        st.markdown('<div class="action-card">', unsafe_allow_html=True)
-        st.subheader("⚙️ Quick Actions")
-        if st.button("➕ Add New Product", use_container_width=True): add_item_modal()
-        if st.button("📂 Archive Explorer", use_container_width=True): archive_explorer_modal()
-        if st.button("🔒 Close Month", type="primary", use_container_width=True): close_month_modal()
-        st.markdown('</div>', unsafe_allow_html=True)
-
+    # --- DAILY RECEIPT SECTION ---
+    st.markdown('<div class="premium-card">', unsafe_allow_html=True)
+    st.markdown('<h2 class="section-title">📥 Daily Receipt Portal</h2>', unsafe_allow_html=True)
+    
+    if not st.session_state.inventory.empty:
+        item_list = sorted(st.session_state.inventory["Product Name"].unique().tolist())
+        col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
+        
+        with col1:
+            sel_item = st.selectbox("🔍 Search & Select Item", options=[""] + item_list, key="receipt_item")
+        with col2:
+            day_in = st.number_input("📅 Day", 1, 31, datetime.datetime.now().day, key="receipt_day")
+        with col3:
+            qty_in = st.number_input("📊 Quantity", min_value=0.0, key="receipt_qty")
+        with col4:
+            if st.button("✅ Confirm", use_container_width=True, type="primary", key="receipt_btn"):
+                if sel_item and qty_in > 0:
+                    apply_transaction(sel_item, day_in, qty_in)
+                    st.success(f"✅ Added {qty_in} units of {sel_item}")
+                    st.rerun()
+    else:
+        st.info("📭 No products available. Please add products first.")
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+    
+    # --- QUICK ACTIONS ---
+    st.markdown('<div class="premium-card">', unsafe_allow_html=True)
+    st.markdown('<h2 class="section-title">⚙️ Quick Actions</h2>', unsafe_allow_html=True)
+    
+    action_col1, action_col2, action_col3 = st.columns(3)
+    with action_col1:
+        if st.button("➕ Add New Product", use_container_width=True, key="add_product_btn"):
+            add_item_modal()
+    with action_col2:
+        if st.button("📂 Archive Explorer", use_container_width=True, key="archive_btn"):
+            archive_explorer_modal()
+    with action_col3:
+        if st.button("🔒 Close Month", use_container_width=True, type="primary", key="close_month_btn"):
+            close_month_modal()
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+    
     # --- PAR ANALYSIS ---
     with st.expander("📈 Multi-Month Weekly Par Analysis", expanded=False):
+        st.markdown('<div class="data-table">', unsafe_allow_html=True)
         df_history = load_from_sheet("monthly_history")
         if not df_history.empty and not st.session_state.inventory.empty:
             df_history["Consumption"] = pd.to_numeric(df_history["Consumption"], errors='coerce').fillna(0)
@@ -229,52 +468,66 @@ with tab_ops:
             df_par["Min (50%)"] = (df_par["Weekly Usage"] * 0.5).round(2)
             df_par["Max (150%)"] = (df_par["Weekly Usage"] * 1.5).round(2)
             st.dataframe(df_par, use_container_width=True, hide_index=True)
-        else: st.info("Historical data required for Par Analysis.")
-
-    st.divider()
+        else:
+            st.info("📊 Historical data required for Par Analysis.")
+        st.markdown('</div>', unsafe_allow_html=True)
     
-    # --- COMPACT LOG & LIVE STATUS ---
+    st.markdown('<hr>', unsafe_allow_html=True)
+    
+    # --- ACTIVITY LOG & LIVE STATUS ---
     log_col, stat_col = st.columns([1.5, 2.5])
+    
     with log_col:
-        st.subheader("📜 Recent Activity")
+        st.markdown('<div class="premium-card">', unsafe_allow_html=True)
+        st.markdown('<h2 class="section-title">📜 Recent Activity</h2>', unsafe_allow_html=True)
+        
         logs = load_from_sheet("activity_logs")
         if not logs.empty:
             for _, row in logs.iloc[::-1].head(10).iterrows():
                 is_undone = row['Status'] == "Undone"
                 row_class = "log-row-undone" if is_undone else ""
                 
-                log_cont = st.container()
-                col_txt, col_undo = log_cont.columns([4, 1.5])
+                col_txt, col_undo = st.columns([4, 1.5])
                 with col_txt:
                     st.markdown(f"""
                     <div class="log-row {row_class}">
                         <div class="log-info">
-                            <b>{row['Item']}</b>: {row['Qty']}
+                            <b>📦 {row['Item']}</b><br>
+                            Qty: {row['Qty']} | Day: {row['Day']}
                             <span class="log-time">[{row['Timestamp']}]</span>
                         </div>
                     </div>
                     """, unsafe_allow_html=True)
                 with col_undo:
                     if not is_undone:
-                        if st.button("Undo", key=f"rev_{row['LogID']}", use_container_width=True):
+                        if st.button("↩️ Undo", key=f"rev_{row['LogID']}", use_container_width=True):
                             undo_entry(row['LogID'])
-        else: st.caption("No logs available.")
-
+        else:
+            st.caption("📭 No activity logs available.")
+        
+        st.markdown('</div>', unsafe_allow_html=True)
+    
     with stat_col:
-        st.subheader("📊 Live Stock Status")
+        st.markdown('<div class="premium-card">', unsafe_allow_html=True)
+        st.markdown('<h2 class="section-title">📊 Live Stock Status</h2>', unsafe_allow_html=True)
+        
         df_status = st.session_state.inventory.copy()
         disp_cols = ["Product Name", "UOM", "Opening Stock", "Total Received", "Closing Stock", "Consumption", "Physical Count", "Variance"]
         for col in disp_cols: 
             if col not in df_status.columns: df_status[col] = 0.0
-            
+        
+        st.markdown('<div class="data-table">', unsafe_allow_html=True)
         edited_df = st.data_editor(df_status[disp_cols], use_container_width=True, disabled=["Product Name", "UOM", "Total Received", "Closing Stock", "Variance"], hide_index=True)
+        st.markdown('</div>', unsafe_allow_html=True)
         
         c1, c2, c3 = st.columns(3)
         with c1:
-            if st.button("💾 Save & Update", use_container_width=True, type="primary"):
+            if st.button("💾 Save & Update", use_container_width=True, type="primary", key="save_status_btn"):
                 df_status.update(edited_df)
                 for item in df_status["Product Name"]: df_status = recalculate_item(df_status, item)
-                save_to_sheet(df_status, "persistent_inventory"); st.rerun()
+                save_to_sheet(df_status, "persistent_inventory")
+                st.success("✅ Updates saved!")
+                st.rerun()
         with c2:
             buf = io.BytesIO()
             with pd.ExcelWriter(buf, engine='xlsxwriter') as writer:
@@ -287,34 +540,67 @@ with tab_ops:
             with pd.ExcelWriter(buf_f, engine='xlsxwriter') as writer:
                 df_status[full_cols].to_excel(writer, index=False, sheet_name='Details')
             st.download_button("📂 Full XLSX", data=buf_f.getvalue(), file_name="Full_Monthly_Report.xlsx", use_container_width=True)
+        
+        st.markdown('</div>', unsafe_allow_html=True)
 
-# --- REQUISITIONS & SUPPLIERS ---
+# --- REQUISITIONS TAB ---
 with tab_req:
-    st.subheader("🚚 Requisition System")
+    st.markdown('<div class="premium-card">', unsafe_allow_html=True)
+    st.markdown('<h2 class="section-title">🚚 Requisition System</h2>', unsafe_allow_html=True)
+    
     meta_df = load_from_sheet("product_metadata")
-    it, qt = st.columns([3, 1])
-    with it: r_item = st.selectbox("Select Product", options=[""] + sorted(meta_df["Product Name"].tolist()) if not meta_df.empty else [""])
-    with qt: r_qty = st.number_input("Order Qty", min_value=0.0)
-    if st.button("➕ Add to List"):
-        if r_item and r_qty > 0:
-            orders = load_from_sheet("orders_db", ["Product Name", "Qty", "Supplier", "Status"])
-            sup = meta_df[meta_df["Product Name"] == r_item]["Supplier"].values[0] if r_item in meta_df["Product Name"].values else "Unknown"
-            save_to_sheet(pd.concat([orders, pd.DataFrame([{"Product Name": r_item, "Qty": r_qty, "Supplier": sup, "Status": "Pending"}])], ignore_index=True), "orders_db"); st.rerun()
-    st.dataframe(load_from_sheet("orders_db"), use_container_width=True)
+    col1, col2, col3 = st.columns([2, 1, 1])
+    
+    with col1:
+        r_item = st.selectbox("🔍 Select Product", options=[""] + sorted(meta_df["Product Name"].tolist()) if not meta_df.empty else [""], key="req_item")
+    with col2:
+        r_qty = st.number_input("📊 Order Quantity", min_value=0.0, key="req_qty")
+    with col3:
+        if st.button("➕ Add to List", use_container_width=True, type="primary", key="add_req_btn"):
+            if r_item and r_qty > 0:
+                orders = load_from_sheet("orders_db", ["Product Name", "Qty", "Supplier", "Status"])
+                sup = meta_df[meta_df["Product Name"] == r_item]["Supplier"].values[0] if r_item in meta_df["Product Name"].values else "Unknown"
+                save_to_sheet(pd.concat([orders, pd.DataFrame([{"Product Name": r_item, "Qty": r_qty, "Supplier": sup, "Status": "Pending"}])], ignore_index=True), "orders_db")
+                st.success(f"✅ Added {r_item} to requisition list")
+                st.rerun()
+    
+    st.markdown('<div class="data-table">', unsafe_allow_html=True)
+    st.dataframe(load_from_sheet("orders_db"), use_container_width=True, hide_index=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
+# --- SUPPLIERS TAB ---
 with tab_sup:
-    st.subheader("📞 Supplier Directory")
+    st.markdown('<div class="premium-card">', unsafe_allow_html=True)
+    st.markdown('<h2 class="section-title">📞 Supplier Directory</h2>', unsafe_allow_html=True)
+    
     meta = load_from_sheet("product_metadata")
-    search = st.text_input("🔍 Search Database").lower()
-    filtered = meta[meta["Product Name"].str.lower().str.contains(search, na=False) | meta["Supplier"].str.lower().str.contains(search, na=False)] if search else meta
-    edited_meta = st.data_editor(filtered, num_rows="dynamic", use_container_width=True)
-    if st.button("💾 Save Directory"): save_to_sheet(edited_meta, "product_metadata"); st.rerun()
+    search = st.text_input("🔍 Search Database", placeholder="Search by product name or supplier...")
+    
+    if search:
+        search_lower = search.lower()
+        filtered = meta[meta["Product Name"].str.lower().str.contains(search_lower, na=False) | meta["Supplier"].str.lower().str.contains(search_lower, na=False)]
+    else:
+        filtered = meta
+    
+    st.markdown('<div class="data-table">', unsafe_allow_html=True)
+    edited_meta = st.data_editor(filtered, num_rows="dynamic", use_container_width=True, hide_index=True)
+    
+    if st.button("💾 Save Directory", use_container_width=True, type="primary", key="save_meta_btn"):
+        save_to_sheet(edited_meta, "product_metadata")
+        st.success("✅ Directory saved!")
+        st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
 # --- SIDEBAR (Bulk Operations) ---
 with st.sidebar:
-    st.header("Cloud Data Control")
-    st.subheader("1. Bulk Inventory Sync")
-    inv_file = st.file_uploader("Upload Inventory Master", type=["csv", "xlsx"])
+    st.markdown('<h2 class="sidebar-title">☁️ Cloud Data Control</h2>', unsafe_allow_html=True)
+    
+    st.markdown('<div class="premium-card">', unsafe_allow_html=True)
+    st.markdown('<p class="section-title">1️⃣ Bulk Inventory Sync</p>', unsafe_allow_html=True)
+    
+    inv_file = st.file_uploader("📂 Upload Inventory Master", type=["csv", "xlsx"], key="inv_upload")
     if inv_file:
         try:
             raw_df = pd.read_excel(inv_file, skiprows=4, header=None) if inv_file.name.endswith('.xlsx') else pd.read_csv(inv_file, skiprows=4, header=None)
@@ -323,18 +609,36 @@ with st.sidebar:
             new_df["Opening Stock"] = pd.to_numeric(raw_df[3], errors='coerce').fillna(0.0)
             for i in range(1, 32): new_df[str(i)] = 0.0
             new_df["Total Received"] = 0.0; new_df["Consumption"] = 0.0; new_df["Closing Stock"] = new_df["Opening Stock"]
-            if st.button("🚀 Push Inventory"):
-                save_to_sheet(new_df.dropna(subset=["Product Name"]), "persistent_inventory"); st.rerun()
-        except Exception as e: st.error(f"Error: {e}")
-
-    st.divider()
-    st.subheader("2. Bulk Supplier Sync")
-    meta_upload = st.file_uploader("Upload Product Metadata", type=["csv", "xlsx"])
+            if st.button("🚀 Push Inventory", use_container_width=True, type="primary", key="push_inv_btn"):
+                save_to_sheet(new_df.dropna(subset=["Product Name"]), "persistent_inventory")
+                st.success("✅ Inventory pushed successfully!")
+                st.rerun()
+        except Exception as e:
+            st.error(f"❌ Error: {e}")
+    st.markdown('</div>', unsafe_allow_html=True)
+    
+    st.markdown('<hr>', unsafe_allow_html=True)
+    
+    st.markdown('<div class="premium-card">', unsafe_allow_html=True)
+    st.markdown('<p class="section-title">2️⃣ Bulk Supplier Sync</p>', unsafe_allow_html=True)
+    
+    meta_upload = st.file_uploader("📂 Upload Product Metadata", type=["csv", "xlsx"], key="meta_upload")
     if meta_upload:
         try:
             new_meta = pd.read_excel(meta_upload) if meta_upload.name.endswith('.xlsx') else pd.read_csv(meta_upload)
-            if st.button("🚀 Push Metadata"):
-                save_to_sheet(new_meta, "product_metadata"); st.rerun()
-        except Exception as e: st.error(f"Error: {e}")
+            if st.button("🚀 Push Metadata", use_container_width=True, type="primary", key="push_meta_btn"):
+                save_to_sheet(new_meta, "product_metadata")
+                st.success("✅ Metadata pushed successfully!")
+                st.rerun()
+        except Exception as e:
+            st.error(f"❌ Error: {e}")
+    st.markdown('</div>', unsafe_allow_html=True)
     
-    if st.button("🗑️ Reset Cache"): st.cache_data.clear(); st.rerun()
+    st.markdown('<hr>', unsafe_allow_html=True)
+    
+    st.markdown('<div class="premium-card">', unsafe_allow_html=True)
+    if st.button("🗑️ Reset Cache", use_container_width=True, key="reset_cache_btn"):
+        st.cache_data.clear()
+        st.success("✅ Cache cleared!")
+        st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
