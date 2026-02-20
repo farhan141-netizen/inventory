@@ -17,11 +17,11 @@ def clean_dataframe(df):
     df.columns = [str(col).strip() for col in df.columns]
     return df
 
-@st.cache_data(ttl=60)  # Reduced from 300 to 60 seconds for faster sync
+@st.cache_data(ttl=60)
 def load_from_sheet(worksheet_name, default_cols=None):
     """Safely load and clean data from Google Sheets with caching"""
     try:
-        df = conn.read(worksheet=worksheet_name, ttl="1m")  # Changed to 1 minute
+        df = conn.read(worksheet=worksheet_name, ttl="1m")
         df = clean_dataframe(df)
         if df is None or df.empty:
             return pd.DataFrame(columns=default_cols) if default_cols else pd.DataFrame()
@@ -37,7 +37,7 @@ def save_to_sheet(df, worksheet_name):
     df = clean_dataframe(df)
     try:
         conn.update(worksheet=worksheet_name, data=df)
-        st.cache_data.clear()  # Clear ALL cache after save
+        st.cache_data.clear()
         return True
     except Exception as e:
         st.error(f"Error saving to {worksheet_name}: {str(e)}")
@@ -652,9 +652,13 @@ with tab_req:
         st.cache_data.clear()
         st.rerun()
     
-    all_reqs = load_from_sheet("restaurant_requisitions", ["ReqID", "Restaurant", "Item", "Qty", "Status", "DispatchQty", "Timestamp", "RequestedDate"])
+    all_reqs = load_from_sheet("restaurant_requisitions", ["ReqID", "Restaurant", "Item", "Qty", "Status", "DispatchQty", "Timestamp", "RequestedDate", "FollowupSent"])
     
     if not all_reqs.empty:
+        # Ensure FollowupSent column exists
+        if "FollowupSent" not in all_reqs.columns:
+            all_reqs["FollowupSent"] = False
+        
         status_filter = st.selectbox("Filter by Status", ["All", "Pending", "Dispatched", "Completed"], key="req_status_filter")
         
         if status_filter != "All":
@@ -676,22 +680,24 @@ with tab_req:
                     dispatch_qty = float(row.get("DispatchQty", 0))
                     req_id = row["ReqID"]
                     req_date = row.get("RequestedDate", "N/A")
+                    remaining_qty = req_qty - dispatch_qty
+                    followup_sent = row.get("FollowupSent", False)
                     
                     stock_info = st.session_state.inventory[st.session_state.inventory["Product Name"] == item_name]
                     available_qty = float(stock_info["Closing Stock"].values[0]) if not stock_info.empty else 0.0
                     
-                    status_color = "🟡" if status == "Pending" else "🟢" if status == "Dispatched" else "🔵"
+                    status_color = "🟡" if status == "Pending" else "🟠" if status == "Dispatched" else "🔵"
+                    followup_text = " | ⚠️ Follow-up Sent" if followup_sent else ""
                     
                     st.markdown(f"""
                     <div class="req-box {'req-pending' if status == 'Pending' else 'req-dispatched' if status == 'Dispatched' else 'req-completed'}">
-                        <b>{status_color} {item_name}</b> | Requested: {req_qty} | Available: {available_qty} | Date: {req_date}
+                        <b>{status_color} {item_name}</b> | Requested: {req_qty} | Dispatched: {dispatch_qty} | Remaining: {remaining_qty} | Available: {available_qty}{followup_text}
                     </div>
                     """, unsafe_allow_html=True)
                     
                     if status == "Pending":
                         c1, c2, c3 = st.columns([2, 1, 1])
                         with c1:
-                            # FIX: Set value to min(req_qty, available_qty) to ensure value <= max_value
                             default_dispatch = min(req_qty, available_qty)
                             dispatch_qty_input = st.number_input(
                                 f"Dispatch Qty for {item_name}", 
@@ -707,9 +713,8 @@ with tab_req:
                                     all_reqs.at[idx, "Status"] = "Dispatched"
                                     all_reqs.at[idx, "Timestamp"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                                     
-                                    # Save and clear cache immediately
                                     if save_to_sheet(all_reqs, "restaurant_requisitions"):
-                                        st.success(f"✅ Dispatched {dispatch_qty_input} {item_name}")
+                                        st.success(f"✅ Dispatched {dispatch_qty_input} {item_name} to {restaurant}")
                                         st.cache_data.clear()
                                         st.rerun()
                         with c3:
@@ -720,7 +725,16 @@ with tab_req:
                                 st.rerun()
                     
                     elif status == "Dispatched":
-                        st.write(f"✅ Dispatched: {dispatch_qty} units")
+                        c1, c2 = st.columns([1, 1])
+                        with c1:
+                            st.write(f"✅ Dispatched: {dispatch_qty} units | Remaining: {remaining_qty}")
+                        with c2:
+                            if st.button(f"🚩 Send Follow-up", key=f"followup_{idx}", use_container_width=True):
+                                all_reqs.at[idx, "FollowupSent"] = True
+                                all_reqs.at[idx, "Timestamp"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                save_to_sheet(all_reqs, "restaurant_requisitions")
+                                st.success(f"✅ Follow-up sent for {item_name}!")
+                                st.rerun()
                     
                     st.divider()
         else:
