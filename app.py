@@ -17,27 +17,28 @@ def clean_dataframe(df):
     df.columns = [str(col).strip() for col in df.columns]
     return df
 
+@st.cache_data(ttl=300)  # Cache for 5 minutes
 def load_from_sheet(worksheet_name, default_cols=None):
-    """Safely load and clean data from Google Sheets"""
+    """Safely load and clean data from Google Sheets with caching"""
     try:
-        df = conn.read(worksheet=worksheet_name, ttl="2s")
+        df = conn.read(worksheet=worksheet_name, ttl="5m")
         df = clean_dataframe(df)
         if df is None or df.empty:
             return pd.DataFrame(columns=default_cols) if default_cols else pd.DataFrame()
         return df
     except Exception as e:
-        st.warning(f"Could not load {worksheet_name}: {str(e)}")
+        # Don't show warning for every call, just return empty
         return pd.DataFrame(columns=default_cols) if default_cols else pd.DataFrame()
 
 def save_to_sheet(df, worksheet_name):
     """Save cleaned data to Google Sheets and clear cache"""
     if df is None or df.empty:
-        st.warning(f"No data to save to {worksheet_name}")
         return False
     
     df = clean_dataframe(df)
     try:
         conn.update(worksheet=worksheet_name, data=df)
+        # Clear the cache for this specific sheet after save
         st.cache_data.clear()
         return True
     except Exception as e:
@@ -191,7 +192,7 @@ def add_category_modal():
         
         category_name = category_name.strip()
         
-        # Load existing categories - use product_metadata instead of separate sheet
+        # Load existing categories
         meta_df = load_from_sheet("product_metadata")
         
         # Get unique categories from product_metadata
@@ -262,7 +263,6 @@ def add_item_modal():
     # Load existing suppliers
     meta_df = load_from_sheet("product_metadata")
     existing_suppliers = []
-    supplier_column = None
     
     if not meta_df.empty and "Supplier" in meta_df.columns:
         all_suppliers = meta_df["Supplier"].dropna().unique().tolist()
