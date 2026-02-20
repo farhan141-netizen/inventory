@@ -178,6 +178,12 @@ def add_item_modal():
         opening = st.number_input("📊 Opening Stock", min_value=0.0, value=0.0)
         category = st.text_input("🗂️ Category", value="General", placeholder="e.g., Vegetables, Grains")
 
+    col3, col4 = st.columns(2)
+    with col3:
+        price = st.number_input("💵 Unit Price", min_value=0.0, value=0.0, step=0.01)
+    with col4:
+        currency = st.text_input("💱 Currency", value="USD", placeholder="e.g., USD, INR")
+
     st.divider()
     st.subheader("🏭 Supplier Details")
     
@@ -215,7 +221,7 @@ def add_item_modal():
                     lead_time = supplier_row.get("Lead Time", "")
                     
                     # Display the fetched details
-                    st.info(f"✅ **Contact:** {contact}\n\n📧 **Email:** {email}\n\n⏱️ **Lead Time:** {lead_time}")
+                    st.info(f"✅ **Contact:** {contact}\n\n📧 **Email:** {email}\n\n⏱�� **Lead Time:** {lead_time}")
         else:
             st.warning("⚠️ No suppliers found. Please create a new one.")
             supplier = None
@@ -243,7 +249,7 @@ def add_item_modal():
             st.session_state.inventory = pd.concat([st.session_state.inventory, pd.DataFrame([new_row])], ignore_index=True)
             save_to_sheet(st.session_state.inventory, "persistent_inventory")
             
-            # Add to supplier metadata - Save ALL supplier details
+            # Add to supplier metadata - Save ALL supplier details including price
             supplier_meta = pd.DataFrame([{
                 "Product Name": name,
                 "UOM": uom,
@@ -251,13 +257,15 @@ def add_item_modal():
                 "Contact": contact,
                 "Email": email,
                 "Category": category,
-                "Lead Time": lead_time
+                "Lead Time": lead_time,
+                "Price": price,
+                "Currency": currency
             }])
             meta_df = load_from_sheet("product_metadata")
             meta_df = pd.concat([meta_df, supplier_meta], ignore_index=True)
             save_to_sheet(meta_df, "product_metadata")
             
-            st.success(f"✅ Product '{name}' created with supplier '{supplier}'!")
+            st.success(f"✅ Product '{name}' created with supplier '{supplier}' at {currency} {price}!")
             st.rerun()
         else:
             st.error("❌ Please fill in Product Name and Supplier")
@@ -444,7 +452,16 @@ with tab_sup:
     meta = load_from_sheet("product_metadata")
     search = st.text_input("🔍 Filter...", placeholder="Item or Supplier...")
     filtered = meta if not search else meta[meta["Product Name"].str.lower().str.contains(search.lower(), na=False) | meta["Supplier"].str.lower().str.contains(search.lower(), na=False)]
-    edited_meta = st.data_editor(filtered, num_rows="dynamic", use_container_width=True, hide_index=True, height=500)
+    
+    # Ensure Price and Currency columns are visible
+    if not filtered.empty:
+        display_cols = ["Product Name", "Category", "Supplier", "Contact", "Email", "Price", "Currency", "Lead Time", "UOM"]
+        available_cols = [col for col in display_cols if col in filtered.columns]
+        filtered_display = filtered[available_cols]
+    else:
+        filtered_display = filtered
+    
+    edited_meta = st.data_editor(filtered_display, num_rows="dynamic", use_container_width=True, hide_index=True, height=500)
     if st.button("💾 Save Directory", use_container_width=True, type="primary"):
         save_to_sheet(edited_meta, "product_metadata"); st.rerun()
 
