@@ -167,6 +167,39 @@ def undo_entry(log_id):
             st.rerun()
 
 # --- MODALS ---
+@st.dialog("➕ Add New Category")
+def add_category_modal():
+    st.subheader("🗂️ Add New Category")
+    
+    category_name = st.text_input("📌 Category Name", placeholder="e.g., Vegetables, Grains, Dairy")
+    description = st.text_area("📝 Description", placeholder="Brief description of this category", height=100)
+    
+    if st.button("✅ Add Category", use_container_width=True, type="primary"):
+        if category_name:
+            # Load existing categories
+            categories_df = load_from_sheet("categories_master", ["Category Name", "Description"])
+            
+            # Check if category already exists
+            if not categories_df.empty and "Category Name" in categories_df.columns:
+                existing = categories_df[categories_df["Category Name"] == category_name]
+                if not existing.empty:
+                    st.error(f"❌ Category '{category_name}' already exists!")
+                    return
+            
+            # Add new category
+            new_category = pd.DataFrame([{
+                "Category Name": category_name,
+                "Description": description
+            }])
+            
+            categories_df = pd.concat([categories_df, new_category], ignore_index=True)
+            save_to_sheet(categories_df, "categories_master")
+            
+            st.success(f"✅ Category '{category_name}' added successfully!")
+            st.rerun()
+        else:
+            st.error("❌ Please fill in Category Name")
+
 @st.dialog("➕ Add New Product")
 def add_item_modal():
     st.subheader("📦 Product Details")
@@ -176,7 +209,14 @@ def add_item_modal():
         uom = st.selectbox("📏 Unit of Measure", ["pcs", "kg", "box", "ltr", "pkt", "can", "bot", "bag", "carton"])
     with col2:
         opening = st.number_input("📊 Opening Stock", min_value=0.0, value=0.0)
-        category = st.text_input("🗂️ Category", value="General", placeholder="e.g., Vegetables, Grains")
+        
+        # Load categories
+        categories_df = load_from_sheet("categories_master")
+        category_list = ["General"]
+        if not categories_df.empty and "Category Name" in categories_df.columns:
+            category_list = sorted(categories_df["Category Name"].dropna().tolist())
+        
+        category = st.selectbox("🗂️ Category", category_list)
 
     col3, col4 = st.columns(2)
     with col3:
@@ -270,7 +310,7 @@ def add_item_modal():
         else:
             st.error("❌ Please fill in Product Name and Supplier")
 
-@st.dialog("�� Add New Supplier")
+@st.dialog("➕ Add New Supplier")
 def add_supplier_modal():
     st.subheader("🏭 Add New Supplier")
     
@@ -406,13 +446,15 @@ with tab_ops:
 
     with col_quick_main:
         st.markdown('<span class="section-title">⚙️ Actions</span>', unsafe_allow_html=True)
-        ac1, ac2, ac3 = st.columns(3)
+        ac1, ac2, ac3, ac4 = st.columns(4)
         with ac1: 
-            if st.button("➕ Item", use_container_width=True, help="New Product"): add_item_modal()
+            if st.button("➕ Item", use_container_width=True, help="New Product", key="btn_add_item"): add_item_modal()
         with ac2: 
-            if st.button("📂 Exp", use_container_width=True, help="Explorer"): archive_explorer_modal()
+            if st.button("🗂️ Cat", use_container_width=True, help="New Category", key="btn_add_cat"): add_category_modal()
         with ac3: 
-            if st.button("🔒 Close", use_container_width=True, type="primary", help="Close Month"): close_month_modal()
+            if st.button("📂 Exp", use_container_width=True, help="Explorer", key="btn_exp"): archive_explorer_modal()
+        with ac4: 
+            if st.button("🔒 Close", use_container_width=True, type="primary", help="Close Month", key="btn_close"): close_month_modal()
 
     st.markdown('<hr>', unsafe_allow_html=True)
     
@@ -458,11 +500,11 @@ with tab_ops:
     with stat_col:
         st.markdown('<span class="section-title">📊 Live Stock Status</span>', unsafe_allow_html=True)
         df_status = st.session_state.inventory.copy()
-        disp_cols = ["Product Name", "UOM", "Opening Stock", "Total Received", "Closing Stock", "Consumption", "Physical Count", "Variance"]
+        disp_cols = ["Product Name", "Category", "UOM", "Opening Stock", "Total Received", "Closing Stock", "Consumption", "Physical Count", "Variance"]
         for col in disp_cols: 
             if col not in df_status.columns: df_status[col] = 0.0
         
-        edited_df = st.data_editor(df_status[disp_cols], height=380, use_container_width=True, disabled=["Product Name", "UOM", "Total Received", "Closing Stock", "Variance"], hide_index=True)
+        edited_df = st.data_editor(df_status[disp_cols], height=380, use_container_width=True, disabled=["Product Name", "Category", "UOM", "Total Received", "Closing Stock", "Variance"], hide_index=True)
         
         sc1, sc2, sc3 = st.columns(3)
         with sc1:
@@ -478,7 +520,7 @@ with tab_ops:
         with sc3:
             day_cols = [str(i) for i in range(1, 32)]
             existing_day_cols = [col for col in day_cols if col in df_status.columns]
-            full_cols = ["Product Name", "UOM", "Opening Stock"] + existing_day_cols + ["Total Received", "Consumption", "Closing Stock", "Physical Count", "Variance"]
+            full_cols = ["Product Name", "Category", "UOM", "Opening Stock"] + existing_day_cols + ["Total Received", "Consumption", "Closing Stock", "Physical Count", "Variance"]
             full_cols = [col for col in full_cols if col in df_status.columns]
             
             if full_cols:
