@@ -117,44 +117,34 @@ def recalculate_inventory(df):
 # --- PAGE CONFIG ---
 st.set_page_config(page_title="Restaurant 01 Pro", layout="wide")
 
-# --- CUSTOM CSS ---
+# --- CUSTOM CSS - COMPACT VISUAL ONLY ---
 st.markdown("""
     <style>
     .main { background-color: #0e1117; }
-    .header { background: linear-gradient(90deg, #ff6b35 0%, #f7931e 100%); padding: 20px; border-radius: 10px; color: white; margin-bottom: 20px; }
-    .header h1 { margin: 0; font-size: 2em; }
+    .header { background: linear-gradient(90deg, #ff6b35 0%, #f7931e 100%); padding: 12px 15px; border-radius: 10px; color: white; margin-bottom: 12px; }
+    .header h1 { margin: 0; font-size: 1.5em; }
+    .header p { margin: 2px 0 0 0; font-size: 0.85em; }
     
-    .stTabs [data-baseweb="tab-list"] { gap: 24px; }
-    .stTabs [data-baseweb="tab"] { 
-        height: 50px; background-color: #1e2130; 
-        border-radius: 5px 5px 0 0; padding: 10px 20px; color: white; font-weight: 600;
-    }
+    .stTabs [data-baseweb="tab-list"] { gap: 8px; }
+    .stTabs [data-baseweb="tab"] { height: 45px; background-color: #1e2130; border-radius: 5px 5px 0 0; padding: 8px 12px; color: white; font-weight: 600; font-size: 0.9em; }
     .stTabs [aria-selected="true"] { background-color: #ff6b35 !important; color: white !important; }
     
-    .cart-container { 
-        padding: 20px; background-color: #1e2130; 
-        border-radius: 10px; border: 2px solid #ff6b35; margin-top: 20px;
-    }
-    .cart-item {
-        background: #262730; padding: 10px; margin-bottom: 8px; 
-        border-left: 4px solid #ff6b35; border-radius: 4px;
-    }
+    .cart-container { padding: 12px; background-color: #1e2130; border-radius: 10px; border: 2px solid #ff6b35; margin-top: 10px; }
+    .cart-item { background: #262730; padding: 6px 8px; margin-bottom: 4px; border-left: 4px solid #ff6b35; border-radius: 4px; font-size: 0.9em; }
     
-    .pending-box {
-        border-left: 5px solid #ff6b35; background: #262730;
-        padding: 15px; margin-bottom: 12px; border-radius: 4px;
-    }
+    .pending-box { border-left: 5px solid #ff6b35; background: #262730; padding: 8px; margin-bottom: 6px; border-radius: 4px; font-size: 0.9em; }
     .pending-pending { border-left: 5px solid #ffaa00; background: #3a2f1a; }
     .pending-dispatched { border-left: 5px solid #00d9ff; background: #1a2f3f; }
     .pending-completed { border-left: 5px solid #00ff00; background: #1a3a1a; }
-    .pending-followup { border-left: 5px solid #ff6b35; background: #3a2f1a; }
     
-    .section-title { color: #ff6b35; font-size: 1.2em; font-weight: 700; margin-bottom: 15px; }
-    .stButton>button { border-radius: 6px; font-weight: 600; }
+    .section-title { color: #ff6b35; font-size: 1em; font-weight: 700; margin-bottom: 8px; margin-top: 3px; }
+    .stButton>button { border-radius: 6px; font-weight: 600; font-size: 0.85em; padding: 4px 8px; }
     
-    .history-box { background: #1a2f3f; border-left: 4px solid #00d9ff; padding: 12px; margin-bottom: 10px; border-radius: 6px; }
+    .history-box { background: #1a2f3f; border-left: 4px solid #00d9ff; padding: 8px; margin-bottom: 6px; border-radius: 6px; font-size: 0.9em; }
     .history-pending { border-left: 4px solid #ffaa00; background: #3a2f1a; }
     .history-received { border-left: 4px solid #00ff00; background: #1a3a1a; }
+    
+    hr { margin: 6px 0; opacity: 0.1; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -218,7 +208,7 @@ with tab_inv:
             disabled=["Product Name", "Category", "UOM", "Opening Stock", "Total Received", "Closing Stock", "Variance"],
             hide_index=True,
             key="inv_editor",
-            height=500
+            height=350
         )
         
         col1, col2, col3 = st.columns(3)
@@ -256,8 +246,8 @@ with tab_req:
             else:
                 items = st.session_state.inventory
             
-            for item_idx, (_, row) in enumerate(items.head(20).iterrows()):
-                c1, c2, c3 = st.columns([3, 1, 1])
+            for item_idx, (_, row) in enumerate(items.head(12).iterrows()):
+                c1, c2, c3 = st.columns([3, 0.8, 0.8])
                 product_name = row['Product Name']
                 uom = row['UOM']
                 closing_stock = row.get('Closing Stock', 0)
