@@ -143,8 +143,9 @@ st.markdown("""
     .status-dispatched { border-left: 4px solid #00d9ff; background: #1a2f3f; }
     .status-completed { border-left: 4px solid #00ff00; background: #1a3a1a; }
     
-    .req-item { padding: 6px; margin: 3px 0; border-radius: 4px; font-size: 0.85em; line-height: 1.3; }
-    .req-compact-buttons { display: flex; gap: 4px; margin-top: 3px; }
+    .req-item { padding: 6px 8px; margin: 3px 0; border-radius: 4px; font-size: 0.85em; line-height: 1.3; display: flex; justify-content: space-between; align-items: center; }
+    .req-item-content { flex: 1; }
+    .req-item-buttons { display: flex; gap: 4px; margin-left: 8px; }
     
     hr { margin: 4px 0; opacity: 0.1; }
     </style>
@@ -401,38 +402,42 @@ with tab_pending:
                             
                             followup_indicator = "⚠️ Follow-up Sent" if followup_sent else "⏳ No Follow-up"
                             
-                            st.markdown(f"""
-                            <div class="req-item {bg_class}">
-                                <b>{status_indicator} {item_name}</b><br>
-                                Requested: {req_qty} | Received: {dispatch_qty} | Remaining: {remaining_qty}<br>
-                                <small>Status: {status_text} | {followup_indicator}</small>
-                            </div>
-                            """, unsafe_allow_html=True)
+                            # Create item box with buttons inside
+                            col_item, col_fup, col_complete = st.columns([2, 1, 1])
                             
-                            c1, c2 = st.columns([1, 1])
+                            with col_item:
+                                st.markdown(f"""
+                                <div class="req-item {bg_class}">
+                                    <div class="req-item-content">
+                                        <b>{status_indicator} {item_name}</b><br>
+                                        Req:{req_qty} | Got:{dispatch_qty} | Rem:{remaining_qty}<br>
+                                        <small>{status_text} | {followup_indicator}</small>
+                                    </div>
+                                </div>
+                                """, unsafe_allow_html=True)
                             
-                            with c1:
-                                if st.button(f"🚩 Request Follow-up", key=f"followup_{idx}_{req_id}", use_container_width=True):
+                            with col_fup:
+                                if st.button(f"🚩", key=f"followup_{idx}_{req_id}", use_container_width=True, help="Request Follow-up"):
                                     try:
                                         all_reqs.at[idx, "FollowupSent"] = True
                                         all_reqs.at[idx, "Timestamp"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                                         save_to_sheet(all_reqs, "restaurant_requisitions")
-                                        st.success(f"✅ Follow-up notification sent to Warehouse!")
+                                        st.success(f"✅ Follow-up sent!")
                                         st.rerun()
                                     except Exception as e:
                                         st.error(f"❌ Error: {str(e)}")
                             
-                            with c2:
-                                if st.button(f"✅ Mark Complete", key=f"complete_{idx}_{req_id}", use_container_width=True):
+                            with col_complete:
+                                if st.button(f"✅", key=f"complete_{idx}_{req_id}", use_container_width=True, help="Mark Complete"):
                                     try:
                                         # Only if all items are received (remaining = 0)
                                         if remaining_qty <= 0:
                                             all_reqs.at[idx, "Status"] = "Completed"
                                             save_to_sheet(all_reqs, "restaurant_requisitions")
-                                            st.success(f"✅ {item_name} marked as complete!")
+                                            st.success(f"✅ Marked complete!")
                                             st.rerun()
                                         else:
-                                            st.warning(f"⚠️ Still {remaining_qty} units pending. Cannot mark as complete.")
+                                            st.warning(f"⚠️ Still {remaining_qty} units pending.")
                                     except Exception as e:
                                         st.error(f"❌ Error: {str(e)}")
             else:
@@ -482,22 +487,27 @@ with tab_received:
                             # Color based on whether all items are received
                             status_indicator = "🟢" if remaining_qty == 0 else "🟡"
                             
-                            st.markdown(f"""
-                            <div class="req-item status-dispatched">
-                                <b>{status_indicator} {item_name}</b> | Requested: {req_qty} | Dispatched: {dispatch_qty} | Remaining: {remaining_qty}
-                            </div>
-                            """, unsafe_allow_html=True)
+                            # Create item box with buttons inside
+                            col_item, col_accept, col_reject = st.columns([2, 1, 1])
                             
-                            c1, c2 = st.columns([1, 1])
+                            with col_item:
+                                st.markdown(f"""
+                                <div class="req-item status-dispatched">
+                                    <div class="req-item-content">
+                                        <b>{status_indicator} {item_name}</b><br>
+                                        Req:{req_qty} | Got:{dispatch_qty} | Rem:{remaining_qty}
+                                    </div>
+                                </div>
+                                """, unsafe_allow_html=True)
                             
-                            with c1:
-                                if st.button(f"✅ Accept & Add to Inventory", key=f"accept_{recv_idx}_{req_id}", use_container_width=True):
+                            with col_accept:
+                                if st.button(f"✅", key=f"accept_{recv_idx}_{req_id}", use_container_width=True, help="Accept & Add to Inventory"):
                                     try:
                                         # Keep status as Dispatched if partial, Completed if all received
                                         if remaining_qty <= 0:
                                             all_reqs.at[original_idx, "Status"] = "Completed"
                                         else:
-                                            all_reqs.at[original_idx, "Status"] = "Dispatched"  # Keep as dispatched for tracking
+                                            all_reqs.at[original_idx, "Status"] = "Dispatched"
                                         
                                         # Add to restaurant inventory - add to today's column
                                         today = datetime.datetime.now().day
@@ -525,13 +535,13 @@ with tab_received:
                                         save_to_sheet(all_reqs, "restaurant_requisitions")
                                         save_to_sheet(st.session_state.inventory, "rest_01_inventory")
                                         
-                                        st.success(f"✅ {item_name} ({dispatch_qty} units) received and added to inventory on Day {today}!")
+                                        st.success(f"✅ Added Day {today}!")
                                         st.rerun()
                                     except Exception as e:
                                         st.error(f"❌ Error: {str(e)}")
                             
-                            with c2:
-                                if st.button(f"❌ Reject", key=f"reject_{recv_idx}_{req_id}", use_container_width=True):
+                            with col_reject:
+                                if st.button(f"❌", key=f"reject_{recv_idx}_{req_id}", use_container_width=True, help="Reject"):
                                     try:
                                         all_reqs.at[original_idx, "Status"] = "Pending"
                                         all_reqs.at[original_idx, "DispatchQty"] = 0
@@ -627,9 +637,11 @@ with tab_history:
                             
                             st.markdown(f"""
                             <div class="req-item {box_class}">
-                                <b>{status_color} {item_name}</b><br>
-                                Requested: {req_qty} | Received: {dispatch_qty} | Remaining: {remaining}<br>
-                                <small>Status: {status} | Updated: {timestamp} | {followup_text}</small>
+                                <div class="req-item-content">
+                                    <b>{status_color} {item_name}</b><br>
+                                    Req:{req_qty} | Got:{dispatch_qty} | Rem:{remaining}<br>
+                                    <small>Status: {status} | {timestamp} | {followup_text}</small>
+                                </div>
                             </div>
                             """, unsafe_allow_html=True)
             else:
