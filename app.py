@@ -558,7 +558,7 @@ def close_month_modal():
         save_to_sheet(new_df, "persistent_inventory")
         st.rerun()
 
-# --- DASHBOARD HELPERS (NEW) ---
+# --- DASHBOARD HELPERS ---
 TOP_15_CURRENCIES_PLUS_BHD = [
     "USD", "EUR", "JPY", "GBP", "AUD", "CAD", "CHF", "CNY", "HKD", "SGD",
     "INR", "AED", "SAR", "KWD", "BHD",
@@ -646,7 +646,7 @@ def _prepare_reqs(req_df):
 
 def _prepare_logs(log_df):
     """
-    FIXED: forces LogDateParsed as python datetime.date to compare with st.date_input values.
+    forces LogDateParsed as python datetime.date to compare with st.date_input values.
     """
     if log_df is None or log_df.empty:
         return log_df
@@ -675,6 +675,42 @@ def _to_excel_bytes(sheets: dict):
                 continue
             (df if isinstance(df, pd.DataFrame) else pd.DataFrame(df)).to_excel(writer, index=False, sheet_name=safe_name)
     return buf.getvalue()
+
+def _safe_topn_df(df, value_col, top_n, ascending):
+    if df is None or df.empty or value_col not in df.columns:
+        return df
+    return df.sort_values(value_col, ascending=ascending).head(top_n)
+
+def _make_bar_chart(df, x_col, y_col):
+    if df is None or df.empty or x_col not in df.columns or y_col not in df.columns:
+        st.info("📭 No data for chart.")
+        return
+    chart_df = df[[x_col, y_col]].copy()
+    chart_df = chart_df.set_index(x_col)
+    st.bar_chart(chart_df, y=y_col)
+
+def _make_pie_chart(df, label_col, value_col, top_n=10):
+    # Streamlit doesn't have native pie; use plotly if available, else fallback to dataframe.
+    if df is None or df.empty or label_col not in df.columns or value_col not in df.columns:
+        st.info("📭 No data for chart.")
+        return
+
+    pie_df = df[[label_col, value_col]].copy()
+    pie_df[value_col] = pd.to_numeric(pie_df[value_col], errors="coerce").fillna(0.0)
+    pie_df = pie_df[pie_df[value_col] > 0].head(top_n)
+
+    if pie_df.empty:
+        st.info("📭 No non-zero values for pie chart.")
+        return
+
+    try:
+        import plotly.express as px  # type: ignore
+        fig = px.pie(pie_df, names=label_col, values=value_col, hole=0.35)
+        fig.update_layout(margin=dict(l=10, r=10, t=30, b=10), height=360)
+        st.plotly_chart(fig, use_container_width=True)
+    except Exception:
+        st.info("Plotly not installed. Showing table instead (install: `pip install plotly`).")
+        st.dataframe(pie_df, use_container_width=True, hide_index=True)
 
 # --- INITIALIZATION ---
 if "inventory" not in st.session_state:
@@ -1038,47 +1074,54 @@ with tab_sup:
         save_to_sheet(edited_meta, "product_metadata")
         st.rerun()
 
-# ===================== DASHBOARD TAB (NEW FEATURE) =====================
+# ===================== DASHBOARD TAB =====================
 with tab_dash:
     st.markdown('<span class="section-title">📊 Warehouse Dashboard</span>', unsafe_allow_html=True)
 
-    c1, c2, c3, c4, c5 = st.columns([1.2, 1.2, 1.4, 1.0, 1.2])
-    with c1:
+    # View dropdown: keep tables + add charts
+    v1, v2, v3, v4, v5 = st.columns([1.3, 1.2, 1.4, 1.1, 1.2])
+    with v1:
         if st.button("🔄 Refresh", use_container_width=True, key="dash_refresh"):
             st.cache_data.clear()
             st.rerun()
-
-    with c2:
+    with v2:
+        dashboard_view = st.selectbox(
+            "View",
+            options=["Tables", "Bar Charts", "Pie Charts"],
+            index=0,
+            key="dash_view_mode",
+            label_visibility="collapsed",
+        )
+    with v3:
         reqs_tmp = load_from_sheet("restaurant_requisitions", ["Restaurant"])
         restaurants = []
         if not reqs_tmp.empty and "Restaurant" in reqs_tmp.columns:
             restaurants = sorted([r for r in reqs_tmp["Restaurant"].dropna().astype(str).str.strip().unique().tolist() if r])
         restaurant_filter = st.selectbox("Restaurant", options=["All"] + restaurants, index=0, key="dash_restaurant", label_visibility="collapsed")
+    with v4:
+        top_n = st.selectbox("Top", options=[10, 25, 50, 100], index=0, key="dash_topn", label_visibility="collapsed")
+    with v5:
+        currency_choice = st.selectbox("Currency", options=["All"] + TOP_15_CURRENCIES_PLUS_BHD, index=0, key="dash_currency", label_visibility="collapsed")
 
-    with c3:
+    d1, d2, d3 = st.columns([1.6, 1.6, 2.8])
+    with d1:
         today = datetime.date.today()
         default_start = today - datetime.timedelta(days=30)
         start_date = st.date_input("Start", value=default_start, key="dash_start", label_visibility="collapsed")
+    with d2:
         end_date = st.date_input("End", value=today, key="dash_end", label_visibility="collapsed")
+    with d3:
+        dispatch_date_basis = st.selectbox("Dispatch date", ["RequestedDate", "Dispatch Timestamp"], key="dash_dispatch_basis", label_visibility="collapsed")
 
-    with c4:
-        top_n = st.selectbox("Top", options=[10, 25, 50, 100], index=0, key="dash_topn", label_visibility="collapsed")
-
-    with c5:
-        currency_choice = st.selectbox("Currency", options=["All"] + TOP_15_CURRENCIES_PLUS_BHD, index=0, key="dash_currency", label_visibility="collapsed")
-
-    o1, o2, o3 = st.columns([1.4, 1.2, 2.4])
+    o1, o2 = st.columns([1.2, 3.8])
     with o1:
         sort_dir = st.selectbox("Sort", ["High → Low", "Low → High"], key="dash_sort", label_visibility="collapsed")
     with o2:
-        dispatch_date_basis = st.selectbox("Dispatch date", ["RequestedDate", "Dispatch Timestamp"], key="dash_dispatch_basis", label_visibility="collapsed")
-    with o3:
-        st.caption("Filters apply to Ordered / Dispatched / Received. Stock is current (live).")
+        st.caption("Tables view is preserved. Charts use the same Top-N datasets.")
 
     if start_date > end_date:
         st.warning("⚠️ Start date is after end date. Please fix the date range.")
     else:
-        # Ensure python date objects (critical for pandas comparisons)
         start_date = pd.to_datetime(start_date).date()
         end_date = pd.to_datetime(end_date).date()
 
@@ -1087,13 +1130,8 @@ with tab_dash:
         req_df = _prepare_reqs(load_from_sheet("restaurant_requisitions"))
         log_df = _prepare_logs(load_from_sheet("activity_logs"))
 
-        # NOTE: We should NOT filter inventory rows by currency; inventory is warehouse live qty.
-        # Currency filter is applied ONLY to the valuation (price/currency columns).
         meta_cur = _currency_filtered_meta(meta_df, currency_choice)
 
-        # Merge inventory with metadata twice:
-        # - meta_all gives UOM and Category reliably for display (regardless of currency filter)
-        # - meta_cur gives Price/Currency for valuation (may be empty if currency doesn't match)
         meta_all = meta_df.copy() if meta_df is not None else pd.DataFrame()
         if meta_all is None or meta_all.empty:
             meta_all = pd.DataFrame(columns=["Product Name", "UOM", "Category", "Price", "Currency"])
@@ -1104,15 +1142,17 @@ with tab_dash:
             on="Product Name",
             how="left",
         )
-
         inv_join = pd.merge(
             inv_join,
-            (meta_cur[["Product Name", "Price", "Currency"]].drop_duplicates("Product Name") if meta_cur is not None and not meta_cur.empty else pd.DataFrame(columns=["Product Name", "Price", "Currency"])),
+            (
+                meta_cur[["Product Name", "Price", "Currency"]].drop_duplicates("Product Name")
+                if meta_cur is not None and not meta_cur.empty
+                else pd.DataFrame(columns=["Product Name", "Price", "Currency"])
+            ),
             on="Product Name",
             how="left",
         )
 
-        # If inventory has UOM already but metadata UOM is empty, keep inventory UOM
         if "UOM_x" in inv_join.columns and "UOM_y" in inv_join.columns:
             inv_join["UOM"] = inv_join["UOM_y"].fillna("").astype(str).str.strip()
             inv_join.loc[inv_join["UOM"] == "", "UOM"] = inv_join["UOM_x"].fillna("").astype(str).str.strip()
@@ -1130,7 +1170,7 @@ with tab_dash:
         inv_join["Closing Stock"] = pd.to_numeric(inv_join.get("Closing Stock", 0), errors="coerce").fillna(0.0)
         inv_join["Stock Value"] = (inv_join["Closing Stock"] * inv_join["Price"]).round(2)
 
-        # Requisition filtering
+        # Requisitions filter
         req_filtered = req_df.copy() if req_df is not None and not req_df.empty else pd.DataFrame(
             columns=["Restaurant", "Item", "Qty", "DispatchQty", "Status", "RequestedDate", "DispatchTS_Date"]
         )
@@ -1142,7 +1182,7 @@ with tab_dash:
             req_filtered = req_filtered[req_filtered[date_col].notna()]
             req_filtered = req_filtered[(req_filtered[date_col] >= start_date) & (req_filtered[date_col] <= end_date)]
 
-        # Logs filtering (Received)
+        # Logs filter (Received)
         logs_filtered = log_df.copy() if log_df is not None and not log_df.empty else pd.DataFrame(columns=["Item", "Qty", "Status", "LogDateParsed"])
         if not logs_filtered.empty:
             logs_filtered = logs_filtered[logs_filtered["Status"] == "Active"]
@@ -1207,16 +1247,12 @@ with tab_dash:
                 .head(top_n)
             )
 
-        # IMPORTANT FIX:
-        # - Qty list must be based on Closing Stock, independent of currency filter.
-        # - Value list should exclude items with missing Price OR Currency mismatch (Price=0).
         top_stock_qty = pd.DataFrame(columns=["Product Name", "UOM", "Closing Stock"])
         if not inv_join.empty:
             top_stock_qty = inv_join[["Product Name", "UOM", "Closing Stock"]].sort_values("Closing Stock", ascending=ascending).head(top_n)
 
         top_stock_val = pd.DataFrame(columns=["Product Name", "UOM", "Closing Stock", "Price", "Currency", "Stock Value"])
         if not inv_join.empty:
-            # show only items that actually have price > 0 (otherwise it floods with zeros)
             val_df = inv_join.copy()
             val_df = val_df[pd.to_numeric(val_df["Price"], errors="coerce").fillna(0.0) > 0]
             top_stock_val = val_df[["Product Name", "UOM", "Closing Stock", "Price", "Currency", "Stock Value"]].sort_values(
@@ -1266,24 +1302,66 @@ with tab_dash:
 
         st.divider()
 
-        a1, a2 = st.columns(2)
-        with a1:
-            st.markdown('<span class="section-title">📌 Top Ordered Items</span>', unsafe_allow_html=True)
-            st.dataframe(top_ordered, use_container_width=True, hide_index=True, height=320)
-        with a2:
-            st.markdown('<span class="section-title">📌 Top Dispatched Items (Consumption)</span>', unsafe_allow_html=True)
-            st.dataframe(top_dispatched, use_container_width=True, hide_index=True, height=320)
+        # --- VIEW MODES ---
+        if dashboard_view == "Tables":
+            a1, a2 = st.columns(2)
+            with a1:
+                st.markdown('<span class="section-title">📌 Top Ordered Items</span>', unsafe_allow_html=True)
+                st.dataframe(top_ordered, use_container_width=True, hide_index=True, height=320)
+            with a2:
+                st.markdown('<span class="section-title">📌 Top Dispatched Items (Consumption)</span>', unsafe_allow_html=True)
+                st.dataframe(top_dispatched, use_container_width=True, hide_index=True, height=320)
 
-        b1, b2 = st.columns(2)
-        with b1:
-            st.markdown('<span class="section-title">📌 Top Received Items</span>', unsafe_allow_html=True)
-            st.dataframe(top_received, use_container_width=True, hide_index=True, height=320)
-        with b2:
-            st.markdown('<span class="section-title">📌 Top Stock In Hand (Qty)</span>', unsafe_allow_html=True)
-            st.dataframe(top_stock_qty, use_container_width=True, hide_index=True, height=320)
+            b1, b2 = st.columns(2)
+            with b1:
+                st.markdown('<span class="section-title">📌 Top Received Items</span>', unsafe_allow_html=True)
+                st.dataframe(top_received, use_container_width=True, hide_index=True, height=320)
+            with b2:
+                st.markdown('<span class="section-title">📌 Top Stock In Hand (Qty)</span>', unsafe_allow_html=True)
+                st.dataframe(top_stock_qty, use_container_width=True, hide_index=True, height=320)
 
-        st.markdown('<span class="section-title">💰 Top Stock In Hand (Value)</span>', unsafe_allow_html=True)
-        st.dataframe(top_stock_val, use_container_width=True, hide_index=True, height=320)
+            st.markdown('<span class="section-title">💰 Top Stock In Hand (Value)</span>', unsafe_allow_html=True)
+            st.dataframe(top_stock_val, use_container_width=True, hide_index=True, height=320)
+
+        elif dashboard_view == "Bar Charts":
+            a1, a2 = st.columns(2)
+            with a1:
+                st.markdown('<span class="section-title">📊 Ordered (Top)</span>', unsafe_allow_html=True)
+                _make_bar_chart(top_ordered, "Item", "Ordered Qty")
+            with a2:
+                st.markdown('<span class="section-title">📊 Dispatched (Top)</span>', unsafe_allow_html=True)
+                _make_bar_chart(top_dispatched, "Item", "Dispatched Qty")
+
+            b1, b2 = st.columns(2)
+            with b1:
+                st.markdown('<span class="section-title">📊 Received (Top)</span>', unsafe_allow_html=True)
+                _make_bar_chart(top_received, "Item", "Received Qty")
+            with b2:
+                st.markdown('<span class="section-title">📊 Stock In Hand Qty (Top)</span>', unsafe_allow_html=True)
+                _make_bar_chart(top_stock_qty, "Product Name", "Closing Stock")
+
+            st.markdown('<span class="section-title">💰 Stock In Hand Value (Top)</span>', unsafe_allow_html=True)
+            _make_bar_chart(top_stock_val, "Product Name", "Stock Value")
+
+        else:  # Pie Charts
+            a1, a2 = st.columns(2)
+            with a1:
+                st.markdown('<span class="section-title">🥧 Ordered (Top)</span>', unsafe_allow_html=True)
+                _make_pie_chart(top_ordered, "Item", "Ordered Qty", top_n=min(top_n, 10))
+            with a2:
+                st.markdown('<span class="section-title">🥧 Dispatched (Top)</span>', unsafe_allow_html=True)
+                _make_pie_chart(top_dispatched, "Item", "Dispatched Qty", top_n=min(top_n, 10))
+
+            b1, b2 = st.columns(2)
+            with b1:
+                st.markdown('<span class="section-title">🥧 Received (Top)</span>', unsafe_allow_html=True)
+                _make_pie_chart(top_received, "Item", "Received Qty", top_n=min(top_n, 10))
+            with b2:
+                st.markdown('<span class="section-title">🥧 Stock In Hand Qty (Top)</span>', unsafe_allow_html=True)
+                _make_pie_chart(top_stock_qty, "Product Name", "Closing Stock", top_n=min(top_n, 10))
+
+            st.markdown('<span class="section-title">🥧 Stock In Hand Value (Top)</span>', unsafe_allow_html=True)
+            _make_pie_chart(top_stock_val, "Product Name", "Stock Value", top_n=min(top_n, 10))
 
 # ===================== SIDEBAR =====================
 with st.sidebar:
