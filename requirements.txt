@@ -3,3 +3,4 @@ pandas
 st-gsheets-connection
 openpyxl
 xlsxwriter
+plotly>=5.0.0
