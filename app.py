@@ -165,7 +165,7 @@ def apply_transaction(item_name, day_num, qty, is_undo=False):
             df.at[idx, col_name] = current_val + float(qty)
 
         if not is_undo:
-            # NEW: LogDate added for dashboard filtering (new logs only)
+            # LogDate added for dashboard filtering (new logs only)
             new_log = pd.DataFrame(
                 [
                     {
@@ -587,7 +587,6 @@ def _prepare_metadata():
         "Reorder Qty",
         "Min Safety Stock",
         "Min Stock",
-        "Min Stock",  # keep as in your sheet naming
         "UOM",
     ]:
         if col not in meta_df.columns:
@@ -612,18 +611,20 @@ def _prepare_metadata():
         meta_df["Min Stock"] = pd.to_numeric(meta_df["Min Stock"], errors="coerce").fillna(0.0)
 
     meta_df["Currency"] = meta_df["Currency"].fillna("").astype(str).str.upper().str.strip()
+    meta_df["UOM"] = meta_df["UOM"].fillna("").astype(str).str.strip()
     return meta_df
 
 def _prepare_inventory(inv_df):
     if inv_df is None or inv_df.empty:
         return inv_df
     inv_df = inv_df.copy()
-    for col in ["Product Name", "Category", "Closing Stock"]:
+    for col in ["Product Name", "Category", "Closing Stock", "UOM"]:
         if col not in inv_df.columns:
             inv_df[col] = None
     inv_df["Product Name"] = inv_df["Product Name"].astype(str).str.strip()
     inv_df["Category"] = inv_df["Category"].fillna("General").astype(str).str.strip()
     inv_df["Closing Stock"] = pd.to_numeric(inv_df["Closing Stock"], errors="coerce").fillna(0.0)
+    inv_df["UOM"] = inv_df["UOM"].fillna("").astype(str).str.strip()
     inv_df = inv_df[~inv_df["Product Name"].str.startswith("CATEGORY_", na=False)]
     return inv_df
 
@@ -662,7 +663,7 @@ def _prepare_logs(log_df):
     ts_fallback = pd.to_datetime(df["Timestamp"], errors="coerce")
     combined = logdate.fillna(ts_fallback)
 
-    df["LogDateParsed"] = combined.dt.date  # <- python date
+    df["LogDateParsed"] = combined.dt.date  # python date
     return df
 
 def _to_excel_bytes(sheets: dict):
@@ -700,7 +701,6 @@ with col_refresh:
         st.cache_data.clear()
         st.rerun()
 
-# NEW: Dashboard tab added without removing existing tabs/features
 tab_ops, tab_req, tab_sup, tab_dash = st.tabs(["📊 Operations", "🚚 Requisitions", "📞 Suppliers", "📊 Dashboard"])
 
 # ===================== OPERATIONS TAB =====================
@@ -1024,9 +1024,9 @@ with tab_sup:
             "Currency",
             "Lead Time",
             "UOM",
+            "Min Stock",
             "Reorder Qty",
             "Min Safety Stock",
-            "Min Stock",
         ]
         available_cols = [col for col in display_cols if col in filtered.columns]
         filtered_display = filtered[available_cols]
@@ -1087,23 +1087,48 @@ with tab_dash:
         req_df = _prepare_reqs(load_from_sheet("restaurant_requisitions"))
         log_df = _prepare_logs(load_from_sheet("activity_logs"))
 
+        # NOTE: We should NOT filter inventory rows by currency; inventory is warehouse live qty.
+        # Currency filter is applied ONLY to the valuation (price/currency columns).
         meta_cur = _currency_filtered_meta(meta_df, currency_choice)
+
+        # Merge inventory with metadata twice:
+        # - meta_all gives UOM and Category reliably for display (regardless of currency filter)
+        # - meta_cur gives Price/Currency for valuation (may be empty if currency doesn't match)
+        meta_all = meta_df.copy() if meta_df is not None else pd.DataFrame()
+        if meta_all is None or meta_all.empty:
+            meta_all = pd.DataFrame(columns=["Product Name", "UOM", "Category", "Price", "Currency"])
 
         inv_join = pd.merge(
             inv_df if inv_df is not None else pd.DataFrame(),
-            meta_cur[["Product Name", "Category", "Price", "Currency", "Reorder Qty", "Min Safety Stock", "Min Stock", "Lead Time"]]
-            if meta_cur is not None and not meta_cur.empty
-            else pd.DataFrame(columns=["Product Name", "Price", "Currency"]),
+            meta_all[["Product Name", "Category", "UOM"]].drop_duplicates("Product Name"),
             on="Product Name",
             how="left",
-            suffixes=("", "_meta"),
         )
-        if not inv_join.empty:
-            inv_join["Price"] = pd.to_numeric(inv_join.get("Price", 0), errors="coerce").fillna(0.0)
-            inv_join["Closing Stock"] = pd.to_numeric(inv_join.get("Closing Stock", 0), errors="coerce").fillna(0.0)
-            inv_join["Stock Value"] = (inv_join["Closing Stock"] * inv_join["Price"]).round(2)
+
+        inv_join = pd.merge(
+            inv_join,
+            (meta_cur[["Product Name", "Price", "Currency"]].drop_duplicates("Product Name") if meta_cur is not None and not meta_cur.empty else pd.DataFrame(columns=["Product Name", "Price", "Currency"])),
+            on="Product Name",
+            how="left",
+        )
+
+        # If inventory has UOM already but metadata UOM is empty, keep inventory UOM
+        if "UOM_x" in inv_join.columns and "UOM_y" in inv_join.columns:
+            inv_join["UOM"] = inv_join["UOM_y"].fillna("").astype(str).str.strip()
+            inv_join.loc[inv_join["UOM"] == "", "UOM"] = inv_join["UOM_x"].fillna("").astype(str).str.strip()
+            inv_join = inv_join.drop(columns=["UOM_x", "UOM_y"])
         else:
-            inv_join = pd.DataFrame(columns=["Product Name", "Closing Stock", "Price", "Stock Value", "Category"])
+            if "UOM" not in inv_join.columns:
+                inv_join["UOM"] = ""
+
+        if "Category_x" in inv_join.columns and "Category_y" in inv_join.columns:
+            inv_join["Category"] = inv_join["Category_y"].fillna("General").astype(str).str.strip()
+            inv_join.loc[inv_join["Category"] == "", "Category"] = inv_join["Category_x"].fillna("General").astype(str).str.strip()
+            inv_join = inv_join.drop(columns=["Category_x", "Category_y"])
+
+        inv_join["Price"] = pd.to_numeric(inv_join.get("Price", 0), errors="coerce").fillna(0.0)
+        inv_join["Closing Stock"] = pd.to_numeric(inv_join.get("Closing Stock", 0), errors="coerce").fillna(0.0)
+        inv_join["Stock Value"] = (inv_join["Closing Stock"] * inv_join["Price"]).round(2)
 
         # Requisition filtering
         req_filtered = req_df.copy() if req_df is not None and not req_df.empty else pd.DataFrame(
@@ -1113,11 +1138,7 @@ with tab_dash:
             if restaurant_filter != "All":
                 req_filtered = req_filtered[req_filtered["Restaurant"] == restaurant_filter]
 
-            if dispatch_date_basis == "Dispatch Timestamp":
-                date_col = "DispatchTS_Date"
-            else:
-                date_col = "RequestedDate"
-
+            date_col = "DispatchTS_Date" if dispatch_date_basis == "Dispatch Timestamp" else "RequestedDate"
             req_filtered = req_filtered[req_filtered[date_col].notna()]
             req_filtered = req_filtered[(req_filtered[date_col] >= start_date) & (req_filtered[date_col] <= end_date)]
 
@@ -1186,13 +1207,21 @@ with tab_dash:
                 .head(top_n)
             )
 
-        top_stock_qty = pd.DataFrame(columns=["Product Name", "Closing Stock"])
+        # IMPORTANT FIX:
+        # - Qty list must be based on Closing Stock, independent of currency filter.
+        # - Value list should exclude items with missing Price OR Currency mismatch (Price=0).
+        top_stock_qty = pd.DataFrame(columns=["Product Name", "UOM", "Closing Stock"])
         if not inv_join.empty:
-            top_stock_qty = inv_join[["Product Name", "Closing Stock"]].sort_values("Closing Stock", ascending=ascending).head(top_n)
+            top_stock_qty = inv_join[["Product Name", "UOM", "Closing Stock"]].sort_values("Closing Stock", ascending=ascending).head(top_n)
 
-        top_stock_val = pd.DataFrame(columns=["Product Name", "Closing Stock", "Price", "Stock Value"])
+        top_stock_val = pd.DataFrame(columns=["Product Name", "UOM", "Closing Stock", "Price", "Currency", "Stock Value"])
         if not inv_join.empty:
-            top_stock_val = inv_join[["Product Name", "Closing Stock", "Price", "Stock Value"]].sort_values("Stock Value", ascending=ascending).head(top_n)
+            # show only items that actually have price > 0 (otherwise it floods with zeros)
+            val_df = inv_join.copy()
+            val_df = val_df[pd.to_numeric(val_df["Price"], errors="coerce").fillna(0.0) > 0]
+            top_stock_val = val_df[["Product Name", "UOM", "Closing Stock", "Price", "Currency", "Stock Value"]].sort_values(
+                "Stock Value", ascending=ascending
+            ).head(top_n)
 
         export_col1, export_col2 = st.columns([1.4, 3.6])
         with export_col1:
@@ -1231,7 +1260,7 @@ with tab_dash:
             )
         with export_col2:
             st.markdown(
-                '<div class="dash-note">Note: “Stock In Hand Value” is filtered by the selected currency. No exchange-rate conversion is applied in this version.</div>',
+                '<div class="dash-note">Note: “Stock In Hand Value” uses the selected currency filter (no exchange-rate conversion). Items with Price=0 are hidden from the Value table.</div>',
                 unsafe_allow_html=True,
             )
 
