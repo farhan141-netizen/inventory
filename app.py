@@ -682,22 +682,50 @@ def _safe_topn_df(df, value_col, top_n, ascending):
     return df.sort_values(value_col, ascending=ascending).head(top_n)
 
 def _make_bar_chart(df, x_col, y_col):
+    """
+    Streamlit bar_chart may reorder categories (often alphabetically).
+    Use Plotly for stable ordering and correct High→Low / Low→High display.
+    """
     if df is None or df.empty or x_col not in df.columns or y_col not in df.columns:
         st.info("📭 No data for chart.")
         return
-    chart_df = df[[x_col, y_col]].copy()
-    chart_df = chart_df.set_index(x_col)
-    st.bar_chart(chart_df, y=y_col)
 
-def _make_pie_chart(df, label_col, value_col, top_n=10):
-    # Streamlit doesn't have native pie; use plotly if available, else fallback to dataframe.
+    chart_df = df[[x_col, y_col]].copy()
+    chart_df[y_col] = pd.to_numeric(chart_df[y_col], errors="coerce").fillna(0.0)
+
+    try:
+        import plotly.express as px  # type: ignore
+
+        # Keep the incoming dataframe order (already sorted by caller)
+        fig = px.bar(chart_df, x=x_col, y=y_col)
+        fig.update_layout(
+            xaxis={"categoryorder": "array", "categoryarray": chart_df[x_col].tolist()},
+            margin=dict(l=10, r=10, t=20, b=10),
+            height=360,
+        )
+        st.plotly_chart(fig, use_container_width=True)
+    except Exception:
+        # Fallback: Streamlit bar chart (may reorder categories)
+        chart_df = chart_df.set_index(x_col)
+        st.bar_chart(chart_df, y=y_col)
+
+def _make_pie_chart(df, label_col, value_col, top_n=None):
+    """
+    Pie should respect the Top-N user selection (top_n).
+    If top_n is None, default to 10 (sane default for readability).
+    """
     if df is None or df.empty or label_col not in df.columns or value_col not in df.columns:
         st.info("📭 No data for chart.")
         return
 
+    if top_n is None:
+        top_n = 10
+
     pie_df = df[[label_col, value_col]].copy()
     pie_df[value_col] = pd.to_numeric(pie_df[value_col], errors="coerce").fillna(0.0)
-    pie_df = pie_df[pie_df[value_col] > 0].head(top_n)
+
+    # Keep only positives, then take top_n rows (df is already sorted by caller)
+    pie_df = pie_df[pie_df[value_col] > 0].head(int(top_n))
 
     if pie_df.empty:
         st.info("📭 No non-zero values for pie chart.")
@@ -1347,21 +1375,21 @@ with tab_dash:
             a1, a2 = st.columns(2)
             with a1:
                 st.markdown('<span class="section-title">🥧 Ordered (Top)</span>', unsafe_allow_html=True)
-                _make_pie_chart(top_ordered, "Item", "Ordered Qty", top_n=min(top_n, 10))
+                _make_pie_chart(top_ordered, "Item", "Ordered Qty", top_n=top_n)
             with a2:
                 st.markdown('<span class="section-title">🥧 Dispatched (Top)</span>', unsafe_allow_html=True)
-                _make_pie_chart(top_dispatched, "Item", "Dispatched Qty", top_n=min(top_n, 10))
+                _make_pie_chart(top_dispatched, "Item", "Dispatched Qty", top_n=top_n)
 
             b1, b2 = st.columns(2)
             with b1:
                 st.markdown('<span class="section-title">🥧 Received (Top)</span>', unsafe_allow_html=True)
-                _make_pie_chart(top_received, "Item", "Received Qty", top_n=min(top_n, 10))
+                _make_pie_chart(top_received, "Item", "Received Qty", top_n=top_n)
             with b2:
                 st.markdown('<span class="section-title">🥧 Stock In Hand Qty (Top)</span>', unsafe_allow_html=True)
-                _make_pie_chart(top_stock_qty, "Product Name", "Closing Stock", top_n=min(top_n, 10))
+                _make_pie_chart(top_stock_qty, "Product Name", "Closing Stock", top_n=top_n)
 
             st.markdown('<span class="section-title">🥧 Stock In Hand Value (Top)</span>', unsafe_allow_html=True)
-            _make_pie_chart(top_stock_val, "Product Name", "Stock Value", top_n=min(top_n, 10))
+            _make_pie_chart(top_stock_val, "Product Name", "Stock Value", top_n=top_n)
 
 # ===================== SIDEBAR =====================
 with st.sidebar:
