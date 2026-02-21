@@ -10,10 +10,10 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 
 def clean_dataframe(df):
     """Ensures unique columns and removes ghost columns from Google Sheets"""
-    if df is None or df.empty: 
+    if df is None or df.empty:
         return df
-    df = df.loc[:, ~df.columns.str.contains('^Unnamed', na=False)]
-    df = df.dropna(axis=1, how='all')
+    df = df.loc[:, ~df.columns.str.contains("^Unnamed", na=False)]
+    df = df.dropna(axis=1, how="all")
     df = df.loc[:, ~df.columns.duplicated()]
     df.columns = [str(col).strip() for col in df.columns]
     return df
@@ -48,7 +48,8 @@ def save_to_sheet(df, worksheet_name):
 st.set_page_config(page_title="Warehouse Pro Cloud v8.6", layout="wide", initial_sidebar_state="expanded")
 
 # --- COMPACT SOPHISTICATED CSS ---
-st.markdown("""
+st.markdown(
+    """
     <style>
     .block-container { padding-top: 0.8rem; padding-bottom: 0.8rem; }
 
@@ -112,7 +113,7 @@ st.markdown("""
     .req-box { background: #1a2f3f; border-left: 3px solid #ffaa00; padding: 6px 8px; margin: 3px 0; border-radius: 4px; font-size: 0.85em; line-height: 1.3; }
     .req-compact-button { font-size: 0.75em; padding: 2px 6px; }
 
-    /* Dashboard tiny helpers */
+    /* Dashboard helpers */
     .kpi-box { background: #1a1f2e; border: 1px solid #2d3748; border-radius: 10px; padding: 10px; }
     .kpi-label { font-size: 0.75rem; color: #8892b0; margin-bottom: 4px; }
     .kpi-value { font-size: 1.2rem; font-weight: 800; color: #e0e7ff; }
@@ -121,7 +122,9 @@ st.markdown("""
 
     hr { margin: 6px 0; opacity: 0.1; }
     </style>
-    """, unsafe_allow_html=True)
+    """,
+    unsafe_allow_html=True,
+)
 
 # --- CORE CALCULATION ENGINE ---
 def recalculate_item(df, item_name):
@@ -132,19 +135,19 @@ def recalculate_item(df, item_name):
     for col in day_cols:
         if col not in df.columns:
             df[col] = 0.0
-        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
+        df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
 
     total_received = df.loc[idx, day_cols].sum()
     df.at[idx, "Total Received"] = total_received
-    opening = pd.to_numeric(df.at[idx, "Opening Stock"], errors='coerce') or 0.0
-    consumption = pd.to_numeric(df.at[idx, "Consumption"], errors='coerce') or 0.0
+    opening = pd.to_numeric(df.at[idx, "Opening Stock"], errors="coerce") or 0.0
+    consumption = pd.to_numeric(df.at[idx, "Consumption"], errors="coerce") or 0.0
     closing = opening + total_received - consumption
     df.at[idx, "Closing Stock"] = closing
 
     if "Physical Count" in df.columns:
         physical_val = df.at[idx, "Physical Count"]
         if pd.notna(physical_val) and str(physical_val).strip() != "":
-            physical = pd.to_numeric(physical_val, errors='coerce')
+            physical = pd.to_numeric(physical_val, errors="coerce")
             df.at[idx, "Variance"] = physical - closing
         else:
             df.at[idx, "Variance"] = 0.0
@@ -158,29 +161,27 @@ def apply_transaction(item_name, day_num, qty, is_undo=False):
         if col_name != "0":
             if col_name not in df.columns:
                 df[col_name] = 0.0
-            current_val = pd.to_numeric(df.at[idx, col_name], errors='coerce') or 0.0
+            current_val = pd.to_numeric(df.at[idx, col_name], errors="coerce") or 0.0
             df.at[idx, col_name] = current_val + float(qty)
 
         if not is_undo:
-            # NEW: LogDate support for dashboard date filtering
-            new_log = pd.DataFrame([{
-                "LogID": str(uuid.uuid4())[:8],
-                "Timestamp": datetime.datetime.now().strftime("%H:%M:%S"),
-                "Item": item_name,
-                "Qty": qty,
-                "Day": day_num,
-                "Status": "Active",
-                "LogDate": datetime.date.today().strftime("%Y-%m-%d")
-            }])
-
-            logs_df = load_from_sheet(
-                "activity_logs",
-                ["LogID", "Timestamp", "Item", "Qty", "Day", "Status", "LogDate"]
+            # NEW: LogDate added for dashboard filtering (new logs only)
+            new_log = pd.DataFrame(
+                [
+                    {
+                        "LogID": str(uuid.uuid4())[:8],
+                        "Timestamp": datetime.datetime.now().strftime("%H:%M:%S"),
+                        "Item": item_name,
+                        "Qty": qty,
+                        "Day": day_num,
+                        "Status": "Active",
+                        "LogDate": datetime.date.today().strftime("%Y-%m-%d"),
+                    }
+                ]
             )
-            # Ensure LogDate exists even if sheet had older columns
+            logs_df = load_from_sheet("activity_logs", ["LogID", "Timestamp", "Item", "Qty", "Day", "Status", "LogDate"])
             if "LogDate" not in logs_df.columns:
                 logs_df["LogDate"] = ""
-
             save_to_sheet(pd.concat([logs_df, new_log], ignore_index=True), "activity_logs")
 
         df = recalculate_item(df, item_name)
@@ -191,7 +192,7 @@ def apply_transaction(item_name, day_num, qty, is_undo=False):
 
 def undo_entry(log_id):
     logs = load_from_sheet("activity_logs")
-    if log_id in logs["LogID"].values:
+    if not logs.empty and "LogID" in logs.columns and log_id in logs["LogID"].values:
         idx = logs[logs["LogID"] == log_id].index[0]
         if logs.at[idx, "Status"] == "Undone":
             return
@@ -210,7 +211,9 @@ def manage_categories_modal():
     existing_categories = []
     if not meta_df.empty and "Category" in meta_df.columns:
         all_cats = meta_df["Category"].dropna().unique().tolist()
-        existing_categories = sorted([cat for cat in all_cats if not str(cat).startswith("CATEGORY_") and cat != "Supplier_Master" and cat != "General"])
+        existing_categories = sorted(
+            [cat for cat in all_cats if not str(cat).startswith("CATEGORY_") and cat != "Supplier_Master" and cat != "General"]
+        )
 
     tab1, tab2, tab3 = st.tabs(["➕ Add", "✏️ Modify", "🗑️ Delete"])
 
@@ -225,23 +228,25 @@ def manage_categories_modal():
                 return
 
             category_name = category_name.strip()
-
             if category_name in existing_categories:
                 st.error(f"❌ Category '{category_name}' already exists!")
                 return
 
-            new_category = pd.DataFrame([{
-                "Product Name": f"CATEGORY_{category_name}",
-                "UOM": "",
-                "Supplier": "",
-                "Contact": "",
-                "Email": "",
-                "Category": category_name,
-                "Lead Time": "",
-                "Price": 0,
-                "Currency": "",
-            }])
-
+            new_category = pd.DataFrame(
+                [
+                    {
+                        "Product Name": f"CATEGORY_{category_name}",
+                        "UOM": "",
+                        "Supplier": "",
+                        "Contact": "",
+                        "Email": "",
+                        "Category": category_name,
+                        "Lead Time": "",
+                        "Price": 0,
+                        "Currency": "",
+                    }
+                ]
+            )
             meta_df = pd.concat([meta_df, new_category], ignore_index=True)
 
             if save_to_sheet(meta_df, "product_metadata"):
@@ -270,13 +275,11 @@ def manage_categories_modal():
                     return
 
                 new_name = new_name.strip()
-
                 if new_name != selected_cat and new_name in existing_categories:
                     st.error(f"❌ Category '{new_name}' already exists!")
                     return
 
                 meta_df.loc[meta_df["Category"] == selected_cat, "Category"] = new_name
-
                 for idx in meta_df[meta_df["Category"] == new_name].index:
                     if str(meta_df.at[idx, "Product Name"]).startswith("CATEGORY_"):
                         meta_df.at[idx, "Product Name"] = f"CATEGORY_{new_name}"
@@ -302,7 +305,9 @@ def manage_categories_modal():
                 st.warning(f"⚠️ This category is used by {product_count} product(s). Products will be reassigned to 'General'.")
 
             if st.button("🗑️ Delete Category", use_container_width=True, type="secondary", key="delete_cat_confirm"):
-                meta_df.loc[(meta_df["Category"] == selected_cat) & (~meta_df["Product Name"].str.startswith("CATEGORY_", na=False)), "Category"] = "General"
+                meta_df.loc[
+                    (meta_df["Category"] == selected_cat) & (~meta_df["Product Name"].str.startswith("CATEGORY_", na=False)), "Category"
+                ] = "General"
                 meta_df = meta_df[~meta_df["Product Name"].str.startswith(f"CATEGORY_{selected_cat}", na=False)]
 
                 if save_to_sheet(meta_df, "product_metadata"):
@@ -333,7 +338,6 @@ def add_item_modal():
                 category_list = sorted(set(user_cats))
             if "General" not in category_list:
                 category_list.insert(0, "General")
-
         category = st.selectbox("🗂️ Category", category_list, key="cat_select")
 
     col3, col4 = st.columns(2)
@@ -347,7 +351,6 @@ def add_item_modal():
 
     meta_df = load_from_sheet("product_metadata")
     existing_suppliers = []
-
     if not meta_df.empty and "Supplier" in meta_df.columns:
         all_suppliers = meta_df["Supplier"].dropna().unique().tolist()
         existing_suppliers = sorted([s for s in all_suppliers if s and str(s).strip()])
@@ -362,7 +365,6 @@ def add_item_modal():
     if supplier_choice == "Select Existing Supplier":
         if existing_suppliers:
             supplier = st.selectbox("🏪 Choose Supplier", existing_suppliers, key="supp_select")
-
             if supplier:
                 supplier_rows = meta_df[meta_df["Supplier"] == supplier]
                 if not supplier_rows.empty:
@@ -370,7 +372,6 @@ def add_item_modal():
                     contact = current_data.get("Contact", "")
                     email = current_data.get("Email", "")
                     lead_time = current_data.get("Lead Time", "")
-
                     st.info(f"✅ **Contact:** {contact}\n\n📧 **Email:** {email}\n\n⏱️ **Lead Time:** {lead_time}")
         else:
             st.warning("⚠️ No suppliers found. Please create a new one.")
@@ -393,31 +394,37 @@ def add_item_modal():
         supplier = supplier.strip()
 
         new_row = {str(i): 0.0 for i in range(1, 32)}
-        new_row.update({
-            "Product Name": name,
-            "UOM": uom,
-            "Opening Stock": opening,
-            "Total Received": 0.0,
-            "Consumption": 0.0,
-            "Closing Stock": opening,
-            "Physical Count": None,
-            "Variance": 0.0,
-            "Category": category
-        })
+        new_row.update(
+            {
+                "Product Name": name,
+                "UOM": uom,
+                "Opening Stock": opening,
+                "Total Received": 0.0,
+                "Consumption": 0.0,
+                "Closing Stock": opening,
+                "Physical Count": None,
+                "Variance": 0.0,
+                "Category": category,
+            }
+        )
         st.session_state.inventory = pd.concat([st.session_state.inventory, pd.DataFrame([new_row])], ignore_index=True)
         save_to_sheet(st.session_state.inventory, "persistent_inventory")
 
-        supplier_meta = pd.DataFrame([{
-            "Product Name": name,
-            "UOM": uom,
-            "Supplier": supplier,
-            "Contact": contact,
-            "Email": email,
-            "Category": category,
-            "Lead Time": lead_time,
-            "Price": price,
-            "Currency": currency
-        }])
+        supplier_meta = pd.DataFrame(
+            [
+                {
+                    "Product Name": name,
+                    "UOM": uom,
+                    "Supplier": supplier,
+                    "Contact": contact,
+                    "Email": email,
+                    "Category": category,
+                    "Lead Time": lead_time,
+                    "Price": price,
+                    "Currency": currency,
+                }
+            ]
+        )
         meta_df = load_from_sheet("product_metadata")
         meta_df = pd.concat([meta_df, supplier_meta], ignore_index=True)
         save_to_sheet(meta_df, "product_metadata")
@@ -440,7 +447,6 @@ def add_supplier_modal():
             return
 
         supplier_name = supplier_name.strip()
-
         meta_df = load_from_sheet("product_metadata")
 
         if not meta_df.empty and "Supplier" in meta_df.columns:
@@ -449,17 +455,21 @@ def add_supplier_modal():
                 st.error(f"❌ Supplier '{supplier_name}' already exists!")
                 return
 
-        supplier_entry = pd.DataFrame([{
-            "Product Name": f"SUPPLIER_{supplier_name}",
-            "Supplier": supplier_name,
-            "Contact": contact,
-            "Email": email,
-            "Category": "Supplier_Master",
-            "UOM": "",
-            "Price": 0,
-            "Currency": "",
-            "Lead Time": ""
-        }])
+        supplier_entry = pd.DataFrame(
+            [
+                {
+                    "Product Name": f"SUPPLIER_{supplier_name}",
+                    "Supplier": supplier_name,
+                    "Contact": contact,
+                    "Email": email,
+                    "Category": "Supplier_Master",
+                    "UOM": "",
+                    "Price": 0,
+                    "Currency": "",
+                    "Lead Time": "",
+                }
+            ]
+        )
 
         meta_df = pd.concat([meta_df, supplier_entry], ignore_index=True)
 
@@ -503,12 +513,22 @@ def update_supplier_modal(supplier_name):
 def archive_explorer_modal():
     hist_df = load_from_sheet("monthly_history")
     if not hist_df.empty and "Month_Period" in hist_df.columns:
-        selected_month = st.selectbox("📅 Select Month Period", options=sorted(hist_df["Month_Period"].unique().tolist(), reverse=True), key="arch_month")
+        selected_month = st.selectbox(
+            "📅 Select Month Period",
+            options=sorted(hist_df["Month_Period"].unique().tolist(), reverse=True),
+            key="arch_month",
+        )
         month_data = hist_df[hist_df["Month_Period"] == selected_month].drop(columns=["Month_Period"])
         buf = io.BytesIO()
-        with pd.ExcelWriter(buf, engine='xlsxwriter') as writer:
+        with pd.ExcelWriter(buf, engine="xlsxwriter") as writer:
             month_data.to_excel(writer, index=False, sheet_name="Archive")
-        st.download_button(label=f"📥 Download {selected_month}", data=buf.getvalue(), file_name=f"Inventory_{selected_month}.xlsx", use_container_width=True, type="primary")
+        st.download_button(
+            label=f"📥 Download {selected_month}",
+            data=buf.getvalue(),
+            file_name=f"Inventory_{selected_month}.xlsx",
+            use_container_width=True,
+            type="primary",
+        )
     else:
         st.info("📭 No records found.")
 
@@ -529,6 +549,7 @@ def close_month_modal():
         for idx, row in new_df.iterrows():
             phys = row.get("Physical Count")
             new_df.at[idx, "Opening Stock"] = pd.to_numeric(phys) if pd.notna(phys) and str(phys).strip() != "" else row["Closing Stock"]
+
         new_df["Total Received"] = 0.0
         new_df["Consumption"] = 0.0
         new_df["Closing Stock"] = new_df["Opening Stock"]
@@ -540,22 +561,16 @@ def close_month_modal():
 # --- DASHBOARD HELPERS (NEW) ---
 TOP_15_CURRENCIES_PLUS_BHD = [
     "USD", "EUR", "JPY", "GBP", "AUD", "CAD", "CHF", "CNY", "HKD", "SGD",
-    "INR", "AED", "SAR", "KWD", "BHD"
+    "INR", "AED", "SAR", "KWD", "BHD",
 ]
 
-def _safe_to_date(series):
-    """Convert a pandas Series to date (YYYY-MM-DD) safely, returns datetime.date or NaT."""
-    s = pd.to_datetime(series, errors="coerce")
-    return s.dt.date
-
 def _currency_filtered_meta(meta_df, selected_currency):
-    """Filter metadata by currency (or return all if 'All')."""
     if meta_df is None or meta_df.empty:
         return meta_df
     if selected_currency == "All":
         return meta_df
     if "Currency" not in meta_df.columns:
-        return meta_df.iloc[0:0]  # no currency column => nothing reliable
+        return meta_df.iloc[0:0]
     return meta_df[meta_df["Currency"].astype(str).str.upper() == str(selected_currency).upper()]
 
 def _prepare_metadata():
@@ -563,25 +578,38 @@ def _prepare_metadata():
     if meta_df.empty:
         return meta_df
 
-    # Normalize columns we will rely on
-    for col in ["Product Name", "Category", "Price", "Currency", "Lead Time", "Reorder Qty", "Min Safety Stock", "Min Stock", "UOM"]:
+    for col in [
+        "Product Name",
+        "Category",
+        "Price",
+        "Currency",
+        "Lead Time",
+        "Reorder Qty",
+        "Min Safety Stock",
+        "Min Stock",
+        "Min Stock",  # keep as in your sheet naming
+        "UOM",
+    ]:
         if col not in meta_df.columns:
             meta_df[col] = None
 
     meta_df["Product Name"] = meta_df["Product Name"].astype(str).str.strip()
     meta_df["Category"] = meta_df["Category"].fillna("General").astype(str).str.strip()
 
-    # Drop helper rows
     meta_df = meta_df[
-        (~meta_df["Product Name"].str.startswith("CATEGORY_", na=False)) &
-        (~meta_df["Product Name"].str.startswith("SUPPLIER_", na=False))
+        (~meta_df["Product Name"].str.startswith("CATEGORY_", na=False))
+        & (~meta_df["Product Name"].str.startswith("SUPPLIER_", na=False))
     ]
 
     meta_df["Price"] = pd.to_numeric(meta_df["Price"], errors="coerce").fillna(0.0)
     meta_df["Lead Time"] = pd.to_numeric(meta_df["Lead Time"], errors="coerce").fillna(0.0)
-    meta_df["Reorder Qty"] = pd.to_numeric(meta_df["Reorder Qty"], errors="coerce").fillna(0.0)
-    meta_df["Min Safety Stock"] = pd.to_numeric(meta_df["Min Safety Stock"], errors="coerce").fillna(0.0)
-    meta_df["Min Stock"] = pd.to_numeric(meta_df["Min Stock"], errors="coerce").fillna(0.0)
+
+    if "Reorder Qty" in meta_df.columns:
+        meta_df["Reorder Qty"] = pd.to_numeric(meta_df["Reorder Qty"], errors="coerce").fillna(0.0)
+    if "Min Safety Stock" in meta_df.columns:
+        meta_df["Min Safety Stock"] = pd.to_numeric(meta_df["Min Safety Stock"], errors="coerce").fillna(0.0)
+    if "Min Stock" in meta_df.columns:
+        meta_df["Min Stock"] = pd.to_numeric(meta_df["Min Stock"], errors="coerce").fillna(0.0)
 
     meta_df["Currency"] = meta_df["Currency"].fillna("").astype(str).str.upper().str.strip()
     return meta_df
@@ -616,57 +644,54 @@ def _prepare_reqs(req_df):
     return df
 
 def _prepare_logs(log_df):
+    """
+    FIXED: forces LogDateParsed as python datetime.date to compare with st.date_input values.
+    """
     if log_df is None or log_df.empty:
         return log_df
     df = log_df.copy()
     for col in ["Item", "Qty", "Status", "LogDate", "Timestamp"]:
         if col not in df.columns:
             df[col] = None
+
     df["Item"] = df["Item"].fillna("").astype(str).str.strip()
     df["Qty"] = pd.to_numeric(df["Qty"], errors="coerce").fillna(0.0)
     df["Status"] = df["Status"].fillna("").astype(str).str.strip()
 
-    # Prefer LogDate; fallback to Timestamp only if it contains a date
-    logdate = pd.to_datetime(df["LogDate"], errors="coerce").dt.date
-    ts_fallback = pd.to_datetime(df["Timestamp"], errors="coerce").dt.date
-    df["LogDateParsed"] = logdate.fillna(ts_fallback)
+    logdate = pd.to_datetime(df["LogDate"], errors="coerce")
+    ts_fallback = pd.to_datetime(df["Timestamp"], errors="coerce")
+    combined = logdate.fillna(ts_fallback)
+
+    df["LogDateParsed"] = combined.dt.date  # <- python date
     return df
 
-def _date_range_days(start_date, end_date):
-    if start_date is None or end_date is None:
-        return 0
-    if start_date > end_date:
-        return 0
-    return (end_date - start_date).days + 1
-
 def _to_excel_bytes(sheets: dict):
-    """
-    sheets: {sheet_name: dataframe}
-    returns xlsx bytes
-    """
     buf = io.BytesIO()
     with pd.ExcelWriter(buf, engine="xlsxwriter") as writer:
         for name, df in sheets.items():
-            safe_name = str(name)[:31] if name else "Sheet"
+            safe_name = (str(name)[:31] if name else "Sheet")
             if df is None:
                 continue
             (df if isinstance(df, pd.DataFrame) else pd.DataFrame(df)).to_excel(writer, index=False, sheet_name=safe_name)
     return buf.getvalue()
 
 # --- INITIALIZATION ---
-if 'inventory' not in st.session_state:
+if "inventory" not in st.session_state:
     st.session_state.inventory = load_from_sheet("persistent_inventory")
 
-if 'log_page' not in st.session_state:
+if "log_page" not in st.session_state:
     st.session_state.log_page = 0
 
 # --- MAIN UI ---
-st.markdown("""
+st.markdown(
+    """
     <div class="header-bar">
         <h1>📦 Warehouse Pro Cloud</h1>
         <p>v8.6 | Multi-Restaurant Distribution Hub</p>
     </div>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
 # --- REFRESH BUTTON IN HEADER ---
 col_refresh, col_empty = st.columns([1, 5])
@@ -675,9 +700,10 @@ with col_refresh:
         st.cache_data.clear()
         st.rerun()
 
-# NEW: added dashboard tab without removing existing ones
+# NEW: Dashboard tab added without removing existing tabs/features
 tab_ops, tab_req, tab_sup, tab_dash = st.tabs(["📊 Operations", "🚚 Requisitions", "📞 Suppliers", "📊 Dashboard"])
 
+# ===================== OPERATIONS TAB =====================
 with tab_ops:
     col_receipt_main, col_quick_main = st.columns([3, 1])
 
@@ -686,7 +712,12 @@ with tab_ops:
         if not st.session_state.inventory.empty:
             c1, c2, c3, c4 = st.columns([2, 0.8, 0.8, 1])
             with c1:
-                sel_item = st.selectbox("🔍 Item", options=[""] + sorted(st.session_state.inventory["Product Name"].unique().tolist()), key="receipt_item", label_visibility="collapsed")
+                sel_item = st.selectbox(
+                    "🔍 Item",
+                    options=[""] + sorted(st.session_state.inventory["Product Name"].unique().tolist()),
+                    key="receipt_item",
+                    label_visibility="collapsed",
+                )
             with c2:
                 day_in = st.number_input("Day", 1, 31, datetime.datetime.now().day, key="receipt_day", label_visibility="collapsed")
             with c3:
@@ -715,7 +746,7 @@ with tab_ops:
             if st.button("🔒 Close", use_container_width=True, type="primary", help="Close Month", key="btn_close"):
                 close_month_modal()
 
-    st.markdown('<hr>', unsafe_allow_html=True)
+    st.markdown("<hr>", unsafe_allow_html=True)
 
     log_col, stat_col = st.columns([1.2, 2.8])
 
@@ -732,23 +763,23 @@ with tab_ops:
 
             st.markdown('<div class="log-container">', unsafe_allow_html=True)
             for _, row in current_logs.iterrows():
-                is_undone = row.get('Status', '') == "Undone"
+                is_undone = row.get("Status", "") == "Undone"
                 row_class = "log-row-undone" if is_undone else ""
 
                 c_row = st.container()
                 c_txt, c_undo = c_row.columns([4, 1])
                 with c_txt:
-                    h_item = row.get('Item', '')
-                    h_qty = row.get('Qty', '')
-                    h_day = row.get('Day', '')
-                    h_time = row.get('Timestamp', '')
-                    l_html = f'<div class="log-row {row_class}"><div class="log-info"><b>{h_item}</b><br>{h_qty} | D{h_day} <span class="log-time">{h_time}</span></div></div>'
+                    h_item, h_qty, h_day, h_time = row.get("Item", ""), row.get("Qty", ""), row.get("Day", ""), row.get("Timestamp", "")
+                    l_html = (
+                        f'<div class="log-row {row_class}"><div class="log-info"><b>{h_item}</b><br>'
+                        f'{h_qty} | D{h_day} <span class="log-time">{h_time}</span></div></div>'
+                    )
                     st.markdown(l_html, unsafe_allow_html=True)
                 with c_undo:
-                    if not is_undone and str(row.get("LogID", "")).strip():
+                    if (not is_undone) and str(row.get("LogID", "")).strip():
                         if st.button("↩", key=f"rev_{row['LogID']}", use_container_width=True):
-                            undo_entry(row['LogID'])
-            st.markdown('</div>', unsafe_allow_html=True)
+                            undo_entry(row["LogID"])
+            st.markdown("</div>", unsafe_allow_html=True)
 
             p_prev, p_next = st.columns(2)
             with p_prev:
@@ -775,7 +806,7 @@ with tab_ops:
             height=300,
             use_container_width=True,
             disabled=["Product Name", "Category", "UOM", "Total Received", "Closing Stock", "Variance"],
-            hide_index=True
+            hide_index=True,
         )
 
         sc1, sc2, sc3 = st.columns(3)
@@ -788,19 +819,25 @@ with tab_ops:
                 st.rerun()
         with sc2:
             buf = io.BytesIO()
-            with pd.ExcelWriter(buf, engine='xlsxwriter') as writer:
-                df_status[disp_cols].to_excel(writer, index=False, sheet_name='Summary')
+            with pd.ExcelWriter(buf, engine="xlsxwriter") as writer:
+                df_status[disp_cols].to_excel(writer, index=False, sheet_name="Summary")
             st.download_button("📥 Summary", data=buf.getvalue(), file_name="Summary.xlsx", use_container_width=True, key="dl_summary")
         with sc3:
             day_cols = [str(i) for i in range(1, 32)]
             existing_day_cols = [col for col in day_cols if col in df_status.columns]
-            full_cols = ["Product Name", "Category", "UOM", "Opening Stock"] + existing_day_cols + ["Total Received", "Consumption", "Closing Stock", "Physical Count", "Variance"]
+            full_cols = ["Product Name", "Category", "UOM", "Opening Stock"] + existing_day_cols + [
+                "Total Received",
+                "Consumption",
+                "Closing Stock",
+                "Physical Count",
+                "Variance",
+            ]
             full_cols = [col for col in full_cols if col in df_status.columns]
 
             if full_cols:
                 buf_f = io.BytesIO()
-                with pd.ExcelWriter(buf_f, engine='xlsxwriter') as writer:
-                    df_status[full_cols].to_excel(writer, index=False, sheet_name='Details')
+                with pd.ExcelWriter(buf_f, engine="xlsxwriter") as writer:
+                    df_status[full_cols].to_excel(writer, index=False, sheet_name="Details")
                 st.download_button("📂 Details", data=buf_f.getvalue(), file_name="Full_Report.xlsx", use_container_width=True, key="dl_details")
             else:
                 st.warning("⚠️ No data columns available for export")
@@ -808,13 +845,13 @@ with tab_ops:
     with st.expander("📈 Weekly Par Analysis", expanded=False):
         df_hist = load_from_sheet("monthly_history")
         if not df_hist.empty and not st.session_state.inventory.empty:
-            df_hist["Consumption"] = pd.to_numeric(df_hist["Consumption"], errors='coerce').fillna(0)
+            df_hist["Consumption"] = pd.to_numeric(df_hist["Consumption"], errors="coerce").fillna(0)
             avg_cons = df_hist.groupby("Product Name")["Consumption"].mean().reset_index()
             df_par = pd.merge(
                 st.session_state.inventory[["Product Name", "UOM", "Closing Stock"]],
                 avg_cons,
                 on="Product Name",
-                how="left"
+                how="left",
             ).fillna(0)
             df_par["Weekly Usage"] = (df_par["Consumption"] / 4.33).round(2)
             df_par["Min (50%)"] = (df_par["Weekly Usage"] * 0.5).round(2)
@@ -823,15 +860,18 @@ with tab_ops:
         else:
             st.info("Historical data required.")
 
+# ===================== REQUISITIONS TAB =====================
 with tab_req:
     st.markdown('<span class="section-title">🚚 Restaurant Requisitions</span>', unsafe_allow_html=True)
 
-    # REFRESH BUTTON
     if st.button("🔄 Refresh Requisitions", use_container_width=True, key="refresh_reqs"):
         st.cache_data.clear()
         st.rerun()
 
-    all_reqs = load_from_sheet("restaurant_requisitions", ["ReqID", "Restaurant", "Item", "Qty", "Status", "DispatchQty", "Timestamp", "RequestedDate", "FollowupSent"])
+    all_reqs = load_from_sheet(
+        "restaurant_requisitions",
+        ["ReqID", "Restaurant", "Item", "Qty", "Status", "DispatchQty", "Timestamp", "RequestedDate", "FollowupSent"],
+    )
 
     if not all_reqs.empty:
         if "FollowupSent" not in all_reqs.columns:
@@ -839,14 +879,11 @@ with tab_req:
 
         status_filter = st.selectbox("Filter by Status", ["All", "Pending", "Dispatched", "Completed"], key="req_status_filter", label_visibility="collapsed")
 
-        if status_filter != "All":
-            display_reqs = all_reqs[all_reqs["Status"] == status_filter]
-        else:
-            display_reqs = all_reqs
+        display_reqs = all_reqs if status_filter == "All" else all_reqs[all_reqs["Status"] == status_filter]
 
         if not display_reqs.empty:
             display_reqs = display_reqs.copy()
-            display_reqs["RequestedDate"] = pd.to_datetime(display_reqs["RequestedDate"], errors='coerce')
+            display_reqs["RequestedDate"] = pd.to_datetime(display_reqs["RequestedDate"], errors="coerce")
             display_reqs = display_reqs[display_reqs["RequestedDate"].notna()]
 
             if not display_reqs.empty:
@@ -883,23 +920,26 @@ with tab_req:
                                 status_color = "🟡" if status == "Pending" else "🟠" if status == "Dispatched" else "🔵"
                                 followup_text = " ⚠️" if followup_sent else ""
 
-                                st.markdown(f"""
-                                <div class="req-box">
-                                    <b>{status_color} {item_name}</b> | Req:{req_qty} | Got:{dispatch_qty} | Rem:{remaining_qty} | Avail:{available_qty}{followup_text}
-                                </div>
-                                """, unsafe_allow_html=True)
+                                st.markdown(
+                                    f"""
+                                    <div class="req-box">
+                                        <b>{status_color} {item_name}</b> | Req:{req_qty} | Got:{dispatch_qty} | Rem:{remaining_qty} | Avail:{available_qty}{followup_text}
+                                    </div>
+                                    """,
+                                    unsafe_allow_html=True,
+                                )
 
                                 if status == "Pending":
                                     c1, c2, c3 = st.columns([2, 1, 1])
                                     with c1:
                                         default_dispatch = min(req_qty, available_qty)
                                         dispatch_qty_input = st.number_input(
-                                            f"Dispatch",
+                                            "Dispatch",
                                             min_value=0.0,
                                             max_value=available_qty,
                                             value=default_dispatch,
                                             key=f"dispatch_{req_id}",
-                                            label_visibility="collapsed"
+                                            label_visibility="collapsed",
                                         )
                                     with c2:
                                         if st.button("🚀 Dispatch", key=f"dispatch_btn_{req_id}", use_container_width=True):
@@ -907,7 +947,6 @@ with tab_req:
                                                 all_reqs.at[idx, "DispatchQty"] = dispatch_qty_input
                                                 all_reqs.at[idx, "Status"] = "Dispatched"
                                                 all_reqs.at[idx, "Timestamp"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
                                                 if save_to_sheet(all_reqs, "restaurant_requisitions"):
                                                     st.success(f"✅ Dispatched {dispatch_qty_input}")
                                                     st.cache_data.clear()
@@ -937,6 +976,7 @@ with tab_req:
     else:
         st.info("📭 No requisitions yet")
 
+# ===================== SUPPLIERS TAB =====================
 with tab_sup:
     st.markdown('<span class="section-title">📞 Supplier Directory</span>', unsafe_allow_html=True)
 
@@ -961,7 +1001,10 @@ with tab_sup:
     search = st.text_input("🔍 Filter...", placeholder="Item or Supplier...", key="sup_search")
 
     if not meta.empty:
-        filtered = meta[~meta["Product Name"].str.startswith("CATEGORY_", na=False) & ~meta["Product Name"].str.startswith("SUPPLIER_", na=False)]
+        filtered = meta[
+            ~meta["Product Name"].str.startswith("CATEGORY_", na=False)
+            & ~meta["Product Name"].str.startswith("SUPPLIER_", na=False)
+        ]
         if search:
             filtered = filtered[
                 filtered["Product Name"].str.lower().str.contains(search.lower(), na=False)
@@ -971,7 +1014,20 @@ with tab_sup:
         filtered = meta
 
     if not filtered.empty:
-        display_cols = ["Product Name", "Category", "Supplier", "Contact", "Email", "Price", "Currency", "Lead Time", "UOM", "Reorder Qty", "Min Safety Stock", "Min Stock"]
+        display_cols = [
+            "Product Name",
+            "Category",
+            "Supplier",
+            "Contact",
+            "Email",
+            "Price",
+            "Currency",
+            "Lead Time",
+            "UOM",
+            "Reorder Qty",
+            "Min Safety Stock",
+            "Min Stock",
+        ]
         available_cols = [col for col in display_cols if col in filtered.columns]
         filtered_display = filtered[available_cols]
     else:
@@ -982,10 +1038,10 @@ with tab_sup:
         save_to_sheet(edited_meta, "product_metadata")
         st.rerun()
 
+# ===================== DASHBOARD TAB (NEW FEATURE) =====================
 with tab_dash:
     st.markdown('<span class="section-title">📊 Warehouse Dashboard</span>', unsafe_allow_html=True)
 
-    # Controls bar (compact)
     c1, c2, c3, c4, c5 = st.columns([1.2, 1.2, 1.4, 1.0, 1.2])
     with c1:
         if st.button("🔄 Refresh", use_container_width=True, key="dash_refresh"):
@@ -993,7 +1049,6 @@ with tab_dash:
             st.rerun()
 
     with c2:
-        # For now: warehouse view only (All); kept as dropdown to add restaurants later without redesign
         reqs_tmp = load_from_sheet("restaurant_requisitions", ["Restaurant"])
         restaurants = []
         if not reqs_tmp.empty and "Restaurant" in reqs_tmp.columns:
@@ -1010,15 +1065,8 @@ with tab_dash:
         top_n = st.selectbox("Top", options=[10, 25, 50, 100], index=0, key="dash_topn", label_visibility="collapsed")
 
     with c5:
-        currency_choice = st.selectbox(
-            "Currency",
-            options=["All"] + TOP_15_CURRENCIES_PLUS_BHD,
-            index=0,
-            key="dash_currency",
-            label_visibility="collapsed"
-        )
+        currency_choice = st.selectbox("Currency", options=["All"] + TOP_15_CURRENCIES_PLUS_BHD, index=0, key="dash_currency", label_visibility="collapsed")
 
-    # extra small options row
     o1, o2, o3 = st.columns([1.4, 1.2, 2.4])
     with o1:
         sort_dir = st.selectbox("Sort", ["High → Low", "Low → High"], key="dash_sort", label_visibility="collapsed")
@@ -1030,40 +1078,41 @@ with tab_dash:
     if start_date > end_date:
         st.warning("⚠️ Start date is after end date. Please fix the date range.")
     else:
-        # Load data
+        # Ensure python date objects (critical for pandas comparisons)
+        start_date = pd.to_datetime(start_date).date()
+        end_date = pd.to_datetime(end_date).date()
+
         inv_df = _prepare_inventory(load_from_sheet("persistent_inventory"))
         meta_df = _prepare_metadata()
         req_df = _prepare_reqs(load_from_sheet("restaurant_requisitions"))
         log_df = _prepare_logs(load_from_sheet("activity_logs"))
 
-        # Currency filter (affects value computations)
         meta_cur = _currency_filtered_meta(meta_df, currency_choice)
 
-        # Join inventory with metadata for value computations
         inv_join = pd.merge(
             inv_df if inv_df is not None else pd.DataFrame(),
-            meta_cur[["Product Name", "Category", "Price", "Currency", "Reorder Qty", "Min Safety Stock", "Min Stock", "Lead Time"]] if meta_cur is not None and not meta_cur.empty else pd.DataFrame(columns=["Product Name", "Price", "Currency"]),
+            meta_cur[["Product Name", "Category", "Price", "Currency", "Reorder Qty", "Min Safety Stock", "Min Stock", "Lead Time"]]
+            if meta_cur is not None and not meta_cur.empty
+            else pd.DataFrame(columns=["Product Name", "Price", "Currency"]),
             on="Product Name",
             how="left",
-            suffixes=("", "_meta")
+            suffixes=("", "_meta"),
         )
         if not inv_join.empty:
             inv_join["Price"] = pd.to_numeric(inv_join.get("Price", 0), errors="coerce").fillna(0.0)
-            inv_join["Stock Value"] = (pd.to_numeric(inv_join.get("Closing Stock", 0), errors="coerce").fillna(0.0) * inv_join["Price"]).round(2)
+            inv_join["Closing Stock"] = pd.to_numeric(inv_join.get("Closing Stock", 0), errors="coerce").fillna(0.0)
+            inv_join["Stock Value"] = (inv_join["Closing Stock"] * inv_join["Price"]).round(2)
         else:
             inv_join = pd.DataFrame(columns=["Product Name", "Closing Stock", "Price", "Stock Value", "Category"])
 
-        # Filter requisitions for date range + restaurant + status
-        req_filtered = req_df.copy() if req_df is not None and not req_df.empty else pd.DataFrame(columns=["Restaurant", "Item", "Qty", "DispatchQty", "Status", "RequestedDate", "DispatchTS_Date"])
+        # Requisition filtering
+        req_filtered = req_df.copy() if req_df is not None and not req_df.empty else pd.DataFrame(
+            columns=["Restaurant", "Item", "Qty", "DispatchQty", "Status", "RequestedDate", "DispatchTS_Date"]
+        )
         if not req_filtered.empty:
-            # restaurant filter (warehouse now: typically All)
             if restaurant_filter != "All":
                 req_filtered = req_filtered[req_filtered["Restaurant"] == restaurant_filter]
 
-            # Only count dispatched/consumption from Dispatched or Completed
-            req_filtered = req_filtered[req_filtered["Status"].isin(["Pending", "Dispatched", "Completed"])]
-
-            # Date basis:
             if dispatch_date_basis == "Dispatch Timestamp":
                 date_col = "DispatchTS_Date"
             else:
@@ -1072,37 +1121,40 @@ with tab_dash:
             req_filtered = req_filtered[req_filtered[date_col].notna()]
             req_filtered = req_filtered[(req_filtered[date_col] >= start_date) & (req_filtered[date_col] <= end_date)]
 
-        # Filter logs for received
+        # Logs filtering (Received)
         logs_filtered = log_df.copy() if log_df is not None and not log_df.empty else pd.DataFrame(columns=["Item", "Qty", "Status", "LogDateParsed"])
         if not logs_filtered.empty:
             logs_filtered = logs_filtered[logs_filtered["Status"] == "Active"]
             logs_filtered = logs_filtered[logs_filtered["LogDateParsed"].notna()]
-            logs_filtered = logs_filtered[(logs_filtered["LogDateParsed"] >= start_date) & (logs_filtered["LogDateParsed"] <= end_date)]
+            logs_filtered = logs_filtered[
+                (logs_filtered["LogDateParsed"] >= start_date) & (logs_filtered["LogDateParsed"] <= end_date)
+            ]
 
-        # Aggregate metrics
         total_ordered_qty = float(req_filtered["Qty"].sum()) if not req_filtered.empty else 0.0
-        total_dispatched_qty = float(req_filtered[req_filtered["Status"].isin(["Dispatched", "Completed"])]["DispatchQty"].sum()) if not req_filtered.empty else 0.0
+        total_dispatched_qty = (
+            float(req_filtered[req_filtered["Status"].isin(["Dispatched", "Completed"])]["DispatchQty"].sum()) if not req_filtered.empty else 0.0
+        )
         total_received_qty = float(logs_filtered["Qty"].sum()) if not logs_filtered.empty else 0.0
 
-        stock_inhand_qty = float(inv_join["Closing Stock"].sum()) if not inv_join.empty and "Closing Stock" in inv_join.columns else 0.0
-        stock_inhand_value = float(inv_join["Stock Value"].sum()) if not inv_join.empty and "Stock Value" in inv_join.columns else 0.0
+        stock_inhand_qty = float(inv_join["Closing Stock"].sum()) if not inv_join.empty else 0.0
+        stock_inhand_value = float(inv_join["Stock Value"].sum()) if not inv_join.empty else 0.0
         net_flow = total_received_qty - total_dispatched_qty
 
-        # KPI row
         k1, k2, k3, k4, k5, k6 = st.columns(6)
         k1.markdown(f'<div class="kpi-box"><div class="kpi-label">Ordered Qty</div><div class="kpi-value">{total_ordered_qty:.2f}</div></div>', unsafe_allow_html=True)
         k2.markdown(f'<div class="kpi-box"><div class="kpi-label">Dispatched Qty (Consumption)</div><div class="kpi-value">{total_dispatched_qty:.2f}</div></div>', unsafe_allow_html=True)
         k3.markdown(f'<div class="kpi-box"><div class="kpi-label">Received Qty</div><div class="kpi-value">{total_received_qty:.2f}</div></div>', unsafe_allow_html=True)
         k4.markdown(f'<div class="kpi-box"><div class="kpi-label">Net Flow (In-Out)</div><div class="kpi-value">{net_flow:.2f}</div></div>', unsafe_allow_html=True)
         k5.markdown(f'<div class="kpi-box"><div class="kpi-label">Stock In Hand (Qty)</div><div class="kpi-value">{stock_inhand_qty:.2f}</div></div>', unsafe_allow_html=True)
-        k6.markdown(f'<div class="kpi-box"><div class="kpi-label">Stock In Hand (Value)</div><div class="kpi-value">{stock_inhand_value:.2f}</div><div class="kpi-sub">{("All currencies" if currency_choice=="All" else currency_choice)}</div></div>', unsafe_allow_html=True)
+        k6.markdown(
+            f'<div class="kpi-box"><div class="kpi-label">Stock In Hand (Value)</div><div class="kpi-value">{stock_inhand_value:.2f}</div><div class="kpi-sub">{("All currencies" if currency_choice=="All" else currency_choice)}</div></div>',
+            unsafe_allow_html=True,
+        )
 
         st.divider()
 
-        # Build Top tables
-        ascending = (sort_dir == "Low → High")
+        ascending = sort_dir == "Low → High"
 
-        # Top Ordered
         top_ordered = pd.DataFrame(columns=["Item", "Ordered Qty"])
         if not req_filtered.empty:
             top_ordered = (
@@ -1113,7 +1165,6 @@ with tab_dash:
                 .head(top_n)
             )
 
-        # Top Dispatched (Consumption)
         top_dispatched = pd.DataFrame(columns=["Item", "Dispatched Qty"])
         if not req_filtered.empty:
             disp_only = req_filtered[req_filtered["Status"].isin(["Dispatched", "Completed"])]
@@ -1125,7 +1176,6 @@ with tab_dash:
                 .head(top_n)
             )
 
-        # Top Received
         top_received = pd.DataFrame(columns=["Item", "Received Qty"])
         if not logs_filtered.empty:
             top_received = (
@@ -1136,60 +1186,57 @@ with tab_dash:
                 .head(top_n)
             )
 
-        # Top Stock Qty
         top_stock_qty = pd.DataFrame(columns=["Product Name", "Closing Stock"])
         if not inv_join.empty:
-            top_stock_qty = (
-                inv_join[["Product Name", "Closing Stock"]]
-                .sort_values("Closing Stock", ascending=ascending)
-                .head(top_n)
-            )
+            top_stock_qty = inv_join[["Product Name", "Closing Stock"]].sort_values("Closing Stock", ascending=ascending).head(top_n)
 
-        # Top Stock Value
         top_stock_val = pd.DataFrame(columns=["Product Name", "Closing Stock", "Price", "Stock Value"])
         if not inv_join.empty:
-            top_stock_val = (
-                inv_join[["Product Name", "Closing Stock", "Price", "Stock Value"]]
-                .sort_values("Stock Value", ascending=ascending)
-                .head(top_n)
-            )
+            top_stock_val = inv_join[["Product Name", "Closing Stock", "Price", "Stock Value"]].sort_values("Stock Value", ascending=ascending).head(top_n)
 
-        # Export buttons (Excel)
         export_col1, export_col2 = st.columns([1.4, 3.6])
         with export_col1:
-            export_bytes = _to_excel_bytes({
-                "KPIs": pd.DataFrame([{
-                    "Start": start_date,
-                    "End": end_date,
-                    "Restaurant": restaurant_filter,
-                    "Currency": currency_choice,
-                    "Ordered Qty": total_ordered_qty,
-                    "Dispatched Qty": total_dispatched_qty,
-                    "Received Qty": total_received_qty,
-                    "Net Flow": net_flow,
-                    "Stock In Hand Qty": stock_inhand_qty,
-                    "Stock In Hand Value": stock_inhand_value,
-                    "Dispatch Date Basis": dispatch_date_basis
-                }]),
-                "Top Ordered": top_ordered,
-                "Top Dispatched": top_dispatched,
-                "Top Received": top_received,
-                "Top Stock Qty": top_stock_qty,
-                "Top Stock Value": top_stock_val
-            })
+            export_bytes = _to_excel_bytes(
+                {
+                    "KPIs": pd.DataFrame(
+                        [
+                            {
+                                "Start": start_date,
+                                "End": end_date,
+                                "Restaurant": restaurant_filter,
+                                "Currency": currency_choice,
+                                "Ordered Qty": total_ordered_qty,
+                                "Dispatched Qty": total_dispatched_qty,
+                                "Received Qty": total_received_qty,
+                                "Net Flow": net_flow,
+                                "Stock In Hand Qty": stock_inhand_qty,
+                                "Stock In Hand Value": stock_inhand_value,
+                                "Dispatch Date Basis": dispatch_date_basis,
+                            }
+                        ]
+                    ),
+                    "Top Ordered": top_ordered,
+                    "Top Dispatched": top_dispatched,
+                    "Top Received": top_received,
+                    "Top Stock Qty": top_stock_qty,
+                    "Top Stock Value": top_stock_val,
+                }
+            )
             st.download_button(
                 "📥 Export Dashboard (Excel)",
                 data=export_bytes,
                 file_name=f"Warehouse_Dashboard_{start_date}_to_{end_date}.xlsx",
                 use_container_width=True,
-                key="dash_export_excel"
+                key="dash_export_excel",
             )
         with export_col2:
-            st.markdown('<div class="dash-note">Note: “Stock In Hand Value” is filtered by the selected currency. No exchange-rate conversion is applied in this version.</div>', unsafe_allow_html=True)
+            st.markdown(
+                '<div class="dash-note">Note: “Stock In Hand Value” is filtered by the selected currency. No exchange-rate conversion is applied in this version.</div>',
+                unsafe_allow_html=True,
+            )
 
         st.divider()
 
-        # Display tables compactly (keep readable)
         a1, a2 = st.columns(2)
         with a1:
             st.markdown('<span class="section-title">📌 Top Ordered Items</span>', unsafe_allow_html=True)
@@ -1209,10 +1256,10 @@ with tab_dash:
         st.markdown('<span class="section-title">💰 Top Stock In Hand (Value)</span>', unsafe_allow_html=True)
         st.dataframe(top_stock_val, use_container_width=True, hide_index=True, height=320)
 
+# ===================== SIDEBAR =====================
 with st.sidebar:
     st.markdown('<h2 class="sidebar-title">☁️ Data Management</h2>', unsafe_allow_html=True)
 
-    # REFRESH BUTTON IN SIDEBAR
     if st.button("🔄 Refresh All Data", use_container_width=True, key="refresh_sidebar"):
         st.cache_data.clear()
         st.rerun()
@@ -1223,17 +1270,18 @@ with st.sidebar:
         inv_file = st.file_uploader("Upload XLSX/CSV", type=["csv", "xlsx"], key="inv_upload")
         if inv_file:
             try:
-                raw = pd.read_excel(inv_file, skiprows=4, header=None) if inv_file.name.endswith('.xlsx') else pd.read_csv(inv_file, skiprows=4, header=None)
+                raw = pd.read_excel(inv_file, skiprows=4, header=None) if inv_file.name.endswith(".xlsx") else pd.read_csv(inv_file, skiprows=4, header=None)
                 new_inv = pd.DataFrame()
                 new_inv["Product Name"] = raw[1]
                 new_inv["UOM"] = raw[2]
-                new_inv["Opening Stock"] = pd.to_numeric(raw[3], errors='coerce').fillna(0.0)
+                new_inv["Opening Stock"] = pd.to_numeric(raw[3], errors="coerce").fillna(0.0)
                 for i in range(1, 32):
                     new_inv[str(i)] = 0.0
                 new_inv["Total Received"] = 0.0
                 new_inv["Consumption"] = 0.0
                 new_inv["Closing Stock"] = new_inv["Opening Stock"]
                 new_inv["Category"] = "General"
+
                 if st.button("🚀 Push Inventory", type="primary", use_container_width=True, key="push_inv"):
                     save_to_sheet(new_inv.dropna(subset=["Product Name"]), "persistent_inventory")
                     st.rerun()
@@ -1244,14 +1292,14 @@ with st.sidebar:
         meta_file = st.file_uploader("Upload Product Data", type=["csv", "xlsx"], key="meta_upload")
         if meta_file:
             try:
-                new_meta = pd.read_excel(meta_file) if meta_file.name.endswith('.xlsx') else pd.read_csv(meta_file)
+                new_meta = pd.read_excel(meta_file) if meta_file.name.endswith(".xlsx") else pd.read_csv(meta_file)
                 if st.button("🚀 Push Metadata", type="primary", use_container_width=True, key="push_meta"):
                     save_to_sheet(new_meta, "product_metadata")
                     st.rerun()
             except Exception as e:
                 st.error(f"Error: {e}")
 
-    st.markdown('<hr>', unsafe_allow_html=True)
+    st.markdown("<hr>", unsafe_allow_html=True)
     if st.button("🗑️ Clear Cache", use_container_width=True, key="clear_cache"):
         st.cache_data.clear()
         st.rerun()
