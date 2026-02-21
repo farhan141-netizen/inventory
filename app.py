@@ -49,30 +49,31 @@ st.set_page_config(page_title="Warehouse Pro Cloud v8.6", layout="wide", initial
 # --- COMPACT SOPHISTICATED CSS ---
 st.markdown("""
     <style>
-    .block-container { padding-top: 1rem; padding-bottom: 1rem; }
+    .block-container { padding-top: 0.8rem; padding-bottom: 0.8rem; }
+    
     * { margin: 0; padding: 0; box-sizing: border-box; }
     .main { background: #0f1419; }
     
     .header-bar { 
         background: linear-gradient(90deg, #00d9ff 0%, #0095ff 100%); 
         border-radius: 10px; 
-        padding: 12px 24px; 
+        padding: 10px 20px; 
         color: white; 
-        margin-bottom: 15px; 
+        margin-bottom: 8px; 
         display: flex; 
         justify-content: space-between; 
         align-items: center;
         box-shadow: 0 4px 15px rgba(0, 217, 255, 0.2);
     }
-    .header-bar h1 { font-size: 1.4em !important; margin: 0; font-weight: 800; }
-    .header-bar p { font-size: 0.85em; margin: 0; opacity: 0.9; }
+    .header-bar h1 { font-size: 1.3em !important; margin: 0; font-weight: 800; }
+    .header-bar p { font-size: 0.8em; margin: 0; opacity: 0.9; }
 
-    .stTabs [data-baseweb="tab-list"] { gap: 10px; background: #1a1f2e; padding: 5px; border-radius: 10px; margin-bottom: 15px; border: 1px solid #2d3748; }
-    .stTabs [data-baseweb="tab"] { padding: 4px 15px; font-weight: 600; color: #8892b0; border-radius: 6px; font-size: 0.9em; }
+    .stTabs [data-baseweb="tab-list"] { gap: 8px; background: #1a1f2e; padding: 4px; border-radius: 10px; margin-bottom: 8px; border: 1px solid #2d3748; }
+    .stTabs [data-baseweb="tab"] { padding: 3px 12px; font-weight: 600; color: #8892b0; border-radius: 6px; font-size: 0.85em; height: 38px; }
     .stTabs [aria-selected="true"] { color: #00d9ff; background: #00d9ff15; border: 1px solid #00d9ff30; }
     
     .log-container {
-        max-height: 380px;
+        max-height: 300px;
         overflow-y: auto;
         padding-right: 5px;
         border-radius: 10px;
@@ -84,33 +85,33 @@ st.markdown("""
         justify-content: space-between; 
         align-items: center; 
         background: #1a1f2e; 
-        padding: 6px 10px; 
+        padding: 4px 8px; 
         border-radius: 6px; 
-        margin-bottom: 4px; 
+        margin-bottom: 3px; 
         border-left: 3px solid #00d9ff; 
     }
     .log-row-undone { border-left: 3px solid #ff6b6b; opacity: 0.5; }
-    .log-info { font-size: 0.78rem; color: #e0e7ff; line-height: 1.1; }
-    .log-time { font-size: 0.7rem; color: #8892b0; margin-left: 5px; }
+    .log-info { font-size: 0.75rem; color: #e0e7ff; line-height: 1.1; }
+    .log-time { font-size: 0.65rem; color: #8892b0; margin-left: 4px; }
     
     .section-title { 
         color: #00d9ff; 
-        font-size: 1.1em; 
+        font-size: 1em; 
         font-weight: 700; 
-        margin-bottom: 10px; 
-        padding-bottom: 4px; 
+        margin-bottom: 6px; 
+        margin-top: 2px;
+        padding-bottom: 3px; 
         border-bottom: 1px solid #00d9ff30; 
         display: block; 
     }
-    .sidebar-title { color: #00d9ff; font-weight: 700; font-size: 1em; margin-bottom: 8px; }
-    .stButton>button { border-radius: 6px; font-size: 0.85em; padding: 2px 10px; transition: all 0.2s ease; }
+    .sidebar-title { color: #00d9ff; font-weight: 700; font-size: 0.95em; margin-bottom: 6px; }
     
-    .req-box { background: #1a2f3f; border-left: 4px solid #00d9ff; padding: 12px; margin-bottom: 10px; border-radius: 6px; }
-    .req-pending { border-left: 4px solid #ffaa00; background: #3a2f1a; }
-    .req-dispatched { border-left: 4px solid #00ff00; background: #1a3a1a; }
-    .req-completed { border-left: 4px solid #00d9ff; background: #1a2f3f; }
+    .stButton>button { border-radius: 6px; font-size: 0.8em; padding: 2px 8px; transition: all 0.2s ease; }
     
-    hr { margin: 12px 0; opacity: 0.1; }
+    .req-box { background: #1a2f3f; border-left: 3px solid #ffaa00; padding: 6px 8px; margin: 3px 0; border-radius: 4px; font-size: 0.85em; line-height: 1.3; }
+    .req-compact-button { font-size: 0.75em; padding: 2px 6px; }
+    
+    hr { margin: 6px 0; opacity: 0.1; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -191,7 +192,7 @@ def manage_categories_modal():
     with tab1:
         st.subheader("Add New Category")
         category_name = st.text_input("📌 Category Name", placeholder="e.g., Vegetables, Grains, Dairy", key="cat_add_name")
-        description = st.text_area("📝 Description", placeholder="Brief description of this category", height=80, key="cat_add_desc")
+        description = st.text_area("📝 Description", placeholder="Brief description of this category", height=60, key="cat_add_desc")
         
         if st.button("✅ Add Category", use_container_width=True, type="primary", key="add_cat_confirm"):
             if not category_name or not category_name.strip():
@@ -236,7 +237,7 @@ def manage_categories_modal():
                 current_desc = cat_records.iloc[0].get("Product Name", "").replace(f"CATEGORY_{selected_cat}", "").strip()
             
             new_name = st.text_input("📌 New Category Name", value=selected_cat, key="cat_new_name")
-            new_desc = st.text_area("📝 New Description", value=current_desc, height=80, key="cat_new_desc")
+            new_desc = st.text_area("📝 New Description", value=current_desc, height=60, key="cat_new_desc")
             
             if st.button("✅ Update Category", use_container_width=True, type="primary", key="modify_cat_confirm"):
                 if not new_name or not new_name.strip():
@@ -256,7 +257,7 @@ def manage_categories_modal():
                         meta_df.at[idx, "Product Name"] = f"CATEGORY_{new_name}"
                 
                 if save_to_sheet(meta_df, "product_metadata"):
-                    st.success(f"✅ Category renamed successfully!")
+                    st.success(f"✅ Category '{selected_cat}' renamed to '{new_name}'!")
                     st.balloons()
                     st.rerun()
                 else:
@@ -396,7 +397,7 @@ def add_item_modal():
         meta_df = pd.concat([meta_df, supplier_meta], ignore_index=True)
         save_to_sheet(meta_df, "product_metadata")
         
-        st.success(f"✅ Product '{name}' created successfully!")
+        st.success(f"✅ Product '{name}' created with supplier '{supplier}' at {currency} {price}!")
         st.balloons()
         st.rerun()
 
@@ -467,7 +468,7 @@ def update_supplier_modal(supplier_name):
         meta_df.loc[meta_df["Supplier"] == supplier_name, "Lead Time"] = lead_time
         
         if save_to_sheet(meta_df, "product_metadata"):
-            st.success(f"✅ Supplier updated successfully!")
+            st.success(f"✅ Supplier '{supplier_name}' updated successfully!")
             st.balloons()
             st.rerun()
         else:
@@ -566,7 +567,7 @@ with tab_ops:
         logs = load_from_sheet("activity_logs")
         if not logs.empty:
             full_logs = logs.iloc[::-1]
-            items_per_page = 8
+            items_per_page = 6
             total_pages = (len(full_logs) - 1) // items_per_page + 1
             start_idx = st.session_state.log_page * items_per_page
             end_idx = start_idx + items_per_page
@@ -605,7 +606,7 @@ with tab_ops:
         for col in disp_cols: 
             if col not in df_status.columns: df_status[col] = 0.0
         
-        edited_df = st.data_editor(df_status[disp_cols], height=380, use_container_width=True, disabled=["Product Name", "Category", "UOM", "Total Received", "Closing Stock", "Variance"], hide_index=True)
+        edited_df = st.data_editor(df_status[disp_cols], height=300, use_container_width=True, disabled=["Product Name", "Category", "UOM", "Total Received", "Closing Stock", "Variance"], hide_index=True)
         
         sc1, sc2, sc3 = st.columns(3)
         with sc1:
@@ -641,14 +642,14 @@ with tab_ops:
             df_par["Weekly Usage"] = (df_par["Consumption"] / 4.33).round(2)
             df_par["Min (50%)"] = (df_par["Weekly Usage"] * 0.5).round(2)
             df_par["Max (150%)"] = (df_par["Weekly Usage"] * 1.5).round(2)
-            st.dataframe(df_par, use_container_width=True, hide_index=True)
+            st.dataframe(df_par, use_container_width=True, hide_index=True, height=250)
         else: st.info("Historical data required.")
 
 with tab_req:
     st.markdown('<span class="section-title">🚚 Restaurant Requisitions</span>', unsafe_allow_html=True)
     
-    # REFRESH DATA BUTTON
-    if st.button("🔄 Refresh Data", use_container_width=True, key="refresh_reqs"):
+    # REFRESH BUTTON
+    if st.button("🔄 Refresh Requisitions", use_container_width=True, key="refresh_reqs"):
         st.cache_data.clear()
         st.rerun()
     
@@ -659,7 +660,7 @@ with tab_req:
         if "FollowupSent" not in all_reqs.columns:
             all_reqs["FollowupSent"] = False
         
-        status_filter = st.selectbox("Filter by Status", ["All", "Pending", "Dispatched", "Completed"], key="req_status_filter")
+        status_filter = st.selectbox("Filter by Status", ["All", "Pending", "Dispatched", "Completed"], key="req_status_filter", label_visibility="collapsed")
         
         if status_filter != "All":
             display_reqs = all_reqs[all_reqs["Status"] == status_filter]
@@ -667,76 +668,86 @@ with tab_req:
             display_reqs = all_reqs
         
         if not display_reqs.empty:
-            restaurants = display_reqs["Restaurant"].unique()
+            # Group by date and restaurant
+            display_reqs["RequestedDate"] = pd.to_datetime(display_reqs["RequestedDate"])
+            display_reqs = display_reqs.sort_values("RequestedDate", ascending=False)
             
-            for restaurant in restaurants:
-                st.subheader(f"🏪 {restaurant}")
-                rest_reqs = display_reqs[display_reqs["Restaurant"] == restaurant]
+            # Get unique dates
+            unique_dates = sorted(display_reqs["RequestedDate"].unique(), reverse=True)
+            
+            for req_date in unique_dates:
+                date_str = pd.Timestamp(req_date).strftime("%d/%m/%Y")
+                date_reqs = display_reqs[display_reqs["RequestedDate"] == req_date]
                 
-                for idx, row in rest_reqs.iterrows():
-                    item_name = row["Item"]
-                    req_qty = float(row["Qty"])
-                    status = row["Status"]
-                    dispatch_qty = float(row.get("DispatchQty", 0))
-                    req_id = row["ReqID"]
-                    req_date = row.get("RequestedDate", "N/A")
-                    remaining_qty = req_qty - dispatch_qty
-                    followup_sent = row.get("FollowupSent", False)
+                with st.expander(f"📅 {date_str} ({len(date_reqs)} items)", expanded=False):
+                    restaurants = date_reqs["Restaurant"].unique()
                     
-                    stock_info = st.session_state.inventory[st.session_state.inventory["Product Name"] == item_name]
-                    available_qty = float(stock_info["Closing Stock"].values[0]) if not stock_info.empty else 0.0
-                    
-                    status_color = "🟡" if status == "Pending" else "🟠" if status == "Dispatched" else "🔵"
-                    followup_text = " | ⚠️ Follow-up Sent" if followup_sent else ""
-                    
-                    st.markdown(f"""
-                    <div class="req-box {'req-pending' if status == 'Pending' else 'req-dispatched' if status == 'Dispatched' else 'req-completed'}">
-                        <b>{status_color} {item_name}</b> | Requested: {req_qty} | Dispatched: {dispatch_qty} | Remaining: {remaining_qty} | Available: {available_qty}{followup_text}
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
-                    if status == "Pending":
-                        c1, c2, c3 = st.columns([2, 1, 1])
-                        with c1:
-                            default_dispatch = min(req_qty, available_qty)
-                            dispatch_qty_input = st.number_input(
-                                f"Dispatch Qty for {item_name}", 
-                                min_value=0.0, 
-                                max_value=available_qty, 
-                                value=default_dispatch,
-                                key=f"dispatch_{req_id}"
-                            )
-                        with c2:
-                            if st.button("🚀 Dispatch", key=f"dispatch_btn_{req_id}", use_container_width=True):
-                                if dispatch_qty_input > 0:
-                                    all_reqs.at[idx, "DispatchQty"] = dispatch_qty_input
-                                    all_reqs.at[idx, "Status"] = "Dispatched"
-                                    all_reqs.at[idx, "Timestamp"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                                    
-                                    if save_to_sheet(all_reqs, "restaurant_requisitions"):
-                                        st.success(f"✅ Dispatched {dispatch_qty_input} {item_name} to {restaurant}")
-                                        st.cache_data.clear()
+                    for restaurant in restaurants:
+                        rest_reqs = date_reqs[date_reqs["Restaurant"] == restaurant]
+                        st.write(f"🏪 **{restaurant}** - {len(rest_reqs)} items")
+                        
+                        for idx, row in rest_reqs.iterrows():
+                            item_name = row["Item"]
+                            req_qty = float(row["Qty"])
+                            status = row["Status"]
+                            dispatch_qty = float(row.get("DispatchQty", 0))
+                            req_id = row["ReqID"]
+                            remaining_qty = req_qty - dispatch_qty
+                            followup_sent = row.get("FollowupSent", False)
+                            
+                            stock_info = st.session_state.inventory[st.session_state.inventory["Product Name"] == item_name]
+                            available_qty = float(stock_info["Closing Stock"].values[0]) if not stock_info.empty else 0.0
+                            
+                            status_color = "🟡" if status == "Pending" else "🟠" if status == "Dispatched" else "🔵"
+                            followup_text = " ⚠️" if followup_sent else ""
+                            
+                            st.markdown(f"""
+                            <div class="req-box">
+                                <b>{status_color} {item_name}</b> | Req:{req_qty} | Got:{dispatch_qty} | Rem:{remaining_qty} | Avail:{available_qty}{followup_text}
+                            </div>
+                            """, unsafe_allow_html=True)
+                            
+                            if status == "Pending":
+                                c1, c2, c3 = st.columns([2, 1, 1])
+                                with c1:
+                                    default_dispatch = min(req_qty, available_qty)
+                                    dispatch_qty_input = st.number_input(
+                                        f"Dispatch", 
+                                        min_value=0.0, 
+                                        max_value=available_qty, 
+                                        value=default_dispatch,
+                                        key=f"dispatch_{req_id}",
+                                        label_visibility="collapsed"
+                                    )
+                                with c2:
+                                    if st.button("🚀 Dispatch", key=f"dispatch_btn_{req_id}", use_container_width=True):
+                                        if dispatch_qty_input > 0:
+                                            all_reqs.at[idx, "DispatchQty"] = dispatch_qty_input
+                                            all_reqs.at[idx, "Status"] = "Dispatched"
+                                            all_reqs.at[idx, "Timestamp"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                            
+                                            if save_to_sheet(all_reqs, "restaurant_requisitions"):
+                                                st.success(f"✅ Dispatched {dispatch_qty_input}")
+                                                st.cache_data.clear()
+                                                st.rerun()
+                                with c3:
+                                    if st.button("❌ Cancel", key=f"cancel_btn_{req_id}", use_container_width=True):
+                                        all_reqs = all_reqs.drop(idx)
+                                        save_to_sheet(all_reqs, "restaurant_requisitions")
+                                        st.warning(f"❌ Cancelled")
                                         st.rerun()
-                        with c3:
-                            if st.button("❌ Cancel", key=f"cancel_btn_{req_id}", use_container_width=True):
-                                all_reqs = all_reqs.drop(idx)
-                                save_to_sheet(all_reqs, "restaurant_requisitions")
-                                st.warning(f"❌ Requisition cancelled")
-                                st.rerun()
-                    
-                    elif status == "Dispatched":
-                        c1, c2 = st.columns([1, 1])
-                        with c1:
-                            st.write(f"✅ Dispatched: {dispatch_qty} units | Remaining: {remaining_qty}")
-                        with c2:
-                            if st.button(f"🚩 Send Follow-up", key=f"followup_{idx}", use_container_width=True):
-                                all_reqs.at[idx, "FollowupSent"] = True
-                                all_reqs.at[idx, "Timestamp"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                                save_to_sheet(all_reqs, "restaurant_requisitions")
-                                st.success(f"✅ Follow-up sent for {item_name}!")
-                                st.rerun()
-                    
-                    st.divider()
+                            
+                            elif status == "Dispatched":
+                                c1, c2 = st.columns(2)
+                                with c1:
+                                    st.caption(f"✅ Dispatched: {dispatch_qty} | Rem: {remaining_qty}")
+                                with c2:
+                                    if st.button(f"🚩 Follow-up", key=f"followup_{idx}", use_container_width=True):
+                                        all_reqs.at[idx, "FollowupSent"] = True
+                                        all_reqs.at[idx, "Timestamp"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                        save_to_sheet(all_reqs, "restaurant_requisitions")
+                                        st.success(f"✅ Follow-up sent!")
+                                        st.rerun()
         else:
             st.info(f"📭 No {status_filter.lower()} requisitions found")
     else:
@@ -756,8 +767,8 @@ with tab_sup:
             all_suppliers = meta_df["Supplier"].dropna().unique().tolist()
             suppliers_list = sorted([s for s in all_suppliers if s and str(s).strip()])
             if suppliers_list:
-                selected_supplier = st.selectbox("Select Supplier to Update", suppliers_list, label_visibility="collapsed", key="upd_supp_select")
-                if st.button("✏️ Update Details", use_container_width=True, key="btn_upd_supp"):
+                selected_supplier = st.selectbox("Select Supplier", suppliers_list, label_visibility="collapsed", key="upd_supp_select")
+                if st.button("✏️ Update", use_container_width=True, key="btn_upd_supp"):
                     update_supplier_modal(selected_supplier)
     
     st.divider()
@@ -779,7 +790,7 @@ with tab_sup:
     else:
         filtered_display = filtered
     
-    edited_meta = st.data_editor(filtered_display, num_rows="dynamic", use_container_width=True, hide_index=True, height=500, key="sup_editor")
+    edited_meta = st.data_editor(filtered_display, num_rows="dynamic", use_container_width=True, hide_index=True, height=400, key="sup_editor")
     if st.button("💾 Save Directory", use_container_width=True, type="primary", key="save_sup_dir"):
         save_to_sheet(edited_meta, "product_metadata"); st.rerun()
 
