@@ -47,80 +47,256 @@ def save_to_sheet(df, worksheet_name):
 # --- PAGE CONFIG ---
 st.set_page_config(page_title="Warehouse Pro Cloud v8.6", layout="wide", initial_sidebar_state="expanded")
 
-# --- COMPACT SOPHISTICATED CSS ---
+# --- GLOBAL THEME / CRAFT UI CSS ---
 st.markdown(
     """
     <style>
-    .block-container { padding-top: 0.8rem; padding-bottom: 0.8rem; }
+    /* --- Base --- */
+    :root{
+      --bg: #0F1419;
+      --panel: rgba(26, 31, 46, 0.68);
+      --panel-2: rgba(26, 31, 46, 0.50);
+      --stroke: rgba(255,255,255,0.07);
+      --stroke-2: rgba(255,255,255,0.06);
+      --text: #e6edf7;
+      --muted: #9aa7b8;
+      --muted2: #6f7a8a;
+      --cyan: #00d9ff;
+      --cyan2: #0095ff;
+      --amber: #ffaa00;
+      --red: #ff6b6b;
+      --shadow: 0 18px 50px rgba(0,0,0,0.35);
+      --shadow2: 0 10px 30px rgba(0,0,0,0.25);
+      --r16: 16px;
+      --r12: 12px;
+      --blur: blur(16px);
+    }
 
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    .main { background: #0f1419; }
+    * { box-sizing: border-box; }
+    .main { background: var(--bg); }
+    .block-container { padding-top: 0.85rem; padding-bottom: 1rem; }
 
+    /* --- Header --- */
     .header-bar {
-        background: linear-gradient(90deg, #00d9ff 0%, #0095ff 100%);
-        border-radius: 10px;
-        padding: 10px 20px;
+        background: linear-gradient(90deg, var(--cyan) 0%, var(--cyan2) 100%);
+        border-radius: 14px;
+        padding: 12px 18px;
         color: white;
-        margin-bottom: 8px;
+        margin-bottom: 10px;
         display: flex;
         justify-content: space-between;
         align-items: center;
-        box-shadow: 0 4px 15px rgba(0, 217, 255, 0.2);
+        box-shadow: 0 10px 35px rgba(0, 217, 255, 0.18);
     }
-    .header-bar h1 { font-size: 1.3em !important; margin: 0; font-weight: 800; }
-    .header-bar p { font-size: 0.8em; margin: 0; opacity: 0.9; }
+    .header-bar h1 { font-size: 1.25em !important; margin: 0; font-weight: 800; letter-spacing: -0.02em; }
+    .header-bar p { font-size: 0.8em; margin: 0; opacity: 0.92; }
 
-    .stTabs [data-baseweb="tab-list"] { gap: 8px; background: #1a1f2e; padding: 4px; border-radius: 10px; margin-bottom: 8px; border: 1px solid #2d3748; }
-    .stTabs [data-baseweb="tab"] { padding: 3px 12px; font-weight: 600; color: #8892b0; border-radius: 6px; font-size: 0.85em; height: 38px; }
-    .stTabs [aria-selected="true"] { color: #00d9ff; background: #00d9ff15; border: 1px solid #00d9ff30; }
+    /* --- Tabs (glassy) --- */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 8px;
+        background: var(--panel);
+        padding: 6px;
+        border-radius: 14px;
+        margin-bottom: 10px;
+        border: 1px solid var(--stroke);
+        backdrop-filter: var(--blur);
+    }
+    .stTabs [data-baseweb="tab"] {
+        padding: 6px 14px;
+        font-weight: 600;
+        color: #aab4c3;
+        border-radius: 10px;
+        font-size: 0.86em;
+        height: 40px;
+        transition: all .18s ease;
+    }
+    .stTabs [data-baseweb="tab"]:hover { color: var(--text); background: rgba(0,217,255,0.08); }
+    .stTabs [aria-selected="true"] {
+        color: var(--cyan);
+        background: rgba(0,217,255,0.10);
+        border: 1px solid rgba(0,217,255,0.22);
+        box-shadow: 0 10px 25px rgba(0,217,255,0.07) inset;
+    }
 
+    /* --- Existing components kept --- */
     .log-container {
         max-height: 300px;
         overflow-y: auto;
         padding-right: 5px;
-        border-radius: 10px;
-        background: rgba(26, 31, 46, 0.4);
+        border-radius: 14px;
+        background: var(--panel-2);
+        border: 1px solid var(--stroke-2);
+        backdrop-filter: var(--blur);
     }
-
     .log-row {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        background: #1a1f2e;
-        padding: 4px 8px;
-        border-radius: 6px;
-        margin-bottom: 3px;
-        border-left: 3px solid #00d9ff;
+        background: rgba(26, 31, 46, 0.92);
+        padding: 6px 10px;
+        border-radius: 12px;
+        margin-bottom: 6px;
+        border-left: 3px solid var(--cyan);
+        border: 1px solid var(--stroke-2);
     }
-    .log-row-undone { border-left: 3px solid #ff6b6b; opacity: 0.5; }
-    .log-info { font-size: 0.75rem; color: #e0e7ff; line-height: 1.1; }
-    .log-time { font-size: 0.65rem; color: #8892b0; margin-left: 4px; }
+    .log-row-undone { border-left: 3px solid var(--red); opacity: 0.55; }
+    .log-info { font-size: 0.78rem; color: var(--text); line-height: 1.15; }
+    .log-time { font-size: 0.67rem; color: #9aa7b8; margin-left: 6px; }
 
     .section-title {
-        color: #00d9ff;
+        color: var(--cyan);
         font-size: 1em;
-        font-weight: 700;
-        margin-bottom: 6px;
+        font-weight: 750;
+        margin-bottom: 8px;
         margin-top: 2px;
-        padding-bottom: 3px;
-        border-bottom: 1px solid #00d9ff30;
+        padding-bottom: 6px;
+        border-bottom: 1px solid rgba(0,217,255,0.18);
         display: block;
+        letter-spacing: -0.01em;
     }
-    .sidebar-title { color: #00d9ff; font-weight: 700; font-size: 0.95em; margin-bottom: 6px; }
+    .sidebar-title { color: var(--cyan); font-weight: 800; font-size: 0.95em; margin-bottom: 8px; }
 
-    .stButton>button { border-radius: 6px; font-size: 0.8em; padding: 2px 8px; transition: all 0.2s ease; }
+    .stButton>button { border-radius: 10px; font-size: 0.84em; padding: 5px 10px; transition: all 0.18s ease; }
+    .stButton>button:hover { transform: translateY(-1px); }
 
-    .req-box { background: #1a2f3f; border-left: 3px solid #ffaa00; padding: 6px 8px; margin: 3px 0; border-radius: 4px; font-size: 0.85em; line-height: 1.3; }
-    .req-compact-button { font-size: 0.75em; padding: 2px 6px; }
+    .req-box {
+        background: rgba(26, 47, 63, 0.65);
+        border-left: 3px solid var(--amber);
+        padding: 8px 10px;
+        margin: 6px 0;
+        border-radius: 12px;
+        font-size: 0.88em;
+        line-height: 1.3;
+        border: 1px solid var(--stroke-2);
+        backdrop-filter: var(--blur);
+    }
 
-    /* Dashboard helpers */
-    .kpi-box { background: #1a1f2e; border: 1px solid #2d3748; border-radius: 10px; padding: 10px; }
-    .kpi-label { font-size: 0.75rem; color: #8892b0; margin-bottom: 4px; }
-    .kpi-value { font-size: 1.2rem; font-weight: 800; color: #e0e7ff; }
-    .kpi-sub { font-size: 0.75rem; color: #8892b0; margin-top: 4px; }
-    .dash-note { font-size: 0.8rem; color: #8892b0; }
+    /* --- DASHBOARD CRAFT SHELL --- */
+    .dash-shell{
+      border: 1px solid var(--stroke);
+      border-radius: 18px;
+      padding: 14px;
+      background: radial-gradient(1200px 600px at 20% -10%, rgba(0,217,255,0.10), transparent 55%),
+                  radial-gradient(900px 600px at 90% 0%, rgba(0,149,255,0.10), transparent 60%),
+                  rgba(26, 31, 46, 0.22);
+      backdrop-filter: var(--blur);
+      box-shadow: var(--shadow);
+    }
 
-    hr { margin: 6px 0; opacity: 0.1; }
+    .dash-topbar{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap: 12px;
+      border-radius: 16px;
+      padding: 12px 14px;
+      background: var(--panel);
+      border: 1px solid var(--stroke);
+      backdrop-filter: var(--blur);
+      box-shadow: var(--shadow2);
+      margin-bottom: 12px;
+    }
+
+    .dash-greet{
+      display:flex;
+      align-items:center;
+      gap: 10px;
+    }
+    .dash-dot{
+      width:10px;height:10px;border-radius:999px;
+      background: rgba(45,182,124,1);
+      box-shadow: 0 0 0 5px rgba(45,182,124,0.12);
+      display:inline-block;
+      flex: 0 0 auto;
+    }
+    .dash-greet h2{
+      margin:0;
+      font-size: 1.05rem;
+      letter-spacing: -0.02em;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .dash-greet p{
+      margin:0;
+      font-size: 0.78rem;
+      font-weight: 400;
+      color: var(--muted);
+    }
+
+    .dash-card{
+      position: relative;
+      border-radius: 18px;
+      padding: 12px 12px 10px 12px;
+      background: var(--panel);
+      border: 1px solid var(--stroke);
+      backdrop-filter: var(--blur);
+      box-shadow: var(--shadow2);
+      overflow: hidden;
+      transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease;
+    }
+    .dash-card:hover{
+      transform: translateY(-1px);
+      border-color: rgba(0,217,255,0.18);
+      box-shadow: 0 20px 55px rgba(0,0,0,0.35);
+    }
+
+    .dash-card-header{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+    .dash-card-title{
+      display:flex;
+      flex-direction:column;
+      gap: 2px;
+      min-width: 0;
+    }
+    .dash-card-title h3{
+      margin:0;
+      font-size: 0.92rem;
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: -0.01em;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .dash-card-title small{
+      color: var(--muted2);
+      font-size: 0.74rem;
+      font-weight: 400;
+    }
+
+    /* kebab visibility on hover */
+    .kebab-wrap{
+      opacity: 0.0;
+      transition: opacity .14s ease;
+    }
+    .dash-card:hover .kebab-wrap{ opacity: 1.0; }
+
+    /* KPI style */
+    .kpi-row{
+      display:grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 10px;
+      margin: 10px 0 12px 0;
+    }
+    .kpi{
+      border-radius: 16px;
+      padding: 12px;
+      background: rgba(15,20,25,0.34);
+      border: 1px solid var(--stroke);
+      backdrop-filter: var(--blur);
+    }
+    .kpi .label{ font-size: 0.74rem; color: var(--muted); font-weight: 500; margin-bottom: 6px; }
+    .kpi .value{ font-size: 1.25rem; font-weight: 800; color: var(--text); letter-spacing: -0.03em; }
+    .kpi .sub{ margin-top: 6px; font-size: 0.72rem; color: var(--muted2); font-weight: 400; }
+
+    @media (max-width: 1200px){
+      .kpi-row{ grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -165,7 +341,6 @@ def apply_transaction(item_name, day_num, qty, is_undo=False):
             df.at[idx, col_name] = current_val + float(qty)
 
         if not is_undo:
-            # LogDate added for dashboard filtering (new logs only)
             new_log = pd.DataFrame(
                 [
                     {
@@ -179,7 +354,10 @@ def apply_transaction(item_name, day_num, qty, is_undo=False):
                     }
                 ]
             )
-            logs_df = load_from_sheet("activity_logs", ["LogID", "Timestamp", "Item", "Qty", "Day", "Status", "LogDate"])
+            logs_df = load_from_sheet(
+                "activity_logs",
+                ["LogID", "Timestamp", "Item", "Qty", "Day", "Status", "LogDate"],
+            )
             if "LogDate" not in logs_df.columns:
                 logs_df["LogDate"] = ""
             save_to_sheet(pd.concat([logs_df, new_log], ignore_index=True), "activity_logs")
@@ -202,7 +380,7 @@ def undo_entry(log_id):
             save_to_sheet(logs, "activity_logs")
             st.rerun()
 
-# --- MODALS ---
+# --- MODALS (unchanged) ---
 @st.dialog("🗂️ Manage Categories")
 def manage_categories_modal():
     st.subheader("🗂️ Category Manager")
@@ -215,7 +393,7 @@ def manage_categories_modal():
             [cat for cat in all_cats if not str(cat).startswith("CATEGORY_") and cat != "Supplier_Master" and cat != "General"]
         )
 
-    tab1, tab2, tab3 = st.tabs(["➕ Add", "✏️ Modify", "���️ Delete"])
+    tab1, tab2, tab3 = st.tabs(["➕ Add", "✏️ Modify", "🗑️ Delete"])
 
     with tab1:
         st.subheader("Add New Category")
@@ -261,13 +439,7 @@ def manage_categories_modal():
         if existing_categories:
             selected_cat = st.selectbox("Select Category to Modify", existing_categories, key="cat_modify_select")
 
-            cat_records = meta_df[meta_df["Category"] == selected_cat]
-            current_desc = ""
-            if not cat_records.empty:
-                current_desc = cat_records.iloc[0].get("Product Name", "").replace(f"CATEGORY_{selected_cat}", "").strip()
-
             new_name = st.text_input("📌 New Category Name", value=selected_cat, key="cat_new_name")
-            new_desc = st.text_area("📝 New Description", value=current_desc, height=60, key="cat_new_desc")
 
             if st.button("✅ Update Category", use_container_width=True, type="primary", key="modify_cat_confirm"):
                 if not new_name or not new_name.strip():
@@ -588,6 +760,7 @@ def _prepare_metadata():
         "Min Safety Stock",
         "Min Stock",
         "UOM",
+        "Supplier",
     ]:
         if col not in meta_df.columns:
             meta_df[col] = None
@@ -612,6 +785,7 @@ def _prepare_metadata():
 
     meta_df["Currency"] = meta_df["Currency"].fillna("").astype(str).str.upper().str.strip()
     meta_df["UOM"] = meta_df["UOM"].fillna("").astype(str).str.strip()
+    meta_df["Supplier"] = meta_df["Supplier"].fillna("").astype(str).str.strip()
     return meta_df
 
 def _prepare_inventory(inv_df):
@@ -645,9 +819,7 @@ def _prepare_reqs(req_df):
     return df
 
 def _prepare_logs(log_df):
-    """
-    forces LogDateParsed as python datetime.date to compare with st.date_input values.
-    """
+    """forces LogDateParsed as python datetime.date to compare with st.date_input values."""
     if log_df is None or log_df.empty:
         return log_df
     df = log_df.copy()
@@ -663,7 +835,7 @@ def _prepare_logs(log_df):
     ts_fallback = pd.to_datetime(df["Timestamp"], errors="coerce")
     combined = logdate.fillna(ts_fallback)
 
-    df["LogDateParsed"] = combined.dt.date  # python date
+    df["LogDateParsed"] = combined.dt.date
     return df
 
 def _to_excel_bytes(sheets: dict):
@@ -676,55 +848,44 @@ def _to_excel_bytes(sheets: dict):
             (df if isinstance(df, pd.DataFrame) else pd.DataFrame(df)).to_excel(writer, index=False, sheet_name=safe_name)
     return buf.getvalue()
 
-def _safe_topn_df(df, value_col, top_n, ascending):
-    if df is None or df.empty or value_col not in df.columns:
-        return df
-    return df.sort_values(value_col, ascending=ascending).head(top_n)
-
-def _make_bar_chart(df, x_col, y_col):
-    """
-    Streamlit bar_chart may reorder categories (often alphabetically).
-    Use Plotly for stable ordering and correct High→Low / Low→High display.
-    """
+def _plotly_bar_keep_order(df, x_col, y_col, height=360):
     if df is None or df.empty or x_col not in df.columns or y_col not in df.columns:
         st.info("📭 No data for chart.")
         return
-
-    chart_df = df[[x_col, y_col]].copy()
-    chart_df[y_col] = pd.to_numeric(chart_df[y_col], errors="coerce").fillna(0.0)
+    d = df[[x_col, y_col]].copy()
+    d[y_col] = pd.to_numeric(d[y_col], errors="coerce").fillna(0.0)
 
     try:
         import plotly.express as px  # type: ignore
 
-        # Keep the incoming dataframe order (already sorted by caller)
-        fig = px.bar(chart_df, x=x_col, y=y_col)
+        fig = px.bar(d, x=x_col, y=y_col)
         fig.update_layout(
-            xaxis={"categoryorder": "array", "categoryarray": chart_df[x_col].tolist()},
-            margin=dict(l=10, r=10, t=20, b=10),
-            height=360,
+            height=height,
+            margin=dict(l=10, r=10, t=10, b=10),
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+            xaxis=dict(
+                categoryorder="array",
+                categoryarray=d[x_col].tolist(),
+                showgrid=False,
+                zeroline=False,
+                tickfont=dict(color="#cbd5e1", size=10),
+            ),
+            yaxis=dict(showgrid=False, zeroline=False, tickfont=dict(color="#94a3b8", size=10)),
         )
+        fig.update_traces(marker=dict(color="rgba(0,217,255,0.78)", line=dict(width=0), cornerradius=6))
         st.plotly_chart(fig, use_container_width=True)
     except Exception:
-        # Fallback: Streamlit bar chart (may reorder categories)
-        chart_df = chart_df.set_index(x_col)
-        st.bar_chart(chart_df, y=y_col)
+        d = d.set_index(x_col)
+        st.bar_chart(d, y=y_col)
 
-def _make_pie_chart(df, label_col, value_col, top_n=None):
-    """
-    Pie should respect the Top-N user selection (top_n).
-    If top_n is None, default to 10 (sane default for readability).
-    """
+def _plotly_pie(df, label_col, value_col, top_n):
     if df is None or df.empty or label_col not in df.columns or value_col not in df.columns:
         st.info("📭 No data for chart.")
         return
 
-    if top_n is None:
-        top_n = 10
-
     pie_df = df[[label_col, value_col]].copy()
     pie_df[value_col] = pd.to_numeric(pie_df[value_col], errors="coerce").fillna(0.0)
-
-    # Keep only positives, then take top_n rows (df is already sorted by caller)
     pie_df = pie_df[pie_df[value_col] > 0].head(int(top_n))
 
     if pie_df.empty:
@@ -733,12 +894,70 @@ def _make_pie_chart(df, label_col, value_col, top_n=None):
 
     try:
         import plotly.express as px  # type: ignore
-        fig = px.pie(pie_df, names=label_col, values=value_col, hole=0.35)
-        fig.update_layout(margin=dict(l=10, r=10, t=30, b=10), height=360)
+
+        fig = px.pie(pie_df, names=label_col, values=value_col, hole=0.42)
+        fig.update_layout(
+            height=360,
+            margin=dict(l=10, r=10, t=10, b=10),
+            paper_bgcolor="rgba(0,0,0,0)",
+            legend=dict(font=dict(color="#cbd5e1", size=10)),
+        )
         st.plotly_chart(fig, use_container_width=True)
     except Exception:
-        st.info("Plotly not installed. Showing table instead (install: `pip install plotly`).")
         st.dataframe(pie_df, use_container_width=True, hide_index=True)
+
+def _ensure_card_state(card_id: str, defaults: dict):
+    if "dash_cards" not in st.session_state:
+        st.session_state.dash_cards = {}
+    if card_id not in st.session_state.dash_cards:
+        st.session_state.dash_cards[card_id] = defaults.copy()
+    else:
+        for k, v in defaults.items():
+            st.session_state.dash_cards[card_id].setdefault(k, v)
+    return st.session_state.dash_cards[card_id]
+
+def _card_frame(title: str, subtitle: str, card_id: str, allow_export_df=None):
+    """
+    Creates a glassy card header with kebab popover.
+    Returns (state, refresh_clicked, export_clicked, container)
+    """
+    defaults = {
+        "sort": "High → Low",
+        "top": 10,
+        "view": "Quantity",
+    }
+    state = _ensure_card_state(card_id, defaults)
+
+    refresh_clicked = False
+    export_clicked = False
+
+    st.markdown('<div class="dash-card">', unsafe_allow_html=True)
+    header_left, header_right = st.columns([6, 1.2], vertical_alignment="center")
+    with header_left:
+        st.markdown(
+            f"""
+            <div class="dash-card-header">
+              <div class="dash-card-title">
+                <h3>{title}</h3>
+                <small>{subtitle}</small>
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    with header_right:
+        st.markdown('<div class="kebab-wrap">', unsafe_allow_html=True)
+        with st.popover("⋮", use_container_width=True):
+            state["sort"] = st.radio("Sort Order", ["High → Low", "Low → High"], horizontal=True, index=0 if state["sort"] == "High → Low" else 1, key=f"{card_id}_sort")
+            state["top"] = st.selectbox("Item Count", [3, 5, 10, 25, 50, 100], index=[3, 5, 10, 25, 50, 100].index(int(state["top"])), key=f"{card_id}_top")
+            state["view"] = st.radio("View Mode", ["Quantity", "Value"], horizontal=True, index=0 if state["view"] == "Quantity" else 1, key=f"{card_id}_view")
+
+            refresh_clicked = st.button("Refresh Card", use_container_width=True, key=f"{card_id}_refresh_btn")
+            if allow_export_df is not None:
+                export_clicked = st.button("Export Card", use_container_width=True, key=f"{card_id}_export_btn")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    return state, refresh_clicked, export_clicked
 
 # --- INITIALIZATION ---
 if "inventory" not in st.session_state:
@@ -1102,53 +1321,60 @@ with tab_sup:
         save_to_sheet(edited_meta, "product_metadata")
         st.rerun()
 
-# ===================== DASHBOARD TAB =====================
+# ===================== DASHBOARD TAB (CRAFT COMMAND CENTER) =====================
 with tab_dash:
-    st.markdown('<span class="section-title">📊 Warehouse Dashboard</span>', unsafe_allow_html=True)
+    st.markdown('<div class="dash-shell">', unsafe_allow_html=True)
 
-    # View dropdown: keep tables + add charts
-    v1, v2, v3, v4, v5 = st.columns([1.3, 1.2, 1.4, 1.1, 1.2])
-    with v1:
+    # Topbar
+    left, right = st.columns([3.2, 1.2], vertical_alignment="center")
+    with left:
+        st.markdown(
+            f"""
+            <div class="dash-topbar">
+              <div class="dash-greet">
+                <span class="dash-dot"></span>
+                <div>
+                  <h2>Warehouse Command Center</h2>
+                  <p>Calm power • glassy minimalism • stable charts</p>
+                </div>
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    with right:
         if st.button("🔄 Refresh", use_container_width=True, key="dash_refresh"):
             st.cache_data.clear()
             st.rerun()
-    with v2:
-        dashboard_view = st.selectbox(
-            "View",
-            options=["Tables", "Bar Charts", "Pie Charts"],
-            index=0,
-            key="dash_view_mode",
-            label_visibility="collapsed",
-        )
-    with v3:
+
+    # Global filters (still present)
+    v1, v2, v3, v4, v5 = st.columns([1.4, 1.1, 1.4, 1.0, 1.1])
+    with v1:
         reqs_tmp = load_from_sheet("restaurant_requisitions", ["Restaurant"])
         restaurants = []
         if not reqs_tmp.empty and "Restaurant" in reqs_tmp.columns:
             restaurants = sorted([r for r in reqs_tmp["Restaurant"].dropna().astype(str).str.strip().unique().tolist() if r])
-        restaurant_filter = st.selectbox("Restaurant", options=["All"] + restaurants, index=0, key="dash_restaurant", label_visibility="collapsed")
+        restaurant_filter = st.selectbox("Restaurant", options=["All"] + restaurants, index=0, key="dash_restaurant")
+    with v2:
+        global_sort_dir = st.selectbox("Sort", ["High → Low", "Low → High"], key="dash_sort")
+    with v3:
+        dispatch_date_basis = st.selectbox("Dispatch date", ["RequestedDate", "Dispatch Timestamp"], key="dash_dispatch_basis")
     with v4:
-        top_n = st.selectbox("Top", options=[10, 25, 50, 100], index=0, key="dash_topn", label_visibility="collapsed")
+        global_top_n = st.selectbox("Top", options=[10, 25, 50, 100], index=0, key="dash_topn")
     with v5:
-        currency_choice = st.selectbox("Currency", options=["All"] + TOP_15_CURRENCIES_PLUS_BHD, index=0, key="dash_currency", label_visibility="collapsed")
+        currency_choice = st.selectbox("Currency", options=["All"] + TOP_15_CURRENCIES_PLUS_BHD, index=0, key="dash_currency")
 
-    d1, d2, d3 = st.columns([1.6, 1.6, 2.8])
+    d1, d2 = st.columns(2)
     with d1:
         today = datetime.date.today()
         default_start = today - datetime.timedelta(days=30)
-        start_date = st.date_input("Start", value=default_start, key="dash_start", label_visibility="collapsed")
+        start_date = st.date_input("Start", value=default_start, key="dash_start")
     with d2:
-        end_date = st.date_input("End", value=today, key="dash_end", label_visibility="collapsed")
-    with d3:
-        dispatch_date_basis = st.selectbox("Dispatch date", ["RequestedDate", "Dispatch Timestamp"], key="dash_dispatch_basis", label_visibility="collapsed")
-
-    o1, o2 = st.columns([1.2, 3.8])
-    with o1:
-        sort_dir = st.selectbox("Sort", ["High → Low", "Low → High"], key="dash_sort", label_visibility="collapsed")
-    with o2:
-        st.caption("Tables view is preserved. Charts use the same Top-N datasets.")
+        end_date = st.date_input("End", value=today, key="dash_end")
 
     if start_date > end_date:
         st.warning("⚠️ Start date is after end date. Please fix the date range.")
+        st.markdown("</div>", unsafe_allow_html=True)
     else:
         start_date = pd.to_datetime(start_date).date()
         end_date = pd.to_datetime(end_date).date()
@@ -1162,11 +1388,11 @@ with tab_dash:
 
         meta_all = meta_df.copy() if meta_df is not None else pd.DataFrame()
         if meta_all is None or meta_all.empty:
-            meta_all = pd.DataFrame(columns=["Product Name", "UOM", "Category", "Price", "Currency"])
+            meta_all = pd.DataFrame(columns=["Product Name", "UOM", "Category", "Price", "Currency", "Supplier"])
 
         inv_join = pd.merge(
             inv_df if inv_df is not None else pd.DataFrame(),
-            meta_all[["Product Name", "Category", "UOM"]].drop_duplicates("Product Name"),
+            meta_all[["Product Name", "Category", "UOM", "Supplier"]].drop_duplicates("Product Name"),
             on="Product Name",
             how="left",
         )
@@ -1181,19 +1407,6 @@ with tab_dash:
             how="left",
         )
 
-        if "UOM_x" in inv_join.columns and "UOM_y" in inv_join.columns:
-            inv_join["UOM"] = inv_join["UOM_y"].fillna("").astype(str).str.strip()
-            inv_join.loc[inv_join["UOM"] == "", "UOM"] = inv_join["UOM_x"].fillna("").astype(str).str.strip()
-            inv_join = inv_join.drop(columns=["UOM_x", "UOM_y"])
-        else:
-            if "UOM" not in inv_join.columns:
-                inv_join["UOM"] = ""
-
-        if "Category_x" in inv_join.columns and "Category_y" in inv_join.columns:
-            inv_join["Category"] = inv_join["Category_y"].fillna("General").astype(str).str.strip()
-            inv_join.loc[inv_join["Category"] == "", "Category"] = inv_join["Category_x"].fillna("General").astype(str).str.strip()
-            inv_join = inv_join.drop(columns=["Category_x", "Category_y"])
-
         inv_join["Price"] = pd.to_numeric(inv_join.get("Price", 0), errors="coerce").fillna(0.0)
         inv_join["Closing Stock"] = pd.to_numeric(inv_join.get("Closing Stock", 0), errors="coerce").fillna(0.0)
         inv_join["Stock Value"] = (inv_join["Closing Stock"] * inv_join["Price"]).round(2)
@@ -1205,7 +1418,6 @@ with tab_dash:
         if not req_filtered.empty:
             if restaurant_filter != "All":
                 req_filtered = req_filtered[req_filtered["Restaurant"] == restaurant_filter]
-
             date_col = "DispatchTS_Date" if dispatch_date_basis == "Dispatch Timestamp" else "RequestedDate"
             req_filtered = req_filtered[req_filtered[date_col].notna()]
             req_filtered = req_filtered[(req_filtered[date_col] >= start_date) & (req_filtered[date_col] <= end_date)]
@@ -1215,34 +1427,64 @@ with tab_dash:
         if not logs_filtered.empty:
             logs_filtered = logs_filtered[logs_filtered["Status"] == "Active"]
             logs_filtered = logs_filtered[logs_filtered["LogDateParsed"].notna()]
-            logs_filtered = logs_filtered[
-                (logs_filtered["LogDateParsed"] >= start_date) & (logs_filtered["LogDateParsed"] <= end_date)
-            ]
+            logs_filtered = logs_filtered[(logs_filtered["LogDateParsed"] >= start_date) & (logs_filtered["LogDateParsed"] <= end_date)]
 
         total_ordered_qty = float(req_filtered["Qty"].sum()) if not req_filtered.empty else 0.0
-        total_dispatched_qty = (
-            float(req_filtered[req_filtered["Status"].isin(["Dispatched", "Completed"])]["DispatchQty"].sum()) if not req_filtered.empty else 0.0
-        )
+        total_dispatched_qty = float(req_filtered[req_filtered["Status"].isin(["Dispatched", "Completed"])]["DispatchQty"].sum()) if not req_filtered.empty else 0.0
         total_received_qty = float(logs_filtered["Qty"].sum()) if not logs_filtered.empty else 0.0
 
         stock_inhand_qty = float(inv_join["Closing Stock"].sum()) if not inv_join.empty else 0.0
         stock_inhand_value = float(inv_join["Stock Value"].sum()) if not inv_join.empty else 0.0
         net_flow = total_received_qty - total_dispatched_qty
 
-        k1, k2, k3, k4, k5, k6 = st.columns(6)
-        k1.markdown(f'<div class="kpi-box"><div class="kpi-label">Ordered Qty</div><div class="kpi-value">{total_ordered_qty:.2f}</div></div>', unsafe_allow_html=True)
-        k2.markdown(f'<div class="kpi-box"><div class="kpi-label">Dispatched Qty (Consumption)</div><div class="kpi-value">{total_dispatched_qty:.2f}</div></div>', unsafe_allow_html=True)
-        k3.markdown(f'<div class="kpi-box"><div class="kpi-label">Received Qty</div><div class="kpi-value">{total_received_qty:.2f}</div></div>', unsafe_allow_html=True)
-        k4.markdown(f'<div class="kpi-box"><div class="kpi-label">Net Flow (In-Out)</div><div class="kpi-value">{net_flow:.2f}</div></div>', unsafe_allow_html=True)
-        k5.markdown(f'<div class="kpi-box"><div class="kpi-label">Stock In Hand (Qty)</div><div class="kpi-value">{stock_inhand_qty:.2f}</div></div>', unsafe_allow_html=True)
-        k6.markdown(
-            f'<div class="kpi-box"><div class="kpi-label">Stock In Hand (Value)</div><div class="kpi-value">{stock_inhand_value:.2f}</div><div class="kpi-sub">{("All currencies" if currency_choice=="All" else currency_choice)}</div></div>',
-            unsafe_allow_html=True,
-        )
+        # Supplier purchase estimation (received logs × unit price) grouped by supplier
+        supplier_purchase = pd.DataFrame(columns=["Supplier", "Currency", "Purchase Amount"])
+        if not logs_filtered.empty and meta_df is not None and not meta_df.empty:
+            meta_for_join = meta_df.copy()
+            if currency_choice != "All":
+                meta_for_join = meta_for_join[meta_for_join["Currency"].astype(str).str.upper() == str(currency_choice).upper()]
+            meta_for_join = meta_for_join[["Product Name", "Supplier", "Price", "Currency"]].drop_duplicates("Product Name")
 
-        st.divider()
+            tmp = logs_filtered.merge(meta_for_join, left_on="Item", right_on="Product Name", how="left")
+            tmp["Price"] = pd.to_numeric(tmp.get("Price", 0), errors="coerce").fillna(0.0)
+            tmp["Qty"] = pd.to_numeric(tmp.get("Qty", 0), errors="coerce").fillna(0.0)
+            tmp["Supplier"] = tmp.get("Supplier", "").fillna("").astype(str).str.strip()
+            tmp["Currency"] = tmp.get("Currency", "").fillna("").astype(str).str.upper().str.strip()
+            tmp["Purchase Amount"] = (tmp["Qty"] * tmp["Price"]).fillna(0.0)
 
-        ascending = sort_dir == "Low → High"
+            tmp = tmp[tmp["Supplier"] != ""]
+            if not tmp.empty:
+                supplier_purchase = (
+                    tmp.groupby(["Supplier", "Currency"], as_index=False)["Purchase Amount"]
+                    .sum()
+                    .sort_values("Purchase Amount", ascending=False)
+                )
+
+        # KPI Row
+        st.markdown('<div class="kpi-row">', unsafe_allow_html=True)
+
+        def kpi(label, value, sub=""):
+            st.markdown(
+                f"""
+                <div class="kpi">
+                  <div class="label">{label}</div>
+                  <div class="value">{value}</div>
+                  <div class="sub">{sub}</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        kpi("Ordered Qty", f"{total_ordered_qty:.2f}")
+        kpi("Dispatched Qty", f"{total_dispatched_qty:.2f}", "Consumption")
+        kpi("Received Qty", f"{total_received_qty:.2f}")
+        kpi("Net Flow", f"{net_flow:.2f}", "In - Out")
+        kpi("Stock In Hand (Qty)", f"{stock_inhand_qty:.2f}")
+        kpi("Stock In Hand (Value)", f"{stock_inhand_value:.2f}", ("All currencies" if currency_choice == "All" else currency_choice))
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        # Top-N datasets computed with global defaults (cards can override)
+        global_ascending = global_sort_dir == "Low → High"
 
         top_ordered = pd.DataFrame(columns=["Item", "Ordered Qty"])
         if not req_filtered.empty:
@@ -1250,8 +1492,8 @@ with tab_dash:
                 req_filtered.groupby("Item", as_index=False)["Qty"]
                 .sum()
                 .rename(columns={"Qty": "Ordered Qty"})
-                .sort_values("Ordered Qty", ascending=ascending)
-                .head(top_n)
+                .sort_values("Ordered Qty", ascending=global_ascending)
+                .head(global_top_n)
             )
 
         top_dispatched = pd.DataFrame(columns=["Item", "Dispatched Qty"])
@@ -1261,8 +1503,8 @@ with tab_dash:
                 disp_only.groupby("Item", as_index=False)["DispatchQty"]
                 .sum()
                 .rename(columns={"DispatchQty": "Dispatched Qty"})
-                .sort_values("Dispatched Qty", ascending=ascending)
-                .head(top_n)
+                .sort_values("Dispatched Qty", ascending=global_ascending)
+                .head(global_top_n)
             )
 
         top_received = pd.DataFrame(columns=["Item", "Received Qty"])
@@ -1271,125 +1513,405 @@ with tab_dash:
                 logs_filtered.groupby("Item", as_index=False)["Qty"]
                 .sum()
                 .rename(columns={"Qty": "Received Qty"})
-                .sort_values("Received Qty", ascending=ascending)
-                .head(top_n)
+                .sort_values("Received Qty", ascending=global_ascending)
+                .head(global_top_n)
             )
 
         top_stock_qty = pd.DataFrame(columns=["Product Name", "UOM", "Closing Stock"])
         if not inv_join.empty:
-            top_stock_qty = inv_join[["Product Name", "UOM", "Closing Stock"]].sort_values("Closing Stock", ascending=ascending).head(top_n)
+            top_stock_qty = (
+                inv_join[["Product Name", "UOM", "Closing Stock"]]
+                .sort_values("Closing Stock", ascending=global_ascending)
+                .head(global_top_n)
+            )
 
         top_stock_val = pd.DataFrame(columns=["Product Name", "UOM", "Closing Stock", "Price", "Currency", "Stock Value"])
         if not inv_join.empty:
             val_df = inv_join.copy()
             val_df = val_df[pd.to_numeric(val_df["Price"], errors="coerce").fillna(0.0) > 0]
-            top_stock_val = val_df[["Product Name", "UOM", "Closing Stock", "Price", "Currency", "Stock Value"]].sort_values(
-                "Stock Value", ascending=ascending
-            ).head(top_n)
+            top_stock_val = (
+                val_df[["Product Name", "UOM", "Closing Stock", "Price", "Currency", "Stock Value"]]
+                .sort_values("Stock Value", ascending=global_ascending)
+                .head(global_top_n)
+            )
 
-        export_col1, export_col2 = st.columns([1.4, 3.6])
-        with export_col1:
-            export_bytes = _to_excel_bytes(
-                {
-                    "KPIs": pd.DataFrame(
-                        [
-                            {
-                                "Start": start_date,
-                                "End": end_date,
-                                "Restaurant": restaurant_filter,
-                                "Currency": currency_choice,
-                                "Ordered Qty": total_ordered_qty,
-                                "Dispatched Qty": total_dispatched_qty,
-                                "Received Qty": total_received_qty,
-                                "Net Flow": net_flow,
-                                "Stock In Hand Qty": stock_inhand_qty,
-                                "Stock In Hand Value": stock_inhand_value,
-                                "Dispatch Date Basis": dispatch_date_basis,
-                            }
-                        ]
-                    ),
-                    "Top Ordered": top_ordered,
-                    "Top Dispatched": top_dispatched,
-                    "Top Received": top_received,
-                    "Top Stock Qty": top_stock_qty,
-                    "Top Stock Value": top_stock_val,
-                }
+        # Dashboard View selector (kept simple, can be global)
+        view_mode = st.selectbox("Dashboard View", ["Tables", "Bar Charts", "Pie Charts"], index=0, key="dash_view_mode")
+
+        # --- Card grid row 1 ---
+        c1, c2, c3 = st.columns([1.4, 1.0, 1.0], gap="small")
+
+        # Card: Ordered
+        with c1:
+            state, refresh_clicked, export_clicked = _card_frame(
+                "Ordered",
+                "Top items ordered in selected period",
+                "card_ordered",
+                allow_export_df=top_ordered,
             )
-            st.download_button(
-                "📥 Export Dashboard (Excel)",
-                data=export_bytes,
-                file_name=f"Warehouse_Dashboard_{start_date}_to_{end_date}.xlsx",
-                use_container_width=True,
-                key="dash_export_excel",
+            if refresh_clicked:
+                st.cache_data.clear()
+                st.rerun()
+
+            card_top = int(state["top"])
+            asc = state["sort"] == "Low → High"
+            df = top_ordered.sort_values("Ordered Qty", ascending=asc).head(card_top)
+
+            if export_clicked:
+                st.download_button(
+                    "Download CSV",
+                    data=df.to_csv(index=False).encode("utf-8"),
+                    file_name="ordered_card.csv",
+                    mime="text/csv",
+                    use_container_width=True,
+                )
+
+            if view_mode == "Tables":
+                st.dataframe(df, use_container_width=True, hide_index=True, height=320)
+            elif view_mode == "Bar Charts":
+                _plotly_bar_keep_order(df, "Item", "Ordered Qty", height=340)
+            else:
+                _plotly_pie(df, "Item", "Ordered Qty", top_n=card_top)
+
+            st.markdown("</div>", unsafe_allow_html=True)
+
+        # Card: Dispatched
+        with c2:
+            state, refresh_clicked, export_clicked = _card_frame(
+                "Dispatched",
+                "Consumption via requisition dispatch",
+                "card_dispatched",
+                allow_export_df=top_dispatched,
             )
-        with export_col2:
-            st.markdown(
-                '<div class="dash-note">Note: “Stock In Hand Value” uses the selected currency filter (no exchange-rate conversion). Items with Price=0 are hidden from the Value table.</div>',
-                unsafe_allow_html=True,
+            if refresh_clicked:
+                st.cache_data.clear()
+                st.rerun()
+
+            card_top = int(state["top"])
+            asc = state["sort"] == "Low → High"
+            df = top_dispatched.sort_values("Dispatched Qty", ascending=asc).head(card_top)
+
+            if export_clicked:
+                st.download_button(
+                    "Download CSV",
+                    data=df.to_csv(index=False).encode("utf-8"),
+                    file_name="dispatched_card.csv",
+                    mime="text/csv",
+                    use_container_width=True,
+                )
+
+            if view_mode == "Tables":
+                st.dataframe(df, use_container_width=True, hide_index=True, height=320)
+            elif view_mode == "Bar Charts":
+                _plotly_bar_keep_order(df, "Item", "Dispatched Qty", height=340)
+            else:
+                _plotly_pie(df, "Item", "Dispatched Qty", top_n=card_top)
+
+            st.markdown("</div>", unsafe_allow_html=True)
+
+        # Card: Received
+        with c3:
+            state, refresh_clicked, export_clicked = _card_frame(
+                "Received",
+                "Inbound receipts (activity logs)",
+                "card_received",
+                allow_export_df=top_received,
             )
+            if refresh_clicked:
+                st.cache_data.clear()
+                st.rerun()
+
+            card_top = int(state["top"])
+            asc = state["sort"] == "Low → High"
+            df = top_received.sort_values("Received Qty", ascending=asc).head(card_top)
+
+            if export_clicked:
+                st.download_button(
+                    "Download CSV",
+                    data=df.to_csv(index=False).encode("utf-8"),
+                    file_name="received_card.csv",
+                    mime="text/csv",
+                    use_container_width=True,
+                )
+
+            if view_mode == "Tables":
+                st.dataframe(df, use_container_width=True, hide_index=True, height=320)
+            elif view_mode == "Bar Charts":
+                _plotly_bar_keep_order(df, "Item", "Received Qty", height=340)
+            else:
+                _plotly_pie(df, "Item", "Received Qty", top_n=card_top)
+
+            st.markdown("</div>", unsafe_allow_html=True)
+
+        # --- Card grid row 2 ---
+        c4, c5, c6 = st.columns([1.2, 1.2, 1.2], gap="small")
+
+        # Card: Stock Qty
+        with c4:
+            state, refresh_clicked, export_clicked = _card_frame(
+                "Stock In Hand (Qty)",
+                "Closing stock by item",
+                "card_stock_qty",
+                allow_export_df=top_stock_qty,
+            )
+            if refresh_clicked:
+                st.cache_data.clear()
+                st.rerun()
+
+            card_top = int(state["top"])
+            asc = state["sort"] == "Low → High"
+            df = top_stock_qty.sort_values("Closing Stock", ascending=asc).head(card_top)
+
+            if export_clicked:
+                st.download_button(
+                    "Download CSV",
+                    data=df.to_csv(index=False).encode("utf-8"),
+                    file_name="stock_qty_card.csv",
+                    mime="text/csv",
+                    use_container_width=True,
+                )
+
+            if view_mode == "Tables":
+                st.dataframe(df, use_container_width=True, hide_index=True, height=320)
+            elif view_mode == "Bar Charts":
+                _plotly_bar_keep_order(df, "Product Name", "Closing Stock", height=340)
+            else:
+                _plotly_pie(df, "Product Name", "Closing Stock", top_n=card_top)
+
+            st.markdown("</div>", unsafe_allow_html=True)
+
+        # Card: Stock Value
+        with c5:
+            state, refresh_clicked, export_clicked = _card_frame(
+                "Stock In Hand (Value)",
+                "Closing stock × unit price (no FX conversion)",
+                "card_stock_val",
+                allow_export_df=top_stock_val,
+            )
+            if refresh_clicked:
+                st.cache_data.clear()
+                st.rerun()
+
+            card_top = int(state["top"])
+            asc = state["sort"] == "Low → High"
+            df = top_stock_val.sort_values("Stock Value", ascending=asc).head(card_top)
+
+            if export_clicked:
+                st.download_button(
+                    "Download CSV",
+                    data=df.to_csv(index=False).encode("utf-8"),
+                    file_name="stock_value_card.csv",
+                    mime="text/csv",
+                    use_container_width=True,
+                )
+
+            # view toggle for this card: qty vs value doesn't apply, but keep as-is.
+            if view_mode == "Tables":
+                st.dataframe(df, use_container_width=True, hide_index=True, height=320)
+            elif view_mode == "Bar Charts":
+                _plotly_bar_keep_order(df, "Product Name", "Stock Value", height=340)
+            else:
+                _plotly_pie(df, "Product Name", "Stock Value", top_n=card_top)
+
+            st.markdown("</div>", unsafe_allow_html=True)
+
+        # Card: Supplier Purchases (NEW)
+        with c6:
+            state, refresh_clicked, export_clicked = _card_frame(
+                "Total Purchase from Supplier",
+                "Estimated from Received logs × unit price",
+                "card_supplier_purchase",
+                allow_export_df=supplier_purchase,
+            )
+            if refresh_clicked:
+                st.cache_data.clear()
+                st.rerun()
+
+            card_top = int(state["top"])
+            asc = state["sort"] == "Low → High"
+            df = supplier_purchase.copy()
+            if not df.empty:
+                df = df.sort_values("Purchase Amount", ascending=asc).head(card_top)
+
+            if export_clicked:
+                st.download_button(
+                    "Download CSV",
+                    data=df.to_csv(index=False).encode("utf-8"),
+                    file_name="supplier_purchase_card.csv",
+                    mime="text/csv",
+                    use_container_width=True,
+                )
+
+            if df.empty:
+                st.info("📭 No supplier purchase data (missing Supplier/Price in metadata or no received logs in date range).")
+            else:
+                if view_mode == "Tables":
+                    st.dataframe(df, use_container_width=True, hide_index=True, height=320)
+                elif view_mode == "Bar Charts":
+                    _plotly_bar_keep_order(df, "Supplier", "Purchase Amount", height=340)
+                else:
+                    _plotly_pie(df, "Supplier", "Purchase Amount", top_n=card_top)
+
+            st.markdown("</div>", unsafe_allow_html=True)
 
         st.divider()
 
-        # --- VIEW MODES ---
-        if dashboard_view == "Tables":
-            a1, a2 = st.columns(2)
-            with a1:
-                st.markdown('<span class="section-title">📌 Top Ordered Items</span>', unsafe_allow_html=True)
-                st.dataframe(top_ordered, use_container_width=True, hide_index=True, height=320)
-            with a2:
-                st.markdown('<span class="section-title">📌 Top Dispatched Items (Consumption)</span>', unsafe_allow_html=True)
-                st.dataframe(top_dispatched, use_container_width=True, hide_index=True, height=320)
+        # --- Kanban Dashboard (Streamlit-native, no true drag-drop) ---
+        st.markdown('<span class="section-title">🧩 Ops Kanban (Streamlit-native)</span>', unsafe_allow_html=True)
+        st.caption("Drag & drop requires a custom component; this version uses quick move controls but keeps the Kanban mental model.")
 
-            b1, b2 = st.columns(2)
-            with b1:
-                st.markdown('<span class="section-title">📌 Top Received Items</span>', unsafe_allow_html=True)
-                st.dataframe(top_received, use_container_width=True, hide_index=True, height=320)
-            with b2:
-                st.markdown('<span class="section-title">📌 Top Stock In Hand (Qty)</span>', unsafe_allow_html=True)
-                st.dataframe(top_stock_qty, use_container_width=True, hide_index=True, height=320)
+        # Build alert metrics
+        kan_inv = inv_join.copy() if inv_join is not None and not inv_join.empty else pd.DataFrame(columns=["Product Name", "Closing Stock"])
+        if "Product Name" not in kan_inv.columns:
+            kan_inv["Product Name"] = ""
+        if "Closing Stock" not in kan_inv.columns:
+            kan_inv["Closing Stock"] = 0.0
 
-            st.markdown('<span class="section-title">💰 Top Stock In Hand (Value)</span>', unsafe_allow_html=True)
-            st.dataframe(top_stock_val, use_container_width=True, hide_index=True, height=320)
+        # thresholds (simple defaults; can later be driven by metadata Min Stock)
+        kan_inv["Closing Stock"] = pd.to_numeric(kan_inv["Closing Stock"], errors="coerce").fillna(0.0)
+        kan_inv["Min Stock"] = 0.0
+        if meta_df is not None and not meta_df.empty and "Min Stock" in meta_df.columns:
+            min_map = meta_df[["Product Name", "Min Stock"]].copy()
+            min_map["Min Stock"] = pd.to_numeric(min_map["Min Stock"], errors="coerce").fillna(0.0)
+            kan_inv = kan_inv.merge(min_map.drop_duplicates("Product Name"), on="Product Name", how="left", suffixes=("", "_m"))
+            if "Min Stock_m" in kan_inv.columns:
+                kan_inv["Min Stock"] = kan_inv["Min Stock_m"].fillna(kan_inv["Min Stock"])
+                kan_inv = kan_inv.drop(columns=["Min Stock_m"])
 
-        elif dashboard_view == "Bar Charts":
-            a1, a2 = st.columns(2)
-            with a1:
-                st.markdown('<span class="section-title">📊 Ordered (Top)</span>', unsafe_allow_html=True)
-                _make_bar_chart(top_ordered, "Item", "Ordered Qty")
-            with a2:
-                st.markdown('<span class="section-title">📊 Dispatched (Top)</span>', unsafe_allow_html=True)
-                _make_bar_chart(top_dispatched, "Item", "Dispatched Qty")
+        def kanban_bucket(row):
+            cs = float(row.get("Closing Stock", 0) or 0)
+            ms = float(row.get("Min Stock", 0) or 0)
+            if ms <= 0:
+                # fallback rule if Min Stock not configured
+                if cs <= 0:
+                    return "⚠️ Attention Needed"
+                if cs < 5:
+                    return "📦 Reorder Soon"
+                return "✅ Healthy Stock"
+            else:
+                if cs <= 0:
+                    return "⚠️ Attention Needed"
+                if cs < ms:
+                    return "📦 Reorder Soon"
+                if cs > (ms * 3):
+                    return "🚚 In Transit"  # placeholder bucket for now (overstock/flow); can rename later
+                return "✅ Healthy Stock"
 
-            b1, b2 = st.columns(2)
-            with b1:
-                st.markdown('<span class="section-title">📊 Received (Top)</span>', unsafe_allow_html=True)
-                _make_bar_chart(top_received, "Item", "Received Qty")
-            with b2:
-                st.markdown('<span class="section-title">📊 Stock In Hand Qty (Top)</span>', unsafe_allow_html=True)
-                _make_bar_chart(top_stock_qty, "Product Name", "Closing Stock")
+        kan_inv["Kanban"] = kan_inv.apply(kanban_bucket, axis=1)
 
-            st.markdown('<span class="section-title">💰 Stock In Hand Value (Top)</span>', unsafe_allow_html=True)
-            _make_bar_chart(top_stock_val, "Product Name", "Stock Value")
+        if "kanban_state" not in st.session_state:
+            # user can move cards; we persist their chosen column
+            st.session_state.kanban_state = {}
 
-        else:  # Pie Charts
-            a1, a2 = st.columns(2)
-            with a1:
-                st.markdown('<span class="section-title">🥧 Ordered (Top)</span>', unsafe_allow_html=True)
-                _make_pie_chart(top_ordered, "Item", "Ordered Qty", top_n=top_n)
-            with a2:
-                st.markdown('<span class="section-title">🥧 Dispatched (Top)</span>', unsafe_allow_html=True)
-                _make_pie_chart(top_dispatched, "Item", "Dispatched Qty", top_n=top_n)
+        # Apply overrides
+        def effective_bucket(prod, default_bucket):
+            return st.session_state.kanban_state.get(prod, default_bucket)
 
-            b1, b2 = st.columns(2)
-            with b1:
-                st.markdown('<span class="section-title">🥧 Received (Top)</span>', unsafe_allow_html=True)
-                _make_pie_chart(top_received, "Item", "Received Qty", top_n=top_n)
-            with b2:
-                st.markdown('<span class="section-title">🥧 Stock In Hand Qty (Top)</span>', unsafe_allow_html=True)
-                _make_pie_chart(top_stock_qty, "Product Name", "Closing Stock", top_n=top_n)
+        kan_inv["KanbanEff"] = kan_inv.apply(lambda r: effective_bucket(str(r["Product Name"]), str(r["Kanban"])), axis=1)
 
-            st.markdown('<span class="section-title">🥧 Stock In Hand Value (Top)</span>', unsafe_allow_html=True)
-            _make_pie_chart(top_stock_val, "Product Name", "Stock Value", top_n=top_n)
+        cols = ["⚠️ Attention Needed", "📦 Reorder Soon", "🚚 In Transit", "✅ Healthy Stock"]
+        k1, k2, k3, k4 = st.columns(4)
+        kan_cols = dict(zip(cols, [k1, k2, k3, k4]))
+
+        def render_kanban_col(col_name, col):
+            with col:
+                st.markdown(f"**{col_name}**")
+                items = kan_inv[kan_inv["KanbanEff"] == col_name].copy()
+                items = items.sort_values("Closing Stock", ascending=True).head(12)
+                if items.empty:
+                    st.caption("No items")
+                    return
+                for _, r in items.iterrows():
+                    p = str(r.get("Product Name", ""))
+                    cs = float(r.get("Closing Stock", 0) or 0)
+                    ms = float(r.get("Min Stock", 0) or 0)
+                    badge = f"{cs:.2f}"
+                    meta_line = f"Min: {ms:.2f}" if ms > 0 else "Min: —"
+
+                    st.markdown(
+                        f"""
+                        <div style="
+                            border: 1px solid rgba(255,255,255,0.06);
+                            background: rgba(26,31,46,0.55);
+                            border-radius: 14px;
+                            padding: 10px;
+                            margin-bottom: 8px;
+                            backdrop-filter: blur(16px);
+                        ">
+                          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
+                            <div style="color:#e6edf7;font-weight:700;font-size:0.9rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:210px;">
+                              {p}
+                            </div>
+                            <div style="color:#0f1419;background:rgba(0,217,255,0.92);padding:4px 8px;border-radius:999px;font-weight:900;font-size:0.78rem;">
+                              {badge}
+                            </div>
+                          </div>
+                          <div style="color:#93a4b8;font-size:0.74rem;margin-top:6px;">{meta_line}</div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+                    move_to = st.selectbox(
+                        "Move",
+                        options=cols,
+                        index=cols.index(col_name),
+                        key=f"kan_move_{col_name}_{p}",
+                        label_visibility="collapsed",
+                    )
+                    if move_to != col_name:
+                        st.session_state.kanban_state[p] = move_to
+                        st.rerun()
+
+        for name in cols:
+            render_kanban_col(name, kan_cols[name])
+
+        st.markdown(
+            '<div style="margin-top:10px;color:#7b8798;font-size:0.78rem;">Tip: Configure <b>Min Stock</b> in product metadata for smarter Kanban bucketing.</div>',
+            unsafe_allow_html=True,
+        )
+
+        # Export full dashboard (kept)
+        export_bytes = _to_excel_bytes(
+            {
+                "KPIs": pd.DataFrame(
+                    [
+                        {
+                            "Start": start_date,
+                            "End": end_date,
+                            "Restaurant": restaurant_filter,
+                            "Currency": currency_choice,
+                            "Ordered Qty": total_ordered_qty,
+                            "Dispatched Qty": total_dispatched_qty,
+                            "Received Qty": total_received_qty,
+                            "Net Flow": net_flow,
+                            "Stock In Hand Qty": stock_inhand_qty,
+                            "Stock In Hand Value": stock_inhand_value,
+                            "Dispatch Date Basis": dispatch_date_basis,
+                        }
+                    ]
+                ),
+                "Top Ordered": top_ordered,
+                "Top Dispatched": top_dispatched,
+                "Top Received": top_received,
+                "Top Stock Qty": top_stock_qty,
+                "Top Stock Value": top_stock_val,
+                "Supplier Purchases": supplier_purchase,
+            }
+        )
+        st.download_button(
+            "📥 Export Dashboard (Excel)",
+            data=export_bytes,
+            file_name=f"Warehouse_Dashboard_{start_date}_to_{end_date}.xlsx",
+            use_container_width=True,
+            key="dash_export_excel",
+        )
+
+        st.markdown(
+            '<div style="margin-top:8px;color:#7b8798;font-size:0.78rem;">Note: “Supplier Purchases” is estimated from Received logs (Qty × Unit Price) using metadata Supplier + Price.</div>',
+            unsafe_allow_html=True,
+        )
+
+    st.markdown("</div>", unsafe_allow_html=True)
 
 # ===================== SIDEBAR =====================
 with st.sidebar:
