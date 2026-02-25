@@ -1866,32 +1866,46 @@ with tab_dash:
             if not cards:
                 st.markdown('<div class="skeleton"></div><div class="skeleton" style="width:70%"></div>', unsafe_allow_html=True)
             else:
-               for i, c in enumerate(cards):
-    # --- Defensive: ensure each card is a dict ---
-    if isinstance(c, dict):
-        card = c
-            else:
-                for i, c in enumerate(cards):
-                    # --- Defensive: ensure each card is a dict ---
-                    if isinstance(c, dict):
-                        card = c
-                    else:
-                        # Handle legacy/bad state where cards might be strings or other objects
-                        card = {"id": str(uuid.uuid4())[:8], "title": str(c), "note": ""}
+                               else:
+                    for i, c in enumerate(cards):
+                        # --- Defensive: ensure each card is a dict ---
+                        if isinstance(c, dict):
+                            card = c
+                        else:
+                            # Handle legacy/bad state where cards might be strings or other objects
+                            card = {"id": str(uuid.uuid4())[:8], "title": str(c), "note": ""}
 
-                    title = str(card.get("title", "") or "")
-                    cid = str(card.get("id", "") or "")
-                    note = str(card.get("note", "") or "")
+                        title = str(card.get("title", "") or "")
+                        cid = str(card.get("id", "") or "")
+                        note = str(card.get("note", "") or "")
 
-                    st.markdown(
-                        f"""
-                        <div class="kpi" style="margin-bottom:10px;">
-                            <div class="label">{title} <span style="color:rgba(136,146,176,0.9); font-size:11px;">#{cid}</span></div>
-                            <div class="sub">{note}</div>
-                        </div>
-                        """,
-                        unsafe_allow_html=True,
-                    )
+                        st.markdown(
+                            f"""
+                            <div class="kpi" style="margin-bottom:10px;">
+                                <div class="label">{title} <span style="color:rgba(136,146,176,0.9); font-size:11px;">#{cid}</span></div>
+                                <div class="sub">{note}</div>
+                            </div>
+                            """,
+                            unsafe_allow_html=True,
+                        )
+
+                        # Move control (uses safe cid)
+                        new_col = st.selectbox(
+                            "Move to",
+                            options=columns,
+                            index=columns.index(col_name),
+                            key=f"kan_move_{col_name}_{cid}",
+                            label_visibility="collapsed",
+                        )
+                        if new_col != col_name:
+                            st.session_state.kanban[col_name] = [
+                                x
+                                for x in st.session_state.kanban[col_name]
+                                if (x.get("id") if isinstance(x, dict) else None) != cid
+                            ]
+                            st.session_state.kanban[new_col].append(card)
+                            st.success("Moved")
+                            st.rerun()
 
                     # Move control
                     new_col = st.selectbox(
