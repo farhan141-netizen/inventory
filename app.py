@@ -47,7 +47,7 @@ def save_to_sheet(df, worksheet_name):
 # --- PAGE CONFIG ---
 st.set_page_config(page_title="Warehouse Pro Cloud v8.6", layout="wide", initial_sidebar_state="expanded")
 
-# --- UI THEME (Template-inspired redesign for Dashboard only) ---
+# --- COMPACT SOPHISTICATED CSS ---
 st.markdown(
     """
     <style>
@@ -113,140 +113,12 @@ st.markdown(
     .req-box { background: #1a2f3f; border-left: 3px solid #ffaa00; padding: 6px 8px; margin: 3px 0; border-radius: 4px; font-size: 0.85em; line-height: 1.3; }
     .req-compact-button { font-size: 0.75em; padding: 2px 6px; }
 
-    /* Dashboard helpers (base) */
+    /* Dashboard helpers */
     .kpi-box { background: #1a1f2e; border: 1px solid #2d3748; border-radius: 10px; padding: 10px; }
     .kpi-label { font-size: 0.75rem; color: #8892b0; margin-bottom: 4px; }
     .kpi-value { font-size: 1.2rem; font-weight: 800; color: #e0e7ff; }
     .kpi-sub { font-size: 0.75rem; color: #8892b0; margin-top: 4px; }
     .dash-note { font-size: 0.8rem; color: #8892b0; }
-
-    /* ---- TEMPLATE-INSPIRED DASHBOARD SKIN (Image 3 style) ---- */
-    .dash-shell{
-        background: #f4f7f6;
-        border: 1px solid #e5ece9;
-        border-radius: 18px;
-        padding: 16px;
-        box-shadow: 0 10px 30px rgba(16,24,40,0.08);
-        color: #0b1220;
-    }
-    .dash-topbar{
-        display:flex;
-        gap:10px;
-        align-items:center;
-        justify-content:space-between;
-        padding: 10px 12px;
-        border-radius: 14px;
-        background: #ffffff;
-        border: 1px solid #e7eeea;
-        margin-bottom: 12px;
-    }
-    .dash-greet{
-        display:flex;
-        gap:10px;
-        align-items:center;
-    }
-    .dash-dot{
-        width:10px;height:10px;border-radius:50%;
-        background:#2db67c;
-        box-shadow: 0 0 0 4px rgba(45,182,124,0.15);
-        display:inline-block;
-    }
-    .dash-greet h2{
-        font-size: 1.05rem;
-        font-weight: 800;
-        color:#0b1220;
-        margin:0;
-    }
-    .dash-greet p{
-        font-size:0.8rem;
-        color:#667085;
-        margin:0;
-    }
-
-    .dash-kpis{
-        display:grid;
-        grid-template-columns: repeat(6, minmax(0, 1fr));
-        gap: 10px;
-        margin: 12px 0 6px 0;
-    }
-    .dash-card{
-        background:#fff;
-        border:1px solid #e7eeea;
-        border-radius: 16px;
-        padding: 12px 12px;
-        box-shadow: 0 6px 16px rgba(16,24,40,0.06);
-    }
-    .dash-card .t{
-        color:#667085;
-        font-size:0.78rem;
-        margin-bottom:6px;
-        font-weight:700;
-    }
-    .dash-card .v{
-        color:#0b1220;
-        font-size:1.15rem;
-        font-weight:900;
-        margin:0;
-        line-height: 1.1;
-    }
-    .dash-card .s{
-        color:#667085;
-        font-size:0.75rem;
-        margin-top:6px;
-    }
-
-    .dash-grid{
-        display:grid;
-        grid-template-columns: 1.4fr 1fr 1fr;
-        gap: 12px;
-        margin-top: 12px;
-    }
-    .dash-grid-2{
-        display:grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 12px;
-        margin-top: 12px;
-    }
-    .dash-title{
-        display:flex;
-        align-items:center;
-        justify-content:space-between;
-        margin-bottom: 10px;
-        gap:10px;
-    }
-    .dash-title h3{
-        margin:0;
-        font-size:0.95rem;
-        font-weight:900;
-        color:#0b1220;
-    }
-    .dash-title small{
-        color:#667085;
-        font-weight:700;
-    }
-
-    /* make Streamlit widgets look lighter in dashboard area */
-    div[data-testid="stSelectbox"] > div,
-    div[data-testid="stDateInput"] > div,
-    div[data-testid="stNumberInput"] > div{
-        background: #ffffff !important;
-        border-radius: 12px !important;
-        border: 1px solid #e7eeea !important;
-    }
-
-    /* ensure charts in dashboard stand on light bg */
-    .dash-shell .stPlotlyChart, .dash-shell .stDataFrame{
-        background:#ffffff;
-        border-radius: 16px;
-        border: 1px solid #e7eeea;
-        padding: 10px;
-    }
-
-    @media (max-width: 1200px){
-        .dash-kpis{ grid-template-columns: repeat(3, minmax(0, 1fr)); }
-        .dash-grid{ grid-template-columns: 1fr; }
-        .dash-grid-2{ grid-template-columns: 1fr; }
-    }
 
     hr { margin: 6px 0; opacity: 0.1; }
     </style>
@@ -343,7 +215,7 @@ def manage_categories_modal():
             [cat for cat in all_cats if not str(cat).startswith("CATEGORY_") and cat != "Supplier_Master" and cat != "General"]
         )
 
-    tab1, tab2, tab3 = st.tabs(["➕ Add", "✏️ Modify", "🗑️ Delete"])
+    tab1, tab2, tab3 = st.tabs(["➕ Add", "✏️ Modify", "   ️ Delete"])
 
     with tab1:
         st.subheader("Add New Category")
@@ -716,7 +588,6 @@ def _prepare_metadata():
         "Min Safety Stock",
         "Min Stock",
         "UOM",
-        "Supplier",
     ]:
         if col not in meta_df.columns:
             meta_df[col] = None
@@ -741,7 +612,6 @@ def _prepare_metadata():
 
     meta_df["Currency"] = meta_df["Currency"].fillna("").astype(str).str.upper().str.strip()
     meta_df["UOM"] = meta_df["UOM"].fillna("").astype(str).str.strip()
-    meta_df["Supplier"] = meta_df["Supplier"].fillna("").astype(str).str.strip()
     return meta_df
 
 def _prepare_inventory(inv_df):
@@ -806,9 +676,15 @@ def _to_excel_bytes(sheets: dict):
             (df if isinstance(df, pd.DataFrame) else pd.DataFrame(df)).to_excel(writer, index=False, sheet_name=safe_name)
     return buf.getvalue()
 
+def _safe_topn_df(df, value_col, top_n, ascending):
+    if df is None or df.empty or value_col not in df.columns:
+        return df
+    return df.sort_values(value_col, ascending=ascending).head(top_n)
+
 def _make_bar_chart(df, x_col, y_col):
     """
-    Streamlit bar_chart may reorder categories; Plotly keeps our sort order.
+    Streamlit bar_chart may reorder categories (often alphabetically).
+    Use Plotly for stable ordering and correct High→Low / Low→High display.
     """
     if df is None or df.empty or x_col not in df.columns or y_col not in df.columns:
         st.info("📭 No data for chart.")
@@ -819,28 +695,36 @@ def _make_bar_chart(df, x_col, y_col):
 
     try:
         import plotly.express as px  # type: ignore
+
+        # Keep the incoming dataframe order (already sorted by caller)
         fig = px.bar(chart_df, x=x_col, y=y_col)
         fig.update_layout(
             xaxis={"categoryorder": "array", "categoryarray": chart_df[x_col].tolist()},
             margin=dict(l=10, r=10, t=20, b=10),
             height=360,
-            paper_bgcolor="white",
-            plot_bgcolor="white",
         )
         st.plotly_chart(fig, use_container_width=True)
     except Exception:
+        # Fallback: Streamlit bar chart (may reorder categories)
         chart_df = chart_df.set_index(x_col)
         st.bar_chart(chart_df, y=y_col)
 
 def _make_pie_chart(df, label_col, value_col, top_n=None):
+    """
+    Pie should respect the Top-N user selection (top_n).
+    If top_n is None, default to 10 (sane default for readability).
+    """
     if df is None or df.empty or label_col not in df.columns or value_col not in df.columns:
         st.info("📭 No data for chart.")
         return
+
     if top_n is None:
         top_n = 10
 
     pie_df = df[[label_col, value_col]].copy()
     pie_df[value_col] = pd.to_numeric(pie_df[value_col], errors="coerce").fillna(0.0)
+
+    # Keep only positives, then take top_n rows (df is already sorted by caller)
     pie_df = pie_df[pie_df[value_col] > 0].head(int(top_n))
 
     if pie_df.empty:
@@ -850,7 +734,7 @@ def _make_pie_chart(df, label_col, value_col, top_n=None):
     try:
         import plotly.express as px  # type: ignore
         fig = px.pie(pie_df, names=label_col, values=value_col, hole=0.35)
-        fig.update_layout(margin=dict(l=10, r=10, t=30, b=10), height=360, paper_bgcolor="white")
+        fig.update_layout(margin=dict(l=10, r=10, t=30, b=10), height=360)
         st.plotly_chart(fig, use_container_width=True)
     except Exception:
         st.info("Plotly not installed. Showing table instead (install: `pip install plotly`).")
@@ -1220,72 +1104,51 @@ with tab_sup:
 
 # ===================== DASHBOARD TAB =====================
 with tab_dash:
-    # Template-inspired shell
-    st.markdown('<div class="dash-shell">', unsafe_allow_html=True)
+    st.markdown('<span class="section-title">📊 Warehouse Dashboard</span>', unsafe_allow_html=True)
 
-    # --- TOP BAR (template style) ---
-    top_left, top_right = st.columns([2.2, 1.8])
-    with top_left:
-        st.markdown(
-            f"""
-            <div class="dash-topbar">
-                <div class="dash-greet">
-                    <span class="dash-dot"></span>
-                    <div>
-                        <h2>Hello, {st.session_state.get("user_name", "Warehouse Manager")}!</h2>
-                        <p>Warehouse Dashboard • template-style layout</p>
-                    </div>
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
+    # View dropdown: keep tables + add charts
+    v1, v2, v3, v4, v5 = st.columns([1.3, 1.2, 1.4, 1.1, 1.2])
+    with v1:
+        if st.button("🔄 Refresh", use_container_width=True, key="dash_refresh"):
+            st.cache_data.clear()
+            st.rerun()
+    with v2:
+        dashboard_view = st.selectbox(
+            "View",
+            options=["Tables", "Bar Charts", "Pie Charts"],
+            index=0,
+            key="dash_view_mode",
+            label_visibility="collapsed",
         )
-    with top_right:
-        # keep existing actions/controls (not removing anything), just presented in the dashboard area
-        c1, c2 = st.columns([1, 1])
-        with c1:
-            if st.button("🔄 Refresh", use_container_width=True, key="dash_refresh"):
-                st.cache_data.clear()
-                st.rerun()
-        with c2:
-            dashboard_view = st.selectbox(
-                "View",
-                options=["Tables", "Bar Charts", "Pie Charts"],
-                index=0,
-                key="dash_view_mode",
-                label_visibility="collapsed",
-            )
-
-    # --- Filters row (kept; just arranged) ---
-    f1, f2, f3, f4, f5 = st.columns([1.4, 1.4, 1.5, 1.0, 1.1])
-    with f1:
+    with v3:
         reqs_tmp = load_from_sheet("restaurant_requisitions", ["Restaurant"])
         restaurants = []
         if not reqs_tmp.empty and "Restaurant" in reqs_tmp.columns:
             restaurants = sorted([r for r in reqs_tmp["Restaurant"].dropna().astype(str).str.strip().unique().tolist() if r])
         restaurant_filter = st.selectbox("Restaurant", options=["All"] + restaurants, index=0, key="dash_restaurant", label_visibility="collapsed")
-    with f2:
-        sort_dir = st.selectbox("Sort", ["High → Low", "Low → High"], key="dash_sort", label_visibility="collapsed")
-    with f3:
-        dispatch_date_basis = st.selectbox("Dispatch date", ["RequestedDate", "Dispatch Timestamp"], key="dash_dispatch_basis", label_visibility="collapsed")
-    with f4:
+    with v4:
         top_n = st.selectbox("Top", options=[10, 25, 50, 100], index=0, key="dash_topn", label_visibility="collapsed")
-    with f5:
+    with v5:
         currency_choice = st.selectbox("Currency", options=["All"] + TOP_15_CURRENCIES_PLUS_BHD, index=0, key="dash_currency", label_visibility="collapsed")
 
-    d1, d2 = st.columns([1, 1])
+    d1, d2, d3 = st.columns([1.6, 1.6, 2.8])
     with d1:
         today = datetime.date.today()
         default_start = today - datetime.timedelta(days=30)
         start_date = st.date_input("Start", value=default_start, key="dash_start", label_visibility="collapsed")
     with d2:
         end_date = st.date_input("End", value=today, key="dash_end", label_visibility="collapsed")
+    with d3:
+        dispatch_date_basis = st.selectbox("Dispatch date", ["RequestedDate", "Dispatch Timestamp"], key="dash_dispatch_basis", label_visibility="collapsed")
 
-    st.caption("Tables view is preserved. Charts use the same Top-N datasets.")
+    o1, o2 = st.columns([1.2, 3.8])
+    with o1:
+        sort_dir = st.selectbox("Sort", ["High → Low", "Low → High"], key="dash_sort", label_visibility="collapsed")
+    with o2:
+        st.caption("Tables view is preserved. Charts use the same Top-N datasets.")
 
     if start_date > end_date:
         st.warning("⚠️ Start date is after end date. Please fix the date range.")
-        st.markdown("</div>", unsafe_allow_html=True)
     else:
         start_date = pd.to_datetime(start_date).date()
         end_date = pd.to_datetime(end_date).date()
@@ -1299,11 +1162,11 @@ with tab_dash:
 
         meta_all = meta_df.copy() if meta_df is not None else pd.DataFrame()
         if meta_all is None or meta_all.empty:
-            meta_all = pd.DataFrame(columns=["Product Name", "UOM", "Category", "Price", "Currency", "Supplier"])
+            meta_all = pd.DataFrame(columns=["Product Name", "UOM", "Category", "Price", "Currency"])
 
         inv_join = pd.merge(
             inv_df if inv_df is not None else pd.DataFrame(),
-            meta_all[["Product Name", "Category", "UOM", "Supplier"]].drop_duplicates("Product Name"),
+            meta_all[["Product Name", "Category", "UOM"]].drop_duplicates("Product Name"),
             on="Product Name",
             how="left",
         )
@@ -1366,80 +1229,18 @@ with tab_dash:
         stock_inhand_value = float(inv_join["Stock Value"].sum()) if not inv_join.empty else 0.0
         net_flow = total_received_qty - total_dispatched_qty
 
-        # --- NEW: Total Purchase from Supplier (supplier name + amount) ---
-        # NOTE: There is no explicit purchases sheet. We estimate purchases from activity_logs (Received)
-        # by joining logs.Item -> metadata.Product Name (Supplier, Price, Currency) and summing Qty*Price.
-        supplier_purchase = pd.DataFrame(columns=["Supplier", "Purchase Amount", "Currency"])
-        top_supplier_name = ""
-        top_supplier_amount = 0.0
-        top_supplier_currency = currency_choice if currency_choice != "All" else ""
-
-        try:
-            if not logs_filtered.empty and meta_df is not None and not meta_df.empty:
-                meta_for_join = meta_df.copy()
-                # Use selected currency filter (same rule as stock value tables: no FX conversion)
-                if currency_choice != "All":
-                    meta_for_join = meta_for_join[meta_for_join["Currency"].astype(str).str.upper() == str(currency_choice).upper()]
-
-                meta_for_join = meta_for_join[["Product Name", "Supplier", "Price", "Currency"]].drop_duplicates("Product Name")
-                tmp = logs_filtered.merge(meta_for_join, left_on="Item", right_on="Product Name", how="left")
-
-                tmp["Price"] = pd.to_numeric(tmp.get("Price", 0), errors="coerce").fillna(0.0)
-                tmp["Qty"] = pd.to_numeric(tmp.get("Qty", 0), errors="coerce").fillna(0.0)
-                tmp["LineAmount"] = (tmp["Qty"] * tmp["Price"]).fillna(0.0)
-
-                tmp["Supplier"] = tmp.get("Supplier", "").fillna("").astype(str).str.strip()
-                tmp["Currency"] = tmp.get("Currency", "").fillna("").astype(str).str.upper().str.strip()
-
-                tmp = tmp[tmp["Supplier"] != ""]
-                if not tmp.empty:
-                    supplier_purchase = (
-                        tmp.groupby(["Supplier", "Currency"], as_index=False)["LineAmount"]
-                        .sum()
-                        .rename(columns={"LineAmount": "Purchase Amount"})
-                        .sort_values("Purchase Amount", ascending=False)
-                    )
-                    top_row = supplier_purchase.iloc[0]
-                    top_supplier_name = str(top_row["Supplier"])
-                    top_supplier_amount = float(top_row["Purchase Amount"])
-                    top_supplier_currency = str(top_row["Currency"])
-        except Exception:
-            supplier_purchase = pd.DataFrame(columns=["Supplier", "Purchase Amount", "Currency"])
-
-        # --- KPI Cards (template style; keeps all KPIs and adds new one) ---
-        st.markdown('<div class="dash-kpis">', unsafe_allow_html=True)
-
-        def _kpi_card(title, value, sub=""):
-            st.markdown(
-                f"""
-                <div class="dash-card">
-                    <div class="t">{title}</div>
-                    <div class="v">{value}</div>
-                    <div class="s">{sub}</div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
-        _kpi_card("Ordered Qty", f"{total_ordered_qty:.2f}", "")
-        _kpi_card("Dispatched Qty (Consumption)", f"{total_dispatched_qty:.2f}", "")
-        _kpi_card("Received Qty", f"{total_received_qty:.2f}", "")
-        _kpi_card("Net Flow (In-Out)", f"{net_flow:.2f}", "")
-        _kpi_card("Stock In Hand (Qty)", f"{stock_inhand_qty:.2f}", "")
-        _kpi_card(
-            "Stock In Hand (Value)",
-            f"{stock_inhand_value:.2f}",
-            ("All currencies" if currency_choice == "All" else currency_choice),
+        k1, k2, k3, k4, k5, k6 = st.columns(6)
+        k1.markdown(f'<div class="kpi-box"><div class="kpi-label">Ordered Qty</div><div class="kpi-value">{total_ordered_qty:.2f}</div></div>', unsafe_allow_html=True)
+        k2.markdown(f'<div class="kpi-box"><div class="kpi-label">Dispatched Qty (Consumption)</div><div class="kpi-value">{total_dispatched_qty:.2f}</div></div>', unsafe_allow_html=True)
+        k3.markdown(f'<div class="kpi-box"><div class="kpi-label">Received Qty</div><div class="kpi-value">{total_received_qty:.2f}</div></div>', unsafe_allow_html=True)
+        k4.markdown(f'<div class="kpi-box"><div class="kpi-label">Net Flow (In-Out)</div><div class="kpi-value">{net_flow:.2f}</div></div>', unsafe_allow_html=True)
+        k5.markdown(f'<div class="kpi-box"><div class="kpi-label">Stock In Hand (Qty)</div><div class="kpi-value">{stock_inhand_qty:.2f}</div></div>', unsafe_allow_html=True)
+        k6.markdown(
+            f'<div class="kpi-box"><div class="kpi-label">Stock In Hand (Value)</div><div class="kpi-value">{stock_inhand_value:.2f}</div><div class="kpi-sub">{("All currencies" if currency_choice=="All" else currency_choice)}</div></div>',
+            unsafe_allow_html=True,
         )
 
-        # extra KPI row for Supplier Purchases (still within same grid)
-        _kpi_card(
-            "Total Purchase (Top Supplier)",
-            f"{top_supplier_amount:.2f}",
-            (f"{top_supplier_name} • {top_supplier_currency}" if top_supplier_name else "No supplier purchase data"),
-        )
-
-        st.markdown("</div>", unsafe_allow_html=True)
+        st.divider()
 
         ascending = sort_dir == "Low → High"
 
@@ -1486,7 +1287,6 @@ with tab_dash:
                 "Stock Value", ascending=ascending
             ).head(top_n)
 
-        # --- Export (kept) + Note (kept) ---
         export_col1, export_col2 = st.columns([1.4, 3.6])
         with export_col1:
             export_bytes = _to_excel_bytes(
@@ -1504,9 +1304,6 @@ with tab_dash:
                                 "Net Flow": net_flow,
                                 "Stock In Hand Qty": stock_inhand_qty,
                                 "Stock In Hand Value": stock_inhand_value,
-                                "Top Supplier": top_supplier_name,
-                                "Top Supplier Purchase Amount": top_supplier_amount,
-                                "Top Supplier Currency": top_supplier_currency,
                                 "Dispatch Date Basis": dispatch_date_basis,
                             }
                         ]
@@ -1516,7 +1313,6 @@ with tab_dash:
                     "Top Received": top_received,
                     "Top Stock Qty": top_stock_qty,
                     "Top Stock Value": top_stock_val,
-                    "Supplier Purchases": supplier_purchase,
                 }
             )
             st.download_button(
@@ -1528,111 +1324,72 @@ with tab_dash:
             )
         with export_col2:
             st.markdown(
-                '<div class="dash-note">Note: “Stock In Hand Value” uses the selected currency filter (no exchange-rate conversion). Items with Price=0 are hidden from the Value table. “Supplier Purchases” is estimated from Received logs (Qty × Unit Price).</div>',
+                '<div class="dash-note">Note: “Stock In Hand Value” uses the selected currency filter (no exchange-rate conversion). Items with Price=0 are hidden from the Value table.</div>',
                 unsafe_allow_html=True,
             )
 
         st.divider()
 
-        # --- VIEW MODES (kept, just laid out in "cards") ---
+        # --- VIEW MODES ---
         if dashboard_view == "Tables":
             a1, a2 = st.columns(2)
             with a1:
-                st.markdown('<div class="dash-card"><div class="dash-title"><h3>Top Ordered Items</h3><small>Top-N</small></div>', unsafe_allow_html=True)
+                st.markdown('<span class="section-title">📌 Top Ordered Items</span>', unsafe_allow_html=True)
                 st.dataframe(top_ordered, use_container_width=True, hide_index=True, height=320)
-                st.markdown('</div>', unsafe_allow_html=True)
             with a2:
-                st.markdown('<div class="dash-card"><div class="dash-title"><h3>Top Dispatched Items (Consumption)</h3><small>Top-N</small></div>', unsafe_allow_html=True)
+                st.markdown('<span class="section-title">📌 Top Dispatched Items (Consumption)</span>', unsafe_allow_html=True)
                 st.dataframe(top_dispatched, use_container_width=True, hide_index=True, height=320)
-                st.markdown('</div>', unsafe_allow_html=True)
 
             b1, b2 = st.columns(2)
             with b1:
-                st.markdown('<div class="dash-card"><div class="dash-title"><h3>Top Received Items</h3><small>Top-N</small></div>', unsafe_allow_html=True)
+                st.markdown('<span class="section-title">📌 Top Received Items</span>', unsafe_allow_html=True)
                 st.dataframe(top_received, use_container_width=True, hide_index=True, height=320)
-                st.markdown('</div>', unsafe_allow_html=True)
             with b2:
-                st.markdown('<div class="dash-card"><div class="dash-title"><h3>Top Stock In Hand (Qty)</h3><small>Top-N</small></div>', unsafe_allow_html=True)
+                st.markdown('<span class="section-title">📌 Top Stock In Hand (Qty)</span>', unsafe_allow_html=True)
                 st.dataframe(top_stock_qty, use_container_width=True, hide_index=True, height=320)
-                st.markdown('</div>', unsafe_allow_html=True)
 
-            st.markdown('<div class="dash-card"><div class="dash-title"><h3>Top Stock In Hand (Value)</h3><small>Top-N</small></div>', unsafe_allow_html=True)
+            st.markdown('<span class="section-title">💰 Top Stock In Hand (Value)</span>', unsafe_allow_html=True)
             st.dataframe(top_stock_val, use_container_width=True, hide_index=True, height=320)
-            st.markdown('</div>', unsafe_allow_html=True)
-
-            st.markdown('<div class="dash-card"><div class="dash-title"><h3>Total Purchase from Supplier</h3><small>Supplier + Amount</small></div>', unsafe_allow_html=True)
-            st.dataframe(supplier_purchase, use_container_width=True, hide_index=True, height=320)
-            st.markdown('</div>', unsafe_allow_html=True)
 
         elif dashboard_view == "Bar Charts":
             a1, a2 = st.columns(2)
             with a1:
-                st.markdown('<div class="dash-card"><div class="dash-title"><h3>Ordered (Top)</h3><small>Bar</small></div>', unsafe_allow_html=True)
+                st.markdown('<span class="section-title">📊 Ordered (Top)</span>', unsafe_allow_html=True)
                 _make_bar_chart(top_ordered, "Item", "Ordered Qty")
-                st.markdown('</div>', unsafe_allow_html=True)
             with a2:
-                st.markdown('<div class="dash-card"><div class="dash-title"><h3>Dispatched (Top)</h3><small>Bar</small></div>', unsafe_allow_html=True)
+                st.markdown('<span class="section-title">📊 Dispatched (Top)</span>', unsafe_allow_html=True)
                 _make_bar_chart(top_dispatched, "Item", "Dispatched Qty")
-                st.markdown('</div>', unsafe_allow_html=True)
 
             b1, b2 = st.columns(2)
             with b1:
-                st.markdown('<div class="dash-card"><div class="dash-title"><h3>Received (Top)</h3><small>Bar</small></div>', unsafe_allow_html=True)
+                st.markdown('<span class="section-title">📊 Received (Top)</span>', unsafe_allow_html=True)
                 _make_bar_chart(top_received, "Item", "Received Qty")
-                st.markdown('</div>', unsafe_allow_html=True)
             with b2:
-                st.markdown('<div class="dash-card"><div class="dash-title"><h3>Stock In Hand Qty (Top)</h3><small>Bar</small></div>', unsafe_allow_html=True)
+                st.markdown('<span class="section-title">📊 Stock In Hand Qty (Top)</span>', unsafe_allow_html=True)
                 _make_bar_chart(top_stock_qty, "Product Name", "Closing Stock")
-                st.markdown('</div>', unsafe_allow_html=True)
 
-            st.markdown('<div class="dash-card"><div class="dash-title"><h3>Stock In Hand Value (Top)</h3><small>Bar</small></div>', unsafe_allow_html=True)
+            st.markdown('<span class="section-title">💰 Stock In Hand Value (Top)</span>', unsafe_allow_html=True)
             _make_bar_chart(top_stock_val, "Product Name", "Stock Value")
-            st.markdown('</div>', unsafe_allow_html=True)
-
-            st.markdown('<div class="dash-card"><div class="dash-title"><h3>Total Purchase from Supplier</h3><small>Bar (Top-N suppliers)</small></div>', unsafe_allow_html=True)
-            # Bar chart for supplier purchases (top_n suppliers)
-            if supplier_purchase is None or supplier_purchase.empty:
-                st.info("📭 No supplier purchase data.")
-            else:
-                sup_plot = supplier_purchase.copy().head(top_n)
-                # show by amount; order already desc
-                _make_bar_chart(sup_plot.rename(columns={"Supplier": "Supplier", "Purchase Amount": "Purchase Amount"}), "Supplier", "Purchase Amount")
-            st.markdown('</div>', unsafe_allow_html=True)
 
         else:  # Pie Charts
             a1, a2 = st.columns(2)
             with a1:
-                st.markdown('<div class="dash-card"><div class="dash-title"><h3>Ordered (Top)</h3><small>Pie</small></div>', unsafe_allow_html=True)
+                st.markdown('<span class="section-title">🥧 Ordered (Top)</span>', unsafe_allow_html=True)
                 _make_pie_chart(top_ordered, "Item", "Ordered Qty", top_n=top_n)
-                st.markdown('</div>', unsafe_allow_html=True)
             with a2:
-                st.markdown('<div class="dash-card"><div class="dash-title"><h3>Dispatched (Top)</h3><small>Pie</small></div>', unsafe_allow_html=True)
+                st.markdown('<span class="section-title">🥧 Dispatched (Top)</span>', unsafe_allow_html=True)
                 _make_pie_chart(top_dispatched, "Item", "Dispatched Qty", top_n=top_n)
-                st.markdown('</div>', unsafe_allow_html=True)
 
             b1, b2 = st.columns(2)
             with b1:
-                st.markdown('<div class="dash-card"><div class="dash-title"><h3>Received (Top)</h3><small>Pie</small></div>', unsafe_allow_html=True)
+                st.markdown('<span class="section-title">🥧 Received (Top)</span>', unsafe_allow_html=True)
                 _make_pie_chart(top_received, "Item", "Received Qty", top_n=top_n)
-                st.markdown('</div>', unsafe_allow_html=True)
             with b2:
-                st.markdown('<div class="dash-card"><div class="dash-title"><h3>Stock In Hand Qty (Top)</h3><small>Pie</small></div>', unsafe_allow_html=True)
+                st.markdown('<span class="section-title">🥧 Stock In Hand Qty (Top)</span>', unsafe_allow_html=True)
                 _make_pie_chart(top_stock_qty, "Product Name", "Closing Stock", top_n=top_n)
-                st.markdown('</div>', unsafe_allow_html=True)
 
-            st.markdown('<div class="dash-card"><div class="dash-title"><h3>Stock In Hand Value (Top)</h3><small>Pie</small></div>', unsafe_allow_html=True)
+            st.markdown('<span class="section-title">🥧 Stock In Hand Value (Top)</span>', unsafe_allow_html=True)
             _make_pie_chart(top_stock_val, "Product Name", "Stock Value", top_n=top_n)
-            st.markdown('</div>', unsafe_allow_html=True)
-
-            st.markdown('<div class="dash-card"><div class="dash-title"><h3>Total Purchase from Supplier</h3><small>Pie</small></div>', unsafe_allow_html=True)
-            if supplier_purchase is None or supplier_purchase.empty:
-                st.info("📭 No supplier purchase data.")
-            else:
-                sup_pie = supplier_purchase.copy().head(top_n)
-                _make_pie_chart(sup_pie, "Supplier", "Purchase Amount", top_n=top_n)
-            st.markdown('</div>', unsafe_allow_html=True)
-
-        st.markdown("</div>", unsafe_allow_html=True)
 
 # ===================== SIDEBAR =====================
 with st.sidebar:
