@@ -1866,7 +1866,6 @@ with tab_dash:
             if not cards:
                 st.markdown('<div class="skeleton"></div><div class="skeleton" style="width:70%"></div>', unsafe_allow_html=True)
             else:
-                               else:
                     for i, c in enumerate(cards):
                         # --- Defensive: ensure each card is a dict ---
                         if isinstance(c, dict):
