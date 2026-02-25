@@ -1833,124 +1833,108 @@ with tab_dash:
             )
             st.markdown('</div>', unsafe_allow_html=True)
 
-    # --- Kanban (lightweight, Streamlit-native) ---
-    # True drag & drop across columns needs a component (e.g., streamlit-elements / sortable).
-    # This is a "pretty" MVP Kanban that keeps state and lets you move items via dropdowns (no feature removed).
-    st.markdown('<span class="section-title">🧩 Operational Kanban (MVP)</span>', unsafe_allow_html=True)
-    st.caption("Drag & drop across columns requires a Streamlit component; this MVP uses per-card move controls and preserves state.")
+# --- Kanban (lightweight, Streamlit-native) ---
+# True drag & drop across columns needs a component (e.g., streamlit-elements / sortable).
+# This is a "pretty" MVP Kanban that keeps state and lets you move items via dropdowns (no feature removed).
+st.markdown('<span class="section-title">🧩 Operational Kanban (MVP)</span>', unsafe_allow_html=True)
+st.caption("Drag & drop across columns requires a Streamlit component; this MVP uses per-card move controls and preserves state.")
 
-    if "kanban" not in st.session_state:
-        st.session_state.kanban = {
-            "⚠️ Attention Needed": [],
-            "📦 Reorder Soon": [],
-            "🚚 In Transit": [],
-            "✅ Healthy Stock": [],
-        }
+if "kanban" not in st.session_state:
+    st.session_state.kanban = {
+        "⚠️ Attention Needed": [],
+        "📦 Reorder Soon": [],
+        "🚚 In Transit": [],
+        "✅ Healthy Stock": [],
+    }
 
-    # Seed with low stock items (only once)
-    if "kanban_seeded" not in st.session_state:
-        st.session_state.kanban_seeded = True
-        if inv_df is not None and not inv_df.empty:
-            low_items = inv_df.sort_values("Closing Stock", ascending=True).head(8)["Product Name"].astype(str).tolist()
-            st.session_state.kanban["⚠️ Attention Needed"] = [{"id": str(uuid.uuid4())[:8], "title": it, "note": "Low stock"} for it in low_items]
+# Seed with low stock items (only once)
+if "kanban_seeded" not in st.session_state:
+    st.session_state.kanban_seeded = True
+    if inv_df is not None and not inv_df.empty:
+        low_items = (
+            inv_df.sort_values("Closing Stock", ascending=True)
+            .head(8)["Product Name"]
+            .astype(str)
+            .tolist()
+        )
+        st.session_state.kanban["⚠️ Attention Needed"] = [
+            {"id": str(uuid.uuid4())[:8], "title": it, "note": "Low stock"} for it in low_items
+        ]
 
-    kc1, kc2, kc3, kc4 = st.columns(4, gap="medium")
-    columns = ["⚠️ Attention Needed", "📦 Reorder Soon", "🚚 In Transit", "✅ Healthy Stock"]
-    col_map = dict(zip(columns, [kc1, kc2, kc3, kc4]))
+kc1, kc2, kc3, kc4 = st.columns(4, gap="medium")
+columns = ["⚠️ Attention Needed", "📦 Reorder Soon", "🚚 In Transit", "✅ Healthy Stock"]
+col_map = dict(zip(columns, [kc1, kc2, kc3, kc4]))
 
-    for col_name in columns:
-        with col_map[col_name]:
-            st.markdown(f'<div class="glass-card"><div class="card-title">{col_name} <span class="meta">{len(st.session_state.kanban[col_name])} cards</span></div>', unsafe_allow_html=True)
+for col_name in columns:
+    with col_map[col_name]:
+        st.markdown(
+            f'<div class="glass-card"><div class="card-title">{col_name} '
+            f'<span class="meta">{len(st.session_state.kanban[col_name])} cards</span></div>',
+            unsafe_allow_html=True,
+        )
 
-            cards = st.session_state.kanban[col_name]
-            if not cards:
-                st.markdown('<div class="skeleton"></div><div class="skeleton" style="width:70%"></div>', unsafe_allow_html=True)
-            else:
-                    for i, c in enumerate(cards):
-                        # --- Defensive: ensure each card is a dict ---
-                        if isinstance(c, dict):
-                            card = c
-                        else:
-                            # Handle legacy/bad state where cards might be strings or other objects
-                            card = {"id": str(uuid.uuid4())[:8], "title": str(c), "note": ""}
+        cards = st.session_state.kanban[col_name]
 
-                        title = str(card.get("title", "") or "")
-                        cid = str(card.get("id", "") or "")
-                        note = str(card.get("note", "") or "")
+        if not cards:
+            st.markdown(
+                '<div class="skeleton"></div><div class="skeleton" style="width:70%"></div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            # Render each card + ONE "Move to" control per card (unique widget key)
+            for c in cards:
+                # --- Defensive: ensure each card is a dict ---
+                card = c if isinstance(c, dict) else {"id": str(uuid.uuid4())[:8], "title": str(c), "note": ""}
 
-                        st.markdown(
-                            f"""
-                            <div class="kpi" style="margin-bottom:10px;">
-                                <div class="label">{title} <span style="color:rgba(136,146,176,0.9); font-size:11px;">#{cid}</span></div>
-                                <div class="sub">{note}</div>
-                            </div>
-                            """,
-                            unsafe_allow_html=True,
-                        )
+                title = str(card.get("title", "") or "").strip()
+                cid = str(card.get("id", "") or "").strip() or str(uuid.uuid4())[:8]
+                note = str(card.get("note", "") or "").strip()
 
-                        # Move control (uses safe cid)
-                        new_col = st.selectbox(
-                            "Move to",
-                            options=columns,
-                            index=columns.index(col_name),
-                            key=f"kan_move_{col_name}_{cid}",
-                            label_visibility="collapsed",
-                        )
-                        if new_col != col_name:
-                            st.session_state.kanban[col_name] = [
-                                x
-                                for x in st.session_state.kanban[col_name]
-                                if (x.get("id") if isinstance(x, dict) else None) != cid
-                            ]
-                            st.session_state.kanban[new_col].append(card)
-                            st.success("Moved")
-                            st.rerun()
+                st.markdown(
+                    f"""
+                    <div class="kpi" style="margin-bottom:10px;">
+                        <div class="label">{title}
+                            <span style="color:rgba(136,146,176,0.9); font-size:11px;">#{cid}</span>
+                        </div>
+                        <div class="sub">{note}</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
 
-                    # Move control
-                    new_col = st.selectbox(
-                        "Move to",
-                        options=columns,
-                        index=columns.index(col_name),
-                        key=f"kan_move_{col_name}_{cid}",
-                        label_visibility="collapsed",
+                # Move control (unique key per column+card)
+                new_col = st.selectbox(
+                    "Move to",
+                    options=columns,
+                    index=columns.index(col_name),
+                    key=f"kan_move_{col_name}_{cid}",
+                    label_visibility="collapsed",
+                )
+
+                if new_col != col_name:
+                    # Remove from current column (by id, safely)
+                    st.session_state.kanban[col_name] = [
+                        x
+                        for x in st.session_state.kanban[col_name]
+                        if (x.get("id") if isinstance(x, dict) else None) != cid
+                    ]
+                    # Add to new column
+                    st.session_state.kanban[new_col].append(card)
+                    st.rerun()
+
+        # Add card
+        with st.expander("➕ Add card", expanded=False):
+            title = st.text_input("Title", key=f"kan_new_title_{col_name}")
+            note = st.text_input("Note", key=f"kan_new_note_{col_name}")
+            if st.button("Add", key=f"kan_add_{col_name}", use_container_width=True):
+                if title.strip():
+                    st.session_state.kanban[col_name].append(
+                        {"id": str(uuid.uuid4())[:8], "title": title.strip(), "note": note.strip()}
                     )
-                    if new_col != col_name:
-                        # Remove from current column
-                        st.session_state.kanban[col_name] = [
-                            x
-                            for x in st.session_state.kanban[col_name]
-                            if (x.get("id") if isinstance(x, dict) else None) != cid
-                        ]
-                        # Add to new column
-                        st.session_state.kanban[new_col].append(card)
-                        st.success("Moved")
-                        st.rerun()
-                    # Move control
-                    new_col = st.selectbox(
-                        "Move to",
-                        options=columns,
-                        index=columns.index(col_name),
-                        key=f"kan_move_{col_name}_{c['id']}",
-                        label_visibility="collapsed",
-                    )
-                    if new_col != col_name:
-                        # Move card
-                        st.session_state.kanban[col_name] = [x for x in st.session_state.kanban[col_name] if x["id"] != c["id"]]
-                        st.session_state.kanban[new_col].append(c)
-                        st.success("Moved")
-                        st.rerun()
+                    st.balloons()
+                    st.rerun()
 
-            # Add card
-            with st.expander("➕ Add card", expanded=False):
-                title = st.text_input("Title", key=f"kan_new_title_{col_name}")
-                note = st.text_input("Note", key=f"kan_new_note_{col_name}")
-                if st.button("Add", key=f"kan_add_{col_name}", use_container_width=True):
-                    if title.strip():
-                        st.session_state.kanban[col_name].append({"id": str(uuid.uuid4())[:8], "title": title.strip(), "note": note.strip()})
-                        st.balloons()
-                        st.rerun()
-            st.markdown("</div>", unsafe_allow_html=True)
-
+        st.markdown("</div>", unsafe_allow_html=True)
 # ===================== SIDEBAR =====================
 with st.sidebar:
     st.markdown('<h2 class="sidebar-title">☁️ Data Management</h2>', unsafe_allow_html=True)
