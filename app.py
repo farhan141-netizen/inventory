@@ -1074,10 +1074,12 @@ def _make_bar_chart(df, x_col, y_col):
         chart_df = chart_df.set_index(x_col)
         st.bar_chart(chart_df, y=y_col)
 
-def _make_pie_chart(df, label_col, value_col, top_n=None):
+def _make_pie_chart(df, label_col, value_col, top_n=None, show_legend=False):
     """
     Pie should respect the Top-N user selection (top_n).
     If top_n is None, default to 10 (sane default for readability).
+    show_legend=False (default) hides the legend for compact card view.
+    show_legend=True shows the legend on the right for fullscreen/dialog view.
     """
     if df is None or df.empty or label_col not in df.columns or value_col not in df.columns:
         st.info("📭 No data for chart.")
@@ -1099,20 +1101,27 @@ def _make_pie_chart(df, label_col, value_col, top_n=None):
         import plotly.express as px  # type: ignore
         fig = px.pie(pie_df, names=label_col, values=value_col, hole=0.38)
         fig.update_traces(textposition="inside", textinfo="percent+label")
-        fig.update_layout(
-            paper_bgcolor="rgba(0,0,0,0)",
-            font=dict(color="rgba(224,231,255,0.92)", family="Inter", size=12),
-            margin=dict(l=0, r=0, t=30, b=0),
-            height=420,
-            autosize=True,
-            legend=dict(
+        if show_legend:
+            legend_cfg = dict(
+                visible=True,
                 orientation="v",
                 yanchor="middle",
                 y=0.5,
                 xanchor="left",
-                x=1.02,
-                font=dict(size=10, color="rgba(136,146,176,0.95)"),
-            ),
+                x=1.05,
+                font=dict(size=12, color="rgba(136,146,176,0.95)"),
+            )
+            chart_height = _CHART_HEIGHT_FULLSCREEN
+        else:
+            legend_cfg = dict(visible=False)
+            chart_height = _CHART_HEIGHT_COMPACT
+        fig.update_layout(
+            paper_bgcolor="rgba(0,0,0,0)",
+            font=dict(color="rgba(224,231,255,0.92)", family="Inter", size=12),
+            margin=dict(l=0, r=0, t=30, b=0),
+            height=chart_height,
+            autosize=True,
+            legend=legend_cfg,
         )
         st.plotly_chart(fig, use_container_width=True)
     except Exception:
@@ -1166,6 +1175,45 @@ def _make_horiz_bar_chart(df, label_col, value_col):
     except Exception:
         chart_df = chart_df.set_index(label_col)
         st.bar_chart(chart_df, y=value_col)
+
+# --- Chart height constants ---
+_CHART_HEIGHT_COMPACT = 320
+_CHART_HEIGHT_FULLSCREEN = 500
+
+# --- Column abbreviations for compact table views ---
+_COL_ABBREV = {
+    "Received Qty": "Rec Qty",
+    "Purchase Value": "Pur Val",
+    "Dispatched Qty": "Disp Qty",
+    "Sales Value": "Sale Val",
+    "Purchase Amount": "Pur Amt",
+}
+
+def _abbreviate_cols(df: pd.DataFrame) -> pd.DataFrame:
+    """Rename verbose column headers to short versions for table display."""
+    return df.rename(columns={k: v for k, v in _COL_ABBREV.items() if k in df.columns})
+
+
+@st.dialog("📊 Expanded View", width="large")
+def _show_fullscreen_card(title: str, df: pd.DataFrame, label_col: str, value_col: str, chart_type: str, top_n: int):
+    """
+    Fullscreen dialog for a dashboard card.
+    Pie charts show the legend on the right; tables use abbreviated column names.
+    """
+    st.markdown(f"### {title}")
+    if df is None or df.empty:
+        st.info("📭 No data available.")
+        return
+    if chart_type == "Table":
+        st.dataframe(_abbreviate_cols(df), use_container_width=True, hide_index=True)
+    elif chart_type == "Bar Chart":
+        if label_col == "Supplier":
+            _make_horiz_bar_chart(df, label_col, value_col)
+        else:
+            _make_bar_chart(df, label_col, value_col)
+    else:
+        _make_pie_chart(df, label_col, value_col, top_n=top_n, show_legend=True)
+
 
 # FIX 1: Added missing function definition line
 def _init_card_state(card_id, default_sort="High → Low", default_topn=10, default_view="Quantity"):
@@ -1832,11 +1880,13 @@ with tab_dash:
                         )
 
                     if chart_type == "Table":
-                        st.dataframe(purchased_qty, use_container_width=True, hide_index=True, height=260)
+                        st.dataframe(_abbreviate_cols(purchased_qty), use_container_width=True, hide_index=True, height=260)
                     elif chart_type == "Bar Chart":
                         _make_bar_chart(purchased_qty, "Item", "Received Qty")
                     else:
                         _make_pie_chart(purchased_qty, "Item", "Received Qty", top_n=topn)
+                    if st.button("⛶ Expand", key="expand_card_purchased_qty", use_container_width=True):
+                        _show_fullscreen_card("Top Purchased (QTY)", purchased_qty, "Item", "Received Qty", chart_type, topn)
 
             # --- Top-right: Top Selling Product (QTY) ---
             with inner_r:
@@ -1859,11 +1909,13 @@ with tab_dash:
                         )
 
                     if chart_type == "Table":
-                        st.dataframe(selling_qty, use_container_width=True, hide_index=True, height=260)
+                        st.dataframe(_abbreviate_cols(selling_qty), use_container_width=True, hide_index=True, height=260)
                     elif chart_type == "Bar Chart":
                         _make_bar_chart(selling_qty, "Item", "Dispatched Qty")
                     else:
                         _make_pie_chart(selling_qty, "Item", "Dispatched Qty", top_n=topn)
+                    if st.button("⛶ Expand", key="expand_card_selling_qty", use_container_width=True):
+                        _show_fullscreen_card("Top Selling (QTY)", selling_qty, "Item", "Dispatched Qty", chart_type, topn)
 
             # --- Bottom row ---
             inner_bl, inner_br = st.columns(2, gap="small")
@@ -1897,11 +1949,13 @@ with tab_dash:
                         )
 
                     if chart_type == "Table":
-                        st.dataframe(purchased_val, use_container_width=True, hide_index=True, height=260)
+                        st.dataframe(_abbreviate_cols(purchased_val), use_container_width=True, hide_index=True, height=260)
                     elif chart_type == "Bar Chart":
                         _make_bar_chart(purchased_val, "Item", "Purchase Value")
                     else:
                         _make_pie_chart(purchased_val, "Item", "Purchase Value", top_n=topn)
+                    if st.button("⛶ Expand", key="expand_card_purchased_val", use_container_width=True):
+                        _show_fullscreen_card("Top Purchased (Value)", purchased_val, "Item", "Purchase Value", chart_type, topn)
 
             # --- Bottom-right: Top Selling Product (Value) ---
             with inner_br:
@@ -1934,11 +1988,13 @@ with tab_dash:
                         )
 
                     if chart_type == "Table":
-                        st.dataframe(selling_val, use_container_width=True, hide_index=True, height=260)
+                        st.dataframe(_abbreviate_cols(selling_val), use_container_width=True, hide_index=True, height=260)
                     elif chart_type == "Bar Chart":
                         _make_bar_chart(selling_val, "Item", "Sales Value")
                     else:
                         _make_pie_chart(selling_val, "Item", "Sales Value", top_n=topn)
+                    if st.button("⛶ Expand", key="expand_card_selling_val", use_container_width=True):
+                        _show_fullscreen_card("Top Selling (Value)", selling_val, "Item", "Sales Value", chart_type, topn)
 
         # ===== Right: Summary KPI (horizontal row) + Total Purchase From Supplier (horiz bar) =====
         with right_col:
@@ -2000,7 +2056,7 @@ with tab_dash:
                     supplier_df = supplier_df.sort_values("Purchase Amount", ascending=asc).head(topn)
 
                 if chart_type == "Table":
-                    st.dataframe(supplier_df, use_container_width=True, hide_index=True, height=360)
+                    st.dataframe(_abbreviate_cols(supplier_df), use_container_width=True, hide_index=True, height=360)
                 elif chart_type == "Pie Chart":
                     _make_pie_chart(supplier_df, "Supplier", "Purchase Amount", top_n=topn)
                 else:
@@ -2010,6 +2066,8 @@ with tab_dash:
                     else:
                         bar = supplier_df.rename(columns={"Purchase Amount": "Amount"})
                         _make_horiz_bar_chart(bar, "Supplier", "Amount")
+                if st.button("⛶ Expand", key="expand_card_supplier_purchase", use_container_width=True):
+                    _show_fullscreen_card("Total Purchase From Supplier", supplier_df, "Supplier", "Purchase Amount", chart_type, topn)
 
             # --- Export (compute bytes and render in the top placeholder + here as fallback) ---
             # FIX 2: Restored truncated dictionary values for export sheets
