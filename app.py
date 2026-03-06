@@ -89,7 +89,7 @@ st.markdown(
     [data-testid="stHeader"]{ background: transparent; }
     [data-testid="stToolbar"]{ visibility: hidden; height: 0px; }
     footer{ visibility: hidden; }
-    [data-testid="stSidebarCollapsedControl"]{ visibility: visible !important; display: flex !important; }
+    [data-testid="stSidebarCollapsedControl"]{ visibility: visible !important; display: flex !important; z-index: 999999 !important; }
 
     /* ===== Scrollbars ===== */
     ::-webkit-scrollbar { width: 10px; height: 10px; }
@@ -331,6 +331,34 @@ st.markdown(
         letter-spacing: 0.08em;
         text-transform: uppercase;
         margin-bottom: 8px;
+    }
+
+    /* ===== Sidebar toggle button (always visible) ===== */
+    [data-testid="stSidebarCollapsedControl"] button {
+        visibility: visible !important;
+        color: #ffffff !important;
+        background: rgba(26, 31, 46, 0.85) !important;
+        border: 1px solid rgba(255,255,255,0.15) !important;
+        border-radius: 8px !important;
+    }
+    [data-testid="stSidebarCollapsedControl"] button:hover {
+        background: rgba(0,217,255,0.15) !important;
+        border-color: rgba(0,217,255,0.3) !important;
+    }
+    /* Also ensure the sidebar nav toggle and close button are visible */
+    [data-testid="stSidebarNavToggle"],
+    [data-testid="stSidebarNavToggle"] button,
+    button[data-testid="stSidebarCollapseButton"] {
+        visibility: visible !important;
+        color: #ffffff !important;
+    }
+    /* Force all toggle SVG icons white (fill/color/stroke needed for cross-browser SVG coloring) */
+    [data-testid="stSidebarCollapsedControl"] svg,
+    button[data-testid="stSidebarCollapseButton"] svg,
+    [data-testid="stSidebarNavToggle"] svg {
+        fill: #ffffff !important;
+        color: #ffffff !important;
+        stroke: #ffffff !important;
     }
 
     /* ===== Buttons (global) ===== */
