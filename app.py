@@ -89,6 +89,7 @@ st.markdown(
     [data-testid="stHeader"]{ background: transparent; }
     [data-testid="stToolbar"]{ visibility: hidden; height: 0px; }
     footer{ visibility: hidden; }
+    [data-testid="stSidebarCollapsedControl"]{ visibility: visible !important; display: flex !important; }
 
     /* ===== Scrollbars ===== */
     ::-webkit-scrollbar { width: 10px; height: 10px; }
