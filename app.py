@@ -1102,9 +1102,17 @@ def _make_pie_chart(df, label_col, value_col, top_n=None):
         fig.update_layout(
             paper_bgcolor="rgba(0,0,0,0)",
             font=dict(color="rgba(224,231,255,0.92)", family="Inter", size=12),
-            margin=dict(l=10, r=10, t=20, b=10),
-            height=360,
-            legend=dict(font=dict(size=10, color="rgba(136,146,176,0.95)")),
+            margin=dict(l=0, r=0, t=30, b=0),
+            height=420,
+            autosize=True,
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=-0.15,
+                xanchor="center",
+                x=0.5,
+                font=dict(size=10, color="rgba(136,146,176,0.95)"),
+            ),
         )
         st.plotly_chart(fig, use_container_width=True)
     except Exception:
@@ -1663,41 +1671,19 @@ with tab_sup:
 with tab_dash:
     st.markdown('<div style="text-align:center;"><span class="dash-title-pill">📊 Warehouse Dashboard</span></div>', unsafe_allow_html=True)
 
-    # --- Top control row: Refresh, Export, View, Restaurant, Top, Currency ---
-    v1, v2, v3, v4, v5, v6 = st.columns([0.8, 1.0, 1.0, 1.4, 0.8, 1.2])
-    with v1:
-        if st.button("🔄 Refresh", use_container_width=True, key="dash_refresh"):
-            st.cache_data.clear()
-            st.rerun()
-    with v2:
-        dashboard_view = st.selectbox(
-            "View",
-            options=["Tables", "Bar Charts", "Pie Charts"],
-            index=2,
-            key="dash_view_mode",
-            label_visibility="collapsed",
-        )
-    with v3:
-        reqs_tmp = load_from_sheet("restaurant_requisitions", ["Restaurant"])
-        restaurants = []
-        if not reqs_tmp.empty and "Restaurant" in reqs_tmp.columns:
-            restaurants = sorted([r for r in reqs_tmp["Restaurant"].dropna().astype(str).str.strip().unique().tolist() if r])
-        restaurant_filter = st.selectbox("Restaurant", options=["All"] + restaurants, index=0, key="dash_restaurant", label_visibility="collapsed")
-    with v4:
-        # Keep this global Top as a fallback (legacy); cards use kebab menu topn unless you want to remove later.
-        legacy_top_n = st.selectbox("Top", options=[10, 25, 50, 100], index=0, key="dash_topn", label_visibility="collapsed")
-    with v5:
-        currency_choice = st.selectbox("Currency", options=["All"] + TOP_15_CURRENCIES_PLUS_BHD, index=0, key="dash_currency", label_visibility="collapsed")
-    with v6:
-        # Export button placeholder — actual download button rendered after data is computed below
-        export_placeholder = st.empty()
+    # Hardcoded defaults (filters removed from UI; each card has its own kebab controls)
+    dashboard_view = "Pie Charts"
+    restaurant_filter = "All"
+    currency_choice = "All"
+    legacy_top_n = 10
+    dispatch_date_basis = "RequestedDate"
 
-    # --- Date filter row: From, To, Quick-preset, Dispatch basis ---
+    # --- Single control row: From | To | Quick preset | Refresh | Export ---
     today = datetime.date.today()
     _QUICK_OPTIONS = ["last 2 days", "last 7 days", "last 14 days", "last 30 days", "last 90 days", "Custom"]
     _QUICK_DAYS = {"last 2 days": 2, "last 7 days": 7, "last 14 days": 14, "last 30 days": 30, "last 90 days": 90}
 
-    d1, d2, d3, d4 = st.columns([1.4, 1.4, 1.4, 1.8])
+    d1, d2, d3, d4, d5 = st.columns([1.4, 1.4, 1.4, 0.8, 1.2])
     with d3:
         quick_preset = st.selectbox(
             "Quick",
@@ -1717,7 +1703,12 @@ with tab_dash:
     with d2:
         end_date = st.date_input("To", value=today, key="dash_end", label_visibility="collapsed")
     with d4:
-        dispatch_date_basis = st.selectbox("Dispatch date", ["RequestedDate", "Dispatch Timestamp"], key="dash_dispatch_basis", label_visibility="collapsed")
+        if st.button("🔄 Refresh", use_container_width=True, key="dash_refresh"):
+            st.cache_data.clear()
+            st.rerun()
+    with d5:
+        # Export button placeholder — actual download button rendered after data is computed below
+        export_placeholder = st.empty()
 
 
     if start_date > end_date:
