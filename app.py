@@ -390,6 +390,79 @@ st.markdown(
         0%{ background-position: 200% 0; }
         100%{ background-position: -200% 0; }
     }
+
+    /* ===== Dashboard KPI horizontal row ===== */
+    .dash-kpi-row{
+        display: flex;
+        flex-direction: row;
+        gap: 10px;
+        flex-wrap: nowrap;
+    }
+    .dash-kpi-box{
+        flex: 1;
+        background: rgba(255,255,255,0.04);
+        border: 1px solid rgba(255,255,255,0.10);
+        border-radius: 14px;
+        padding: 14px 10px 12px;
+        min-width: 0;
+        text-align: center;
+    }
+    .dash-kpi-box .kpi-icon{
+        font-size: 18px;
+        margin-bottom: 4px;
+    }
+    .dash-kpi-box .kpi-label{
+        font-size: 11px;
+        color: var(--muted);
+        font-weight: 500;
+        margin-bottom: 6px;
+    }
+    .dash-kpi-box .kpi-value{
+        font-size: 18px;
+        font-weight: 700;
+        color: var(--text);
+        font-family: "JetBrains Mono", ui-monospace, monospace !important;
+        letter-spacing: 0.01em;
+    }
+    .dash-kpi-box .kpi-value.bad{ color: var(--danger); }
+    .dash-kpi-box .kpi-value.good{ color: var(--good); }
+    .dash-kpi-box .kpi-currency{
+        font-size: 10px;
+        color: var(--muted2);
+        margin-top: 2px;
+    }
+
+    /* ===== White-background chart card ===== */
+    .dash-card-white{
+        background: rgba(255,255,255,0.05);
+        border: 1px solid rgba(255,255,255,0.10);
+        border-radius: var(--radius);
+        box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+        padding: 14px 14px 12px 14px;
+        position: relative;
+        margin-bottom: 12px;
+    }
+
+    /* ===== Dashboard title pill ===== */
+    .dash-title-pill{
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(0,217,255,0.12);
+        border: 1px solid rgba(0,217,255,0.25);
+        color: var(--accent);
+        padding: 6px 20px;
+        border-radius: 999px;
+        font-size: 14px;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        margin-bottom: 12px;
+    }
+    .dash-note{
+        font-size: 10px;
+        color: var(--muted2);
+        margin-top: 6px;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -1021,7 +1094,55 @@ def _make_pie_chart(df, label_col, value_col, top_n=None):
         st.info("Plotly not installed. Showing table instead (install: `pip install plotly`).")
         st.dataframe(pie_df, use_container_width=True, hide_index=True)
 
-def _init_card_state(card_id: str, default_sort: str = "High → Low", default_topn: int = 10, default_view: str = "Quantity"):
+def _make_horiz_bar_chart(df, label_col, value_col):
+    """
+    Horizontal bar chart (Plotly) with cyan/teal bars and value labels.
+    Used for the 'Total Purchase From Supplier' card.
+    """
+    if df is None or df.empty or label_col not in df.columns or value_col not in df.columns:
+        st.info("📭 No data for chart.")
+        return
+
+    chart_df = df[[label_col, value_col]].copy()
+    chart_df[value_col] = pd.to_numeric(chart_df[value_col], errors="coerce").fillna(0.0)
+
+    try:
+        import plotly.express as px  # type: ignore
+
+        fig = px.bar(
+            chart_df,
+            x=value_col,
+            y=label_col,
+            orientation="h",
+            text=chart_df[value_col].apply(lambda v: f"{v:.1f}"),
+        )
+        fig.update_traces(
+            marker_color="rgba(0,217,255,0.65)",
+            marker_line_color="rgba(0,0,0,0)",
+            textposition="outside",
+            textfont=dict(size=11, color="rgba(224,231,255,0.92)"),
+        )
+        fig.update_layout(
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+            font=dict(color="rgba(224,231,255,0.92)", family="Inter", size=12),
+            xaxis=dict(showgrid=False, zeroline=False, tickfont=dict(size=10, color="rgba(136,146,176,0.95)")),
+            yaxis=dict(
+                categoryorder="array",
+                categoryarray=chart_df[label_col].tolist(),
+                showgrid=False,
+                zeroline=False,
+                tickfont=dict(size=10, color="rgba(136,146,176,0.95)"),
+            ),
+            margin=dict(l=10, r=60, t=10, b=10),
+            height=max(200, len(chart_df) * 38 + 30),
+        )
+        st.plotly_chart(fig, use_container_width=True)
+    except Exception:
+        chart_df = chart_df.set_index(label_col)
+        st.bar_chart(chart_df, y=value_col)
+
+
     """
     Per-card settings stored in st.session_state.dash_cards[card_id]
     """
@@ -1522,10 +1643,10 @@ with tab_sup:
 
 # ===================== DASHBOARD TAB =====================
 with tab_dash:
-    st.markdown('<span class="section-title">📊 Warehouse Dashboard</span>', unsafe_allow_html=True)
+    st.markdown('<div style="text-align:center;"><span class="dash-title-pill">📊 Warehouse Dashboard</span></div>', unsafe_allow_html=True)
 
-    # Keep global view + filters (do not remove anything), but the per-card Top/Sort is now in kebab menus
-    v1, v2, v3, v4, v5 = st.columns([1.2, 1.2, 1.4, 1.2, 1.2])
+    # --- Top control row: Refresh, Export, View, Restaurant, Top, Currency ---
+    v1, v2, v3, v4, v5, v6 = st.columns([0.8, 1.0, 1.0, 1.4, 0.8, 1.2])
     with v1:
         if st.button("🔄 Refresh", use_container_width=True, key="dash_refresh"):
             st.cache_data.clear()
@@ -1534,7 +1655,7 @@ with tab_dash:
         dashboard_view = st.selectbox(
             "View",
             options=["Tables", "Bar Charts", "Pie Charts"],
-            index=0,
+            index=2,
             key="dash_view_mode",
             label_visibility="collapsed",
         )
@@ -1549,16 +1670,37 @@ with tab_dash:
         legacy_top_n = st.selectbox("Top", options=[10, 25, 50, 100], index=0, key="dash_topn", label_visibility="collapsed")
     with v5:
         currency_choice = st.selectbox("Currency", options=["All"] + TOP_15_CURRENCIES_PLUS_BHD, index=0, key="dash_currency", label_visibility="collapsed")
+    with v6:
+        # Export button placeholder — actual download button rendered after data is computed below
+        export_placeholder = st.empty()
 
-    d1, d2, d3 = st.columns([1.6, 1.6, 2.8])
-    with d1:
-        today = datetime.date.today()
-        default_start = today - datetime.timedelta(days=30)
-        start_date = st.date_input("Start", value=default_start, key="dash_start", label_visibility="collapsed")
-    with d2:
-        end_date = st.date_input("End", value=today, key="dash_end", label_visibility="collapsed")
+    # --- Date filter row: From, To, Quick-preset, Dispatch basis ---
+    today = datetime.date.today()
+    _QUICK_OPTIONS = ["last 2 days", "last 7 days", "last 14 days", "last 30 days", "last 90 days", "Custom"]
+    _QUICK_DAYS = {"last 2 days": 2, "last 7 days": 7, "last 14 days": 14, "last 30 days": 30, "last 90 days": 90}
+
+    d1, d2, d3, d4 = st.columns([1.4, 1.4, 1.4, 1.8])
     with d3:
+        quick_preset = st.selectbox(
+            "Quick",
+            options=_QUICK_OPTIONS,
+            index=3,
+            key="dash_quick_preset",
+            label_visibility="collapsed",
+        )
+    # When a non-Custom preset is selected, programmatically update the start date in session state
+    if quick_preset != "Custom":
+        _preset_days = _QUICK_DAYS[quick_preset]
+        st.session_state["dash_start"] = today - datetime.timedelta(days=_preset_days)
+        st.session_state["dash_end"] = today
+
+    with d1:
+        start_date = st.date_input("From", value=today - datetime.timedelta(days=30), key="dash_start", label_visibility="collapsed")
+    with d2:
+        end_date = st.date_input("To", value=today, key="dash_end", label_visibility="collapsed")
+    with d4:
         dispatch_date_basis = st.selectbox("Dispatch date", ["RequestedDate", "Dispatch Timestamp"], key="dash_dispatch_basis", label_visibility="collapsed")
+
 
     if start_date > end_date:
         st.warning("⚠️ Start date is after end date. Please fix the date range.")
@@ -1642,177 +1784,190 @@ with tab_dash:
         stock_inhand_qty = float(inv_join["Closing Stock"].sum()) if not inv_join.empty else 0.0
         stock_inhand_value = float(inv_join["Stock Value"].sum()) if not inv_join.empty else 0.0
 
-        # --- Dashboard layout inspired by your screenshot (Image #5) ---
-        left_col, right_col = st.columns([1.35, 1.65], gap="large")
+        # --- Dashboard layout: left (2×2 donut grid) + right (KPI + supplier bar) ---
+        left_col, right_col = st.columns([1.0, 1.2], gap="large")
 
-        # ===== Left: 2x2 cards for Top Purchased/Selling (Qty/Value) =====
+        # ===== Left: 2×2 grid for Top Purchased/Selling (Qty/Value) =====
         with left_col:
-            # Card 1: Top Purchased Product (QTY) -> uses logs (received)
-            st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-            st.markdown('<div class="card-title">Top Purchased Product (QTY) <span class="meta">from receipts</span></div>', unsafe_allow_html=True)
-            s = _card_controls("card_purchased_qty", allow_view_mode=False)
-            asc = (s["sort"] == "Low → High")
-            topn = int(s["topn"])
+            inner_l, inner_r = st.columns(2, gap="small")
 
-            purchased_qty = pd.DataFrame(columns=["Item", "Received Qty"])
-            if not logs_filtered.empty:
-                purchased_qty = (
-                    logs_filtered.groupby("Item", as_index=False)["Qty"]
-                    .sum()
-                    .rename(columns={"Qty": "Received Qty"})
-                    .sort_values("Received Qty", ascending=asc)
-                    .head(topn)
-                )
+            # --- Top-left: Top Purchased Product (QTY) ---
+            with inner_l:
+                st.markdown('<div class="dash-card-white">', unsafe_allow_html=True)
+                st.markdown('<div class="card-title">Top Purchased (QTY) <span class="meta">receipts</span></div>', unsafe_allow_html=True)
+                s = _card_controls("card_purchased_qty", allow_view_mode=False)
+                asc = (s["sort"] == "Low → High")
+                topn = int(s["topn"])
 
-            if dashboard_view == "Tables":
-                st.dataframe(purchased_qty, use_container_width=True, hide_index=True, height=320)
-            elif dashboard_view == "Bar Charts":
-                _make_bar_chart(purchased_qty, "Item", "Received Qty")
-            else:
-                _make_pie_chart(purchased_qty, "Item", "Received Qty", top_n=topn)
-            st.markdown('</div>', unsafe_allow_html=True)
+                purchased_qty = pd.DataFrame(columns=["Item", "Received Qty"])
+                if not logs_filtered.empty:
+                    purchased_qty = (
+                        logs_filtered.groupby("Item", as_index=False)["Qty"]
+                        .sum()
+                        .rename(columns={"Qty": "Received Qty"})
+                        .sort_values("Received Qty", ascending=asc)
+                        .head(topn)
+                    )
 
-            # Card 2: Top Selling Product (QTY) -> requisitions dispatched qty
-            st.markdown('<div class="glass-card" style="margin-top:12px;">', unsafe_allow_html=True)
-            st.markdown('<div class="card-title">Top Selling Product (QTY) <span class="meta">from dispatch</span></div>', unsafe_allow_html=True)
-            s = _card_controls("card_selling_qty", allow_view_mode=False)
-            asc = (s["sort"] == "Low → High")
-            topn = int(s["topn"])
+                if dashboard_view == "Tables":
+                    st.dataframe(purchased_qty, use_container_width=True, hide_index=True, height=260)
+                elif dashboard_view == "Bar Charts":
+                    _make_bar_chart(purchased_qty, "Item", "Received Qty")
+                else:
+                    _make_pie_chart(purchased_qty, "Item", "Received Qty", top_n=topn)
+                st.markdown('</div>', unsafe_allow_html=True)
 
-            selling_qty = pd.DataFrame(columns=["Item", "Dispatched Qty"])
-            if not req_filtered.empty:
-                disp_only = req_filtered[req_filtered["Status"].isin(["Dispatched", "Completed"])]
-                selling_qty = (
-                    disp_only.groupby("Item", as_index=False)["DispatchQty"]
-                    .sum()
-                    .rename(columns={"DispatchQty": "Dispatched Qty"})
-                    .sort_values("Dispatched Qty", ascending=asc)
-                    .head(topn)
-                )
+            # --- Top-right: Top Selling Product (QTY) ---
+            with inner_r:
+                st.markdown('<div class="dash-card-white">', unsafe_allow_html=True)
+                st.markdown('<div class="card-title">Top Selling (QTY) <span class="meta">dispatch</span></div>', unsafe_allow_html=True)
+                s = _card_controls("card_selling_qty", allow_view_mode=False)
+                asc = (s["sort"] == "Low → High")
+                topn = int(s["topn"])
 
-            if dashboard_view == "Tables":
-                st.dataframe(selling_qty, use_container_width=True, hide_index=True, height=320)
-            elif dashboard_view == "Bar Charts":
-                _make_bar_chart(selling_qty, "Item", "Dispatched Qty")
-            else:
-                _make_pie_chart(selling_qty, "Item", "Dispatched Qty", top_n=topn)
-            st.markdown('</div>', unsafe_allow_html=True)
+                selling_qty = pd.DataFrame(columns=["Item", "Dispatched Qty"])
+                if not req_filtered.empty:
+                    disp_only = req_filtered[req_filtered["Status"].isin(["Dispatched", "Completed"])]
+                    selling_qty = (
+                        disp_only.groupby("Item", as_index=False)["DispatchQty"]
+                        .sum()
+                        .rename(columns={"DispatchQty": "Dispatched Qty"})
+                        .sort_values("Dispatched Qty", ascending=asc)
+                        .head(topn)
+                    )
 
-            # Card 3: Top Purchased Product (Value)
-            st.markdown('<div class="glass-card" style="margin-top:12px;">', unsafe_allow_html=True)
-            st.markdown('<div class="card-title">Top Purchased Product (Value) <span class="meta">Qty × Price</span></div>', unsafe_allow_html=True)
-            s = _card_controls("card_purchased_val", allow_view_mode=False)
-            asc = (s["sort"] == "Low → High")
-            topn = int(s["topn"])
+                if dashboard_view == "Tables":
+                    st.dataframe(selling_qty, use_container_width=True, hide_index=True, height=260)
+                elif dashboard_view == "Bar Charts":
+                    _make_bar_chart(selling_qty, "Item", "Dispatched Qty")
+                else:
+                    _make_pie_chart(selling_qty, "Item", "Dispatched Qty", top_n=topn)
+                st.markdown('</div>', unsafe_allow_html=True)
 
-            purchased_val = pd.DataFrame(columns=["Item", "Purchase Value"])
-            if not logs_filtered.empty and meta_df is not None and not meta_df.empty:
-                tmp = pd.merge(
-                    logs_filtered.rename(columns={"Item": "Product Name"})[["Product Name", "Qty"]],
-                    meta_df[["Product Name", "Price"]],
-                    on="Product Name",
-                    how="left",
-                )
-                tmp["Qty"] = pd.to_numeric(tmp["Qty"], errors="coerce").fillna(0.0)
-                tmp["Price"] = pd.to_numeric(tmp["Price"], errors="coerce").fillna(0.0)
-                tmp["Purchase Value"] = tmp["Qty"] * tmp["Price"]
-                purchased_val = (
-                    tmp.groupby("Product Name", as_index=False)["Purchase Value"]
-                    .sum()
-                    .rename(columns={"Product Name": "Item"})
-                    .sort_values("Purchase Value", ascending=asc)
-                    .head(topn)
-                )
+            # --- Bottom row ---
+            inner_bl, inner_br = st.columns(2, gap="small")
 
-            if dashboard_view == "Tables":
-                st.dataframe(purchased_val, use_container_width=True, hide_index=True, height=320)
-            elif dashboard_view == "Bar Charts":
-                _make_bar_chart(purchased_val, "Item", "Purchase Value")
-            else:
-                _make_pie_chart(purchased_val, "Item", "Purchase Value", top_n=topn)
-            st.markdown('</div>', unsafe_allow_html=True)
+            # --- Bottom-left: Top Purchased Product (Value) ---
+            with inner_bl:
+                st.markdown('<div class="dash-card-white">', unsafe_allow_html=True)
+                st.markdown('<div class="card-title">Top Purchased (Value) <span class="meta">Qty × Price</span></div>', unsafe_allow_html=True)
+                s = _card_controls("card_purchased_val", allow_view_mode=False)
+                asc = (s["sort"] == "Low → High")
+                topn = int(s["topn"])
 
-            # Card 4: Top Selling Product (Value)
-            st.markdown('<div class="glass-card" style="margin-top:12px;">', unsafe_allow_html=True)
-            st.markdown('<div class="card-title">Top Selling Product (Value) <span class="meta">DispatchQty × Price</span></div>', unsafe_allow_html=True)
-            s = _card_controls("card_selling_val", allow_view_mode=False)
-            asc = (s["sort"] == "Low → High")
-            topn = int(s["topn"])
+                purchased_val = pd.DataFrame(columns=["Item", "Purchase Value"])
+                if not logs_filtered.empty and meta_df is not None and not meta_df.empty:
+                    tmp = pd.merge(
+                        logs_filtered.rename(columns={"Item": "Product Name"})[["Product Name", "Qty"]],
+                        meta_df[["Product Name", "Price"]],
+                        on="Product Name",
+                        how="left",
+                    )
+                    tmp["Qty"] = pd.to_numeric(tmp["Qty"], errors="coerce").fillna(0.0)
+                    tmp["Price"] = pd.to_numeric(tmp["Price"], errors="coerce").fillna(0.0)
+                    tmp["Purchase Value"] = tmp["Qty"] * tmp["Price"]
+                    purchased_val = (
+                        tmp.groupby("Product Name", as_index=False)["Purchase Value"]
+                        .sum()
+                        .rename(columns={"Product Name": "Item"})
+                        .sort_values("Purchase Value", ascending=asc)
+                        .head(topn)
+                    )
 
-            selling_val = pd.DataFrame(columns=["Item", "Sales Value"])
-            if not req_filtered.empty and meta_df is not None and not meta_df.empty:
-                disp_only = req_filtered[req_filtered["Status"].isin(["Dispatched", "Completed"])][["Item", "DispatchQty"]].copy()
-                disp_only["DispatchQty"] = pd.to_numeric(disp_only["DispatchQty"], errors="coerce").fillna(0.0)
+                if dashboard_view == "Tables":
+                    st.dataframe(purchased_val, use_container_width=True, hide_index=True, height=260)
+                elif dashboard_view == "Bar Charts":
+                    _make_bar_chart(purchased_val, "Item", "Purchase Value")
+                else:
+                    _make_pie_chart(purchased_val, "Item", "Purchase Value", top_n=topn)
+                st.markdown('</div>', unsafe_allow_html=True)
 
-                tmp = pd.merge(
-                    disp_only.rename(columns={"Item": "Product Name"}),
-                    meta_df[["Product Name", "Price"]],
-                    on="Product Name",
-                    how="left",
-                )
-                tmp["Price"] = pd.to_numeric(tmp["Price"], errors="coerce").fillna(0.0)
-                tmp["Sales Value"] = tmp["DispatchQty"] * tmp["Price"]
-                selling_val = (
-                    tmp.groupby("Product Name", as_index=False)["Sales Value"]
-                    .sum()
-                    .rename(columns={"Product Name": "Item"})
-                    .sort_values("Sales Value", ascending=asc)
-                    .head(topn)
-                )
+            # --- Bottom-right: Top Selling Product (Value) ---
+            with inner_br:
+                st.markdown('<div class="dash-card-white">', unsafe_allow_html=True)
+                st.markdown('<div class="card-title">Top Selling (Value) <span class="meta">DispatchQty × Price</span></div>', unsafe_allow_html=True)
+                s = _card_controls("card_selling_val", allow_view_mode=False)
+                asc = (s["sort"] == "Low → High")
+                topn = int(s["topn"])
 
-            if dashboard_view == "Tables":
-                st.dataframe(selling_val, use_container_width=True, hide_index=True, height=320)
-            elif dashboard_view == "Bar Charts":
-                _make_bar_chart(selling_val, "Item", "Sales Value")
-            else:
-                _make_pie_chart(selling_val, "Item", "Sales Value", top_n=topn)
-            st.markdown('</div>', unsafe_allow_html=True)
+                selling_val = pd.DataFrame(columns=["Item", "Sales Value"])
+                if not req_filtered.empty and meta_df is not None and not meta_df.empty:
+                    disp_only = req_filtered[req_filtered["Status"].isin(["Dispatched", "Completed"])][["Item", "DispatchQty"]].copy()
+                    disp_only["DispatchQty"] = pd.to_numeric(disp_only["DispatchQty"], errors="coerce").fillna(0.0)
 
-        # ===== Right: Summary KPI + Total Purchase From Supplier =====
+                    tmp = pd.merge(
+                        disp_only.rename(columns={"Item": "Product Name"}),
+                        meta_df[["Product Name", "Price"]],
+                        on="Product Name",
+                        how="left",
+                    )
+                    tmp["Price"] = pd.to_numeric(tmp["Price"], errors="coerce").fillna(0.0)
+                    tmp["Sales Value"] = tmp["DispatchQty"] * tmp["Price"]
+                    selling_val = (
+                        tmp.groupby("Product Name", as_index=False)["Sales Value"]
+                        .sum()
+                        .rename(columns={"Product Name": "Item"})
+                        .sort_values("Sales Value", ascending=asc)
+                        .head(topn)
+                    )
+
+                if dashboard_view == "Tables":
+                    st.dataframe(selling_val, use_container_width=True, hide_index=True, height=260)
+                elif dashboard_view == "Bar Charts":
+                    _make_bar_chart(selling_val, "Item", "Sales Value")
+                else:
+                    _make_pie_chart(selling_val, "Item", "Sales Value", top_n=topn)
+                st.markdown('</div>', unsafe_allow_html=True)
+
+        # ===== Right: Summary KPI (horizontal row) + Total Purchase From Supplier (horiz bar) =====
         with right_col:
-            # Summary card (like screenshot)
+            # --- Compute KPI values (need purchased_val / selling_val from left col) ---
             purchase_total_val = float(purchased_val["Purchase Value"].sum()) if not purchased_val.empty else 0.0
             if purchase_total_val == 0.0 and meta_df is not None:
                 purchase_total_val = float(_sum_purchase_from_logs(logs_filtered, meta_df)["Purchase Amount"].sum())
             sales_total_val = float(selling_val["Sales Value"].sum()) if not selling_val.empty else 0.0
             pnl = sales_total_val - purchase_total_val
-            pnl_class = "good" if pnl >= 0 else "bad"
+            pnl_value_class = "good" if pnl >= 0 else "bad"
+            cur_label = "All" if currency_choice == "All" else currency_choice
 
+            # --- Summary card with horizontal KPI row ---
             st.markdown('<div class="glass-card">', unsafe_allow_html=True)
             st.markdown('<div class="card-title">Summary <span class="meta">live</span></div>', unsafe_allow_html=True)
             _card_controls("card_summary", allow_view_mode=False)
-
-            # KPI grid
-            st.markdown('<div class="kpi-grid">', unsafe_allow_html=True)
             st.markdown(
                 f"""
-                <div class="kpi accent">
-                    <div class="label">Purchase <span>🧾</span></div>
-                    <div class="value">{purchase_total_val:.2f}</div>
-                    <div class="sub">{("All currencies" if currency_choice=="All" else currency_choice)}</div>
-                </div>
-                <div class="kpi">
-                    <div class="label">Sales <span>🪙</span></div>
-                    <div class="value">{sales_total_val:.2f}</div>
-                    <div class="sub">{("All currencies" if currency_choice=="All" else currency_choice)}</div>
-                </div>
-                <div class="kpi {pnl_class}">
-                    <div class="label">P&L <span>📈</span></div>
-                    <div class="value">{pnl:.2f}</div>
-                    <div class="sub">Sales − Purchase</div>
-                </div>
-                <div class="kpi accent">
-                    <div class="label">Stock In Hand (Value) <span>📦</span></div>
-                    <div class="value">{stock_inhand_value:.2f}</div>
-                    <div class="sub">{("All currencies" if currency_choice=="All" else currency_choice)}</div>
+                <div class="dash-kpi-row">
+                    <div class="dash-kpi-box">
+                        <div class="kpi-icon">🧾</div>
+                        <div class="kpi-label">Purchase</div>
+                        <div class="kpi-value">{purchase_total_val:.2f}</div>
+                        <div class="kpi-currency">{cur_label}</div>
+                    </div>
+                    <div class="dash-kpi-box">
+                        <div class="kpi-icon">🪙</div>
+                        <div class="kpi-label">Sales</div>
+                        <div class="kpi-value">{sales_total_val:.2f}</div>
+                        <div class="kpi-currency">{cur_label}</div>
+                    </div>
+                    <div class="dash-kpi-box">
+                        <div class="kpi-icon">📊</div>
+                        <div class="kpi-label">P&amp;L</div>
+                        <div class="kpi-value {pnl_value_class}">{pnl:.2f}</div>
+                        <div class="kpi-currency">Sales − Purchase</div>
+                    </div>
+                    <div class="dash-kpi-box">
+                        <div class="kpi-icon">📦</div>
+                        <div class="kpi-label">Stock In Hand</div>
+                        <div class="kpi-value">{stock_inhand_value:.2f}</div>
+                        <div class="kpi-currency">{cur_label}</div>
+                    </div>
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
-            st.markdown('</div>', unsafe_allow_html=True)  # kpi-grid
             st.markdown('</div>', unsafe_allow_html=True)  # glass-card
 
-            # Total Purchase From Supplier (NEW)
+            # --- Total Purchase From Supplier card ---
             st.markdown('<div class="glass-card" style="margin-top:12px;">', unsafe_allow_html=True)
             st.markdown('<div class="card-title">Total Purchase From Supplier <span class="meta">Qty × Price</span></div>', unsafe_allow_html=True)
             s = _card_controls("card_supplier_purchase", allow_view_mode=False)
@@ -1826,20 +1981,16 @@ with tab_dash:
             if dashboard_view == "Tables":
                 st.dataframe(supplier_df, use_container_width=True, hide_index=True, height=360)
             else:
-                # Render as bar chart even in Pie view for readability (supplier list style)
+                # Horizontal bar chart for both "Bar Charts" and "Pie Charts" view
                 if supplier_df.empty:
                     st.info("📭 No supplier purchase data.")
                 else:
-                    bar = supplier_df.rename(columns={"Supplier": "Supplier", "Purchase Amount": "Amount"})
-                    _make_bar_chart(bar, "Supplier", "Amount")
+                    bar = supplier_df.rename(columns={"Purchase Amount": "Amount"})
+                    _make_horiz_bar_chart(bar, "Supplier", "Amount")
 
             st.markdown('</div>', unsafe_allow_html=True)
 
-            # Export button preserved (uses legacy_top_n datasets)
-            st.markdown('<div class="glass-card" style="margin-top:12px;">', unsafe_allow_html=True)
-            st.markdown('<div class="card-title">Export <span class="meta">dashboard</span></div>', unsafe_allow_html=True)
-
-            # Legacy datasets for export (kept)
+            # --- Export (compute bytes and render in the top placeholder + here as fallback) ---
             export_bytes = _to_excel_bytes(
                 {
                     "KPIs": pd.DataFrame(
@@ -1870,19 +2021,20 @@ with tab_dash:
                     "Stock In Hand Value (Top)": inv_join[["Product Name", "UOM", "Closing Stock", "Price", "Currency", "Stock Value"]].sort_values("Stock Value", ascending=False).head(int(legacy_top_n)) if not inv_join.empty else pd.DataFrame(),
                 }
             )
-            st.download_button(
-                "📥 Export Dashboard (Excel)",
+            # Render export button in the top placeholder (header area)
+            export_placeholder.download_button(
+                "📤 Export Dashboard",
                 data=export_bytes,
                 file_name=f"Warehouse_Dashboard_{start_date}_to_{end_date}.xlsx",
                 use_container_width=True,
-                key="dash_export_excel",
+                key="dash_export_excel_top",
                 type="primary",
             )
             st.markdown(
                 '<div class="dash-note">Note: Value metrics use the selected currency filter (no exchange-rate conversion). Items with Price=0 contribute 0 to value.</div>',
                 unsafe_allow_html=True,
             )
-            st.markdown('</div>', unsafe_allow_html=True)
+
 
 # --- Kanban (lightweight, Streamlit-native) ---
 # True drag & drop across columns needs a component (e.g., streamlit-elements / sortable).
