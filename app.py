@@ -443,6 +443,23 @@ st.markdown(
         margin-bottom: 12px;
     }
 
+    /* ===== Streamlit bordered containers (replaces split div pairs) ===== */
+    [data-testid="stVerticalBlockBorderWrapper"]{
+        background: var(--panel) !important;
+        border: 1px solid var(--border) !important;
+        border-radius: var(--radius) !important;
+        box-shadow: var(--shadow) !important;
+        backdrop-filter: blur(var(--blur));
+        -webkit-backdrop-filter: blur(var(--blur));
+        position: relative;
+        overflow: hidden;
+        margin-bottom: 12px;
+    }
+    [data-testid="stVerticalBlockBorderWrapper"]:hover{
+        border-color: rgba(0,217,255,0.20) !important;
+        box-shadow: 0 18px 65px rgba(0,0,0,0.55) !important;
+    }
+
     /* ===== Dashboard title pill ===== */
     .dash-title-pill{
         display: inline-flex;
@@ -1794,131 +1811,127 @@ with tab_dash:
 
             # --- Top-left: Top Purchased Product (QTY) ---
             with inner_l:
-                st.markdown('<div class="dash-card-white">', unsafe_allow_html=True)
-                st.markdown('<div class="card-title">Top Purchased (QTY) <span class="meta">receipts</span></div>', unsafe_allow_html=True)
-                s = _card_controls("card_purchased_qty", allow_view_mode=False)
-                asc = (s["sort"] == "Low → High")
-                topn = int(s["topn"])
+                with st.container(border=True):
+                    st.markdown('<div class="card-title">Top Purchased (QTY) <span class="meta">receipts</span></div>', unsafe_allow_html=True)
+                    s = _card_controls("card_purchased_qty", allow_view_mode=False)
+                    asc = (s["sort"] == "Low → High")
+                    topn = int(s["topn"])
 
-                purchased_qty = pd.DataFrame(columns=["Item", "Received Qty"])
-                if not logs_filtered.empty:
-                    purchased_qty = (
-                        logs_filtered.groupby("Item", as_index=False)["Qty"]
-                        .sum()
-                        .rename(columns={"Qty": "Received Qty"})
-                        .sort_values("Received Qty", ascending=asc)
-                        .head(topn)
-                    )
+                    purchased_qty = pd.DataFrame(columns=["Item", "Received Qty"])
+                    if not logs_filtered.empty:
+                        purchased_qty = (
+                            logs_filtered.groupby("Item", as_index=False)["Qty"]
+                            .sum()
+                            .rename(columns={"Qty": "Received Qty"})
+                            .sort_values("Received Qty", ascending=asc)
+                            .head(topn)
+                        )
 
-                if dashboard_view == "Tables":
-                    st.dataframe(purchased_qty, use_container_width=True, hide_index=True, height=260)
-                elif dashboard_view == "Bar Charts":
-                    _make_bar_chart(purchased_qty, "Item", "Received Qty")
-                else:
-                    _make_pie_chart(purchased_qty, "Item", "Received Qty", top_n=topn)
-                st.markdown('</div>', unsafe_allow_html=True)
+                    if dashboard_view == "Tables":
+                        st.dataframe(purchased_qty, use_container_width=True, hide_index=True, height=260)
+                    elif dashboard_view == "Bar Charts":
+                        _make_bar_chart(purchased_qty, "Item", "Received Qty")
+                    else:
+                        _make_pie_chart(purchased_qty, "Item", "Received Qty", top_n=topn)
 
             # --- Top-right: Top Selling Product (QTY) ---
             with inner_r:
-                st.markdown('<div class="dash-card-white">', unsafe_allow_html=True)
-                st.markdown('<div class="card-title">Top Selling (QTY) <span class="meta">dispatch</span></div>', unsafe_allow_html=True)
-                s = _card_controls("card_selling_qty", allow_view_mode=False)
-                asc = (s["sort"] == "Low → High")
-                topn = int(s["topn"])
+                with st.container(border=True):
+                    st.markdown('<div class="card-title">Top Selling (QTY) <span class="meta">dispatch</span></div>', unsafe_allow_html=True)
+                    s = _card_controls("card_selling_qty", allow_view_mode=False)
+                    asc = (s["sort"] == "Low → High")
+                    topn = int(s["topn"])
 
-                selling_qty = pd.DataFrame(columns=["Item", "Dispatched Qty"])
-                if not req_filtered.empty:
-                    disp_only = req_filtered[req_filtered["Status"].isin(["Dispatched", "Completed"])]
-                    selling_qty = (
-                        disp_only.groupby("Item", as_index=False)["DispatchQty"]
-                        .sum()
-                        .rename(columns={"DispatchQty": "Dispatched Qty"})
-                        .sort_values("Dispatched Qty", ascending=asc)
-                        .head(topn)
-                    )
+                    selling_qty = pd.DataFrame(columns=["Item", "Dispatched Qty"])
+                    if not req_filtered.empty:
+                        disp_only = req_filtered[req_filtered["Status"].isin(["Dispatched", "Completed"])]
+                        selling_qty = (
+                            disp_only.groupby("Item", as_index=False)["DispatchQty"]
+                            .sum()
+                            .rename(columns={"DispatchQty": "Dispatched Qty"})
+                            .sort_values("Dispatched Qty", ascending=asc)
+                            .head(topn)
+                        )
 
-                if dashboard_view == "Tables":
-                    st.dataframe(selling_qty, use_container_width=True, hide_index=True, height=260)
-                elif dashboard_view == "Bar Charts":
-                    _make_bar_chart(selling_qty, "Item", "Dispatched Qty")
-                else:
-                    _make_pie_chart(selling_qty, "Item", "Dispatched Qty", top_n=topn)
-                st.markdown('</div>', unsafe_allow_html=True)
+                    if dashboard_view == "Tables":
+                        st.dataframe(selling_qty, use_container_width=True, hide_index=True, height=260)
+                    elif dashboard_view == "Bar Charts":
+                        _make_bar_chart(selling_qty, "Item", "Dispatched Qty")
+                    else:
+                        _make_pie_chart(selling_qty, "Item", "Dispatched Qty", top_n=topn)
 
             # --- Bottom row ---
             inner_bl, inner_br = st.columns(2, gap="small")
 
             # --- Bottom-left: Top Purchased Product (Value) ---
             with inner_bl:
-                st.markdown('<div class="dash-card-white">', unsafe_allow_html=True)
-                st.markdown('<div class="card-title">Top Purchased (Value) <span class="meta">Qty × Price</span></div>', unsafe_allow_html=True)
-                s = _card_controls("card_purchased_val", allow_view_mode=False)
-                asc = (s["sort"] == "Low → High")
-                topn = int(s["topn"])
+                with st.container(border=True):
+                    st.markdown('<div class="card-title">Top Purchased (Value) <span class="meta">Qty × Price</span></div>', unsafe_allow_html=True)
+                    s = _card_controls("card_purchased_val", allow_view_mode=False)
+                    asc = (s["sort"] == "Low → High")
+                    topn = int(s["topn"])
 
-                purchased_val = pd.DataFrame(columns=["Item", "Purchase Value"])
-                if not logs_filtered.empty and meta_df is not None and not meta_df.empty:
-                    tmp = pd.merge(
-                        logs_filtered.rename(columns={"Item": "Product Name"})[["Product Name", "Qty"]],
-                        meta_df[["Product Name", "Price"]],
-                        on="Product Name",
-                        how="left",
-                    )
-                    tmp["Qty"] = pd.to_numeric(tmp["Qty"], errors="coerce").fillna(0.0)
-                    tmp["Price"] = pd.to_numeric(tmp["Price"], errors="coerce").fillna(0.0)
-                    tmp["Purchase Value"] = tmp["Qty"] * tmp["Price"]
-                    purchased_val = (
-                        tmp.groupby("Product Name", as_index=False)["Purchase Value"]
-                        .sum()
-                        .rename(columns={"Product Name": "Item"})
-                        .sort_values("Purchase Value", ascending=asc)
-                        .head(topn)
-                    )
+                    purchased_val = pd.DataFrame(columns=["Item", "Purchase Value"])
+                    if not logs_filtered.empty and meta_df is not None and not meta_df.empty:
+                        tmp = pd.merge(
+                            logs_filtered.rename(columns={"Item": "Product Name"})[["Product Name", "Qty"]],
+                            meta_df[["Product Name", "Price"]],
+                            on="Product Name",
+                            how="left",
+                        )
+                        tmp["Qty"] = pd.to_numeric(tmp["Qty"], errors="coerce").fillna(0.0)
+                        tmp["Price"] = pd.to_numeric(tmp["Price"], errors="coerce").fillna(0.0)
+                        tmp["Purchase Value"] = tmp["Qty"] * tmp["Price"]
+                        purchased_val = (
+                            tmp.groupby("Product Name", as_index=False)["Purchase Value"]
+                            .sum()
+                            .rename(columns={"Product Name": "Item"})
+                            .sort_values("Purchase Value", ascending=asc)
+                            .head(topn)
+                        )
 
-                if dashboard_view == "Tables":
-                    st.dataframe(purchased_val, use_container_width=True, hide_index=True, height=260)
-                elif dashboard_view == "Bar Charts":
-                    _make_bar_chart(purchased_val, "Item", "Purchase Value")
-                else:
-                    _make_pie_chart(purchased_val, "Item", "Purchase Value", top_n=topn)
-                st.markdown('</div>', unsafe_allow_html=True)
+                    if dashboard_view == "Tables":
+                        st.dataframe(purchased_val, use_container_width=True, hide_index=True, height=260)
+                    elif dashboard_view == "Bar Charts":
+                        _make_bar_chart(purchased_val, "Item", "Purchase Value")
+                    else:
+                        _make_pie_chart(purchased_val, "Item", "Purchase Value", top_n=topn)
 
             # --- Bottom-right: Top Selling Product (Value) ---
             with inner_br:
-                st.markdown('<div class="dash-card-white">', unsafe_allow_html=True)
-                st.markdown('<div class="card-title">Top Selling (Value) <span class="meta">DispatchQty × Price</span></div>', unsafe_allow_html=True)
-                s = _card_controls("card_selling_val", allow_view_mode=False)
-                asc = (s["sort"] == "Low → High")
-                topn = int(s["topn"])
+                with st.container(border=True):
+                    st.markdown('<div class="card-title">Top Selling (Value) <span class="meta">DispatchQty × Price</span></div>', unsafe_allow_html=True)
+                    s = _card_controls("card_selling_val", allow_view_mode=False)
+                    asc = (s["sort"] == "Low → High")
+                    topn = int(s["topn"])
 
-                selling_val = pd.DataFrame(columns=["Item", "Sales Value"])
-                if not req_filtered.empty and meta_df is not None and not meta_df.empty:
-                    disp_only = req_filtered[req_filtered["Status"].isin(["Dispatched", "Completed"])][["Item", "DispatchQty"]].copy()
-                    disp_only["DispatchQty"] = pd.to_numeric(disp_only["DispatchQty"], errors="coerce").fillna(0.0)
+                    selling_val = pd.DataFrame(columns=["Item", "Sales Value"])
+                    if not req_filtered.empty and meta_df is not None and not meta_df.empty:
+                        disp_only = req_filtered[req_filtered["Status"].isin(["Dispatched", "Completed"])][["Item", "DispatchQty"]].copy()
+                        disp_only["DispatchQty"] = pd.to_numeric(disp_only["DispatchQty"], errors="coerce").fillna(0.0)
 
-                    tmp = pd.merge(
-                        disp_only.rename(columns={"Item": "Product Name"}),
-                        meta_df[["Product Name", "Price"]],
-                        on="Product Name",
-                        how="left",
-                    )
-                    tmp["Price"] = pd.to_numeric(tmp["Price"], errors="coerce").fillna(0.0)
-                    tmp["Sales Value"] = tmp["DispatchQty"] * tmp["Price"]
-                    selling_val = (
-                        tmp.groupby("Product Name", as_index=False)["Sales Value"]
-                        .sum()
-                        .rename(columns={"Product Name": "Item"})
-                        .sort_values("Sales Value", ascending=asc)
-                        .head(topn)
-                    )
+                        tmp = pd.merge(
+                            disp_only.rename(columns={"Item": "Product Name"}),
+                            meta_df[["Product Name", "Price"]],
+                            on="Product Name",
+                            how="left",
+                        )
+                        tmp["Price"] = pd.to_numeric(tmp["Price"], errors="coerce").fillna(0.0)
+                        tmp["Sales Value"] = tmp["DispatchQty"] * tmp["Price"]
+                        selling_val = (
+                            tmp.groupby("Product Name", as_index=False)["Sales Value"]
+                            .sum()
+                            .rename(columns={"Product Name": "Item"})
+                            .sort_values("Sales Value", ascending=asc)
+                            .head(topn)
+                        )
 
-                if dashboard_view == "Tables":
-                    st.dataframe(selling_val, use_container_width=True, hide_index=True, height=260)
-                elif dashboard_view == "Bar Charts":
-                    _make_bar_chart(selling_val, "Item", "Sales Value")
-                else:
-                    _make_pie_chart(selling_val, "Item", "Sales Value", top_n=topn)
-                st.markdown('</div>', unsafe_allow_html=True)
+                    if dashboard_view == "Tables":
+                        st.dataframe(selling_val, use_container_width=True, hide_index=True, height=260)
+                    elif dashboard_view == "Bar Charts":
+                        _make_bar_chart(selling_val, "Item", "Sales Value")
+                    else:
+                        _make_pie_chart(selling_val, "Item", "Sales Value", top_n=topn)
 
         # ===== Right: Summary KPI (horizontal row) + Total Purchase From Supplier (horiz bar) =====
         with right_col:
@@ -1932,64 +1945,61 @@ with tab_dash:
             cur_label = "All" if currency_choice == "All" else currency_choice
 
             # --- Summary card with horizontal KPI row ---
-            st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-            st.markdown('<div class="card-title">Summary <span class="meta">live</span></div>', unsafe_allow_html=True)
-            _card_controls("card_summary", allow_view_mode=False)
-            st.markdown(
-                f"""
-                <div class="dash-kpi-row">
-                    <div class="dash-kpi-box">
-                        <div class="kpi-icon">🧾</div>
-                        <div class="kpi-label">Purchase</div>
-                        <div class="kpi-value">{purchase_total_val:.2f}</div>
-                        <div class="kpi-currency">{cur_label}</div>
+            with st.container(border=True):
+                st.markdown('<div class="card-title">Summary <span class="meta">live</span></div>', unsafe_allow_html=True)
+                _card_controls("card_summary", allow_view_mode=False)
+                st.markdown(
+                    f"""
+                    <div class="dash-kpi-row">
+                        <div class="dash-kpi-box">
+                            <div class="kpi-icon">🧾</div>
+                            <div class="kpi-label">Purchase</div>
+                            <div class="kpi-value">{purchase_total_val:.2f}</div>
+                            <div class="kpi-currency">{cur_label}</div>
+                        </div>
+                        <div class="dash-kpi-box">
+                            <div class="kpi-icon">🪙</div>
+                            <div class="kpi-label">Sales</div>
+                            <div class="kpi-value">{sales_total_val:.2f}</div>
+                            <div class="kpi-currency">{cur_label}</div>
+                        </div>
+                        <div class="dash-kpi-box">
+                            <div class="kpi-icon">📊</div>
+                            <div class="kpi-label">P&amp;L</div>
+                            <div class="kpi-value {pnl_value_class}">{pnl:.2f}</div>
+                            <div class="kpi-currency">Sales − Purchase</div>
+                        </div>
+                        <div class="dash-kpi-box">
+                            <div class="kpi-icon">📦</div>
+                            <div class="kpi-label">Stock In Hand</div>
+                            <div class="kpi-value">{stock_inhand_value:.2f}</div>
+                            <div class="kpi-currency">{cur_label}</div>
+                        </div>
                     </div>
-                    <div class="dash-kpi-box">
-                        <div class="kpi-icon">🪙</div>
-                        <div class="kpi-label">Sales</div>
-                        <div class="kpi-value">{sales_total_val:.2f}</div>
-                        <div class="kpi-currency">{cur_label}</div>
-                    </div>
-                    <div class="dash-kpi-box">
-                        <div class="kpi-icon">📊</div>
-                        <div class="kpi-label">P&amp;L</div>
-                        <div class="kpi-value {pnl_value_class}">{pnl:.2f}</div>
-                        <div class="kpi-currency">Sales − Purchase</div>
-                    </div>
-                    <div class="dash-kpi-box">
-                        <div class="kpi-icon">📦</div>
-                        <div class="kpi-label">Stock In Hand</div>
-                        <div class="kpi-value">{stock_inhand_value:.2f}</div>
-                        <div class="kpi-currency">{cur_label}</div>
-                    </div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-            st.markdown('</div>', unsafe_allow_html=True)  # glass-card
+                    """,
+                    unsafe_allow_html=True,
+                )
 
             # --- Total Purchase From Supplier card ---
-            st.markdown('<div class="glass-card" style="margin-top:12px;">', unsafe_allow_html=True)
-            st.markdown('<div class="card-title">Total Purchase From Supplier <span class="meta">Qty × Price</span></div>', unsafe_allow_html=True)
-            s = _card_controls("card_supplier_purchase", allow_view_mode=False)
-            asc = (s["sort"] == "Low → High")
-            topn = int(s["topn"])
+            with st.container(border=True):
+                st.markdown('<div class="card-title">Total Purchase From Supplier <span class="meta">Qty × Price</span></div>', unsafe_allow_html=True)
+                s = _card_controls("card_supplier_purchase", allow_view_mode=False)
+                asc = (s["sort"] == "Low → High")
+                topn = int(s["topn"])
 
-            supplier_df = _sum_purchase_from_logs(logs_filtered, meta_df)
-            if not supplier_df.empty:
-                supplier_df = supplier_df.sort_values("Purchase Amount", ascending=asc).head(topn)
+                supplier_df = _sum_purchase_from_logs(logs_filtered, meta_df)
+                if not supplier_df.empty:
+                    supplier_df = supplier_df.sort_values("Purchase Amount", ascending=asc).head(topn)
 
-            if dashboard_view == "Tables":
-                st.dataframe(supplier_df, use_container_width=True, hide_index=True, height=360)
-            else:
-                # Horizontal bar chart for both "Bar Charts" and "Pie Charts" view
-                if supplier_df.empty:
-                    st.info("📭 No supplier purchase data.")
+                if dashboard_view == "Tables":
+                    st.dataframe(supplier_df, use_container_width=True, hide_index=True, height=360)
                 else:
-                    bar = supplier_df.rename(columns={"Purchase Amount": "Amount"})
-                    _make_horiz_bar_chart(bar, "Supplier", "Amount")
-
-            st.markdown('</div>', unsafe_allow_html=True)
+                    # Horizontal bar chart for both "Bar Charts" and "Pie Charts" view
+                    if supplier_df.empty:
+                        st.info("📭 No supplier purchase data.")
+                    else:
+                        bar = supplier_df.rename(columns={"Purchase Amount": "Amount"})
+                        _make_horiz_bar_chart(bar, "Supplier", "Amount")
 
             # --- Export (compute bytes and render in the top placeholder + here as fallback) ---
             # FIX 2: Restored truncated dictionary values for export sheets
@@ -2087,71 +2097,70 @@ col_map = dict(zip(columns, [kc1, kc2, kc3, kc4]))
 
 for col_name in columns:
     with col_map[col_name]:
-        st.markdown(
-            f'<div class="glass-card"><div class="card-title">{col_name} '
-            f'<span class="meta">{len(st.session_state.kanban[col_name])} cards</span></div>',
-            unsafe_allow_html=True,
-        )
-
-        cards = st.session_state.kanban[col_name]
-
-        if not cards:
+        with st.container(border=True):
             st.markdown(
-                '<div class="skeleton"></div><div class="skeleton" style="width:70%"></div>',
+                f'<div class="card-title">{col_name} '
+                f'<span class="meta">{len(st.session_state.kanban[col_name])} cards</span></div>',
                 unsafe_allow_html=True,
             )
-        else:
-            # Render each card + ONE "Move to" control per card (unique widget key)
-            for c in cards:
-                # --- Defensive: ensure each card is a dict ---
-                card = c if isinstance(c, dict) else {"id": str(uuid.uuid4())[:8], "title": str(c), "note": ""}
 
-                title = str(card.get("title", "") or "").strip()
-                cid = str(card.get("id", "") or "").strip() or str(uuid.uuid4())[:8]
-                note = str(card.get("note", "") or "").strip()
+            cards = st.session_state.kanban[col_name]
 
+            if not cards:
                 st.markdown(
-                    f"""
-                    <div class="kpi" style="margin-bottom:10px;">
-                        <div class="label">{title}
-                            <span style="color:rgba(136,146,176,0.9); font-size:11px;">#{cid}</span>
-                        </div>
-                        <div class="sub">{note}</div>
-                    </div>
-                    """,
+                    '<div class="skeleton"></div><div class="skeleton" style="width:70%"></div>',
                     unsafe_allow_html=True,
                 )
+            else:
+                # Render each card + ONE "Move to" control per card (unique widget key)
+                for c in cards:
+                    # --- Defensive: ensure each card is a dict ---
+                    card = c if isinstance(c, dict) else {"id": str(uuid.uuid4())[:8], "title": str(c), "note": ""}
 
-                # Move control (unique key per column+card)
-                new_col = st.selectbox(
-                    "Move to",
-                    options=columns,
-                    index=columns.index(col_name),
-                    key=f"kan_move_{col_name}_{cid}",
-                    label_visibility="collapsed",
-                )
+                    title = str(card.get("title", "") or "").strip()
+                    cid = str(card.get("id", "") or "").strip() or str(uuid.uuid4())[:8]
+                    note = str(card.get("note", "") or "").strip()
 
-                if new_col != col_name:
-                    # Remove from current column (by id, safely)
-                    st.session_state.kanban[col_name] = [
-                        x
-                        for x in st.session_state.kanban[col_name]
-                        if (x.get("id") if isinstance(x, dict) else None) != cid
-                    ]
-                    # Add to new column
-                    st.session_state.kanban[new_col].append(card)
-                    st.rerun()
-
-        # Add card
-        with st.expander("➕ Add card", expanded=False):
-            title = st.text_input("Title", key=f"kan_new_title_{col_name}")
-            note = st.text_input("Note", key=f"kan_new_note_{col_name}")
-            if st.button("Add", key=f"kan_add_{col_name}", use_container_width=True):
-                if title.strip():
-                    st.session_state.kanban[col_name].append(
-                        {"id": str(uuid.uuid4())[:8], "title": title.strip(), "note": note.strip()}
+                    st.markdown(
+                        f"""
+                        <div class="kpi" style="margin-bottom:10px;">
+                            <div class="label">{title}
+                                <span style="color:rgba(136,146,176,0.9); font-size:11px;">#{cid}</span>
+                            </div>
+                            <div class="sub">{note}</div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
                     )
-                    st.balloons()
-                    st.rerun()
 
-        st.markdown("</div>", unsafe_allow_html=True)
+                    # Move control (unique key per column+card)
+                    new_col = st.selectbox(
+                        "Move to",
+                        options=columns,
+                        index=columns.index(col_name),
+                        key=f"kan_move_{col_name}_{cid}",
+                        label_visibility="collapsed",
+                    )
+
+                    if new_col != col_name:
+                        # Remove from current column (by id, safely)
+                        st.session_state.kanban[col_name] = [
+                            x
+                            for x in st.session_state.kanban[col_name]
+                            if (x.get("id") if isinstance(x, dict) else None) != cid
+                        ]
+                        # Add to new column
+                        st.session_state.kanban[new_col].append(card)
+                        st.rerun()
+
+            # Add card
+            with st.expander("➕ Add card", expanded=False):
+                title = st.text_input("Title", key=f"kan_new_title_{col_name}")
+                note = st.text_input("Note", key=f"kan_new_note_{col_name}")
+                if st.button("Add", key=f"kan_add_{col_name}", use_container_width=True):
+                    if title.strip():
+                        st.session_state.kanban[col_name].append(
+                            {"id": str(uuid.uuid4())[:8], "title": title.strip(), "note": note.strip()}
+                        )
+                        st.balloons()
+                        st.rerun()
