@@ -1344,29 +1344,63 @@ def _sum_purchase_from_logs(logs_filtered: pd.DataFrame, meta_df: pd.DataFrame):
     )
     return out
 
+@st.dialog("📦 Bulk Upload", width="large")
+def bulk_upload_modal():
+    st.subheader("📦 Inventory Master Sync")
+    inv_file = st.file_uploader("Upload XLSX/CSV", type=["csv", "xlsx"], key="inv_upload_modal")
+    if inv_file:
+        try:
+            raw = pd.read_excel(inv_file, skiprows=4, header=None) if inv_file.name.endswith(".xlsx") else pd.read_csv(inv_file, skiprows=4, header=None)
+            new_inv = pd.DataFrame()
+            new_inv["Product Name"] = raw[1]
+            new_inv["UOM"] = raw[2]
+            new_inv["Opening Stock"] = pd.to_numeric(raw[3], errors="coerce").fillna(0.0)
+            for i in range(1, 32):
+                new_inv[str(i)] = 0.0
+            new_inv["Total Received"] = 0.0
+            new_inv["Consumption"] = 0.0
+            new_inv["Closing Stock"] = new_inv["Opening Stock"]
+            new_inv["Category"] = "General"
+            if st.button("🚀 Push Inventory", type="primary", use_container_width=True, key="push_inv_modal"):
+                save_to_sheet(new_inv.dropna(subset=["Product Name"]), "persistent_inventory")
+                st.rerun()
+        except Exception as e:
+            st.error(f"Error: {e}")
+
+    st.divider()
+
+    st.subheader("📞 Supplier Metadata Sync")
+    meta_file = st.file_uploader("Upload Product Data", type=["csv", "xlsx"], key="meta_upload_modal")
+    if meta_file:
+        try:
+            new_meta = pd.read_excel(meta_file) if meta_file.name.endswith(".xlsx") else pd.read_csv(meta_file)
+            if st.button("🚀 Push Metadata", type="primary", use_container_width=True, key="push_meta_modal"):
+                save_to_sheet(new_meta, "product_metadata")
+                st.rerun()
+        except Exception as e:
+            st.error(f"Error: {e}")
+
 # --- INITIALIZATION ---
 if "inventory" not in st.session_state:
     st.session_state.inventory = load_from_sheet("persistent_inventory")
 if "log_page" not in st.session_state:
     st.session_state.log_page = 0
 
-# --- HEADER ---
-st.markdown(
-    """
+# --- HEADER ROW ---
+hdr_left, hdr_mid, hdr_right = st.columns([4, 1, 1])
+with hdr_left:
+    st.markdown("""
     <div class="wp-header">
         <div>
             <div class="title">Warehouse Pro Cloud</div>
             <div class="subtitle">v8.6 · Calm operational command center</div>
         </div>
-        <div class="wp-pill">☁️ Live · Google Sheets</div>
     </div>
-    """,
-    unsafe_allow_html=True,
-)
-
-# --- Refresh row (kept, but styled by global CSS) ---
-col_refresh, col_empty = st.columns([1, 5])
-with col_refresh:
+    """, unsafe_allow_html=True)
+with hdr_mid:
+    if st.button("📦 Bulk Upload", use_container_width=True, key="bulk_upload_btn"):
+        bulk_upload_modal()
+with hdr_right:
     if st.button("🔄 Refresh Data", use_container_width=True, key="refresh_all"):
         st.cache_data.clear()
         st.rerun()
@@ -1374,10 +1408,6 @@ with col_refresh:
 # ===================== SIDEBAR =====================
 with st.sidebar:
     st.markdown('<h2 class="sidebar-title">☁️ Data Management</h2>', unsafe_allow_html=True)
-
-    if st.button("🔄 Refresh All Data", use_container_width=True, key="refresh_sidebar"):
-        st.cache_data.clear()
-        st.rerun()
 
     st.divider()
 
