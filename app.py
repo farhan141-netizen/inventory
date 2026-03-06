@@ -1135,6 +1135,54 @@ with col_refresh:
         st.cache_data.clear()
         st.rerun()
 
+# ===================== SIDEBAR =====================
+with st.sidebar:
+    st.markdown('<h2 class="sidebar-title">☁️ Data Management</h2>', unsafe_allow_html=True)
+
+    if st.button("🔄 Refresh All Data", use_container_width=True, key="refresh_sidebar"):
+        st.cache_data.clear()
+        st.rerun()
+
+    st.divider()
+
+    with st.expander("📦 Inventory Master Sync"):
+        inv_file = st.file_uploader("Upload XLSX/CSV", type=["csv", "xlsx"], key="inv_upload")
+        if inv_file:
+            try:
+                raw = pd.read_excel(inv_file, skiprows=4, header=None) if inv_file.name.endswith(".xlsx") else pd.read_csv(inv_file, skiprows=4, header=None)
+                new_inv = pd.DataFrame()
+                new_inv["Product Name"] = raw[1]
+                new_inv["UOM"] = raw[2]
+                new_inv["Opening Stock"] = pd.to_numeric(raw[3], errors="coerce").fillna(0.0)
+                for i in range(1, 32):
+                    new_inv[str(i)] = 0.0
+                new_inv["Total Received"] = 0.0
+                new_inv["Consumption"] = 0.0
+                new_inv["Closing Stock"] = new_inv["Opening Stock"]
+                new_inv["Category"] = "General"
+
+                if st.button("🚀 Push Inventory", type="primary", use_container_width=True, key="push_inv"):
+                    save_to_sheet(new_inv.dropna(subset=["Product Name"]), "persistent_inventory")
+                    st.rerun()
+            except Exception as e:
+                st.error(f"Error: {e}")
+
+    with st.expander("📞 Supplier Metadata Sync"):
+        meta_file = st.file_uploader("Upload Product Data", type=["csv", "xlsx"], key="meta_upload")
+        if meta_file:
+            try:
+                new_meta = pd.read_excel(meta_file) if meta_file.name.endswith(".xlsx") else pd.read_csv(meta_file)
+                if st.button("🚀 Push Metadata", type="primary", use_container_width=True, key="push_meta"):
+                    save_to_sheet(new_meta, "product_metadata")
+                    st.rerun()
+            except Exception as e:
+                st.error(f"Error: {e}")
+
+    st.markdown("<hr>", unsafe_allow_html=True)
+    if st.button("🗑️ Clear Cache", use_container_width=True, key="clear_cache"):
+        st.cache_data.clear()
+        st.rerun()
+
 tab_ops, tab_req, tab_sup, tab_dash = st.tabs(["📊 Operations", "🚚 Requisitions", "📞 Suppliers", "📊 Dashboard"])
 
 # ===================== OPERATIONS TAB =====================
@@ -1723,9 +1771,12 @@ with tab_dash:
         # ===== Right: Summary KPI + Total Purchase From Supplier =====
         with right_col:
             # Summary card (like screenshot)
-            purchase_total_val = float(purchased_val["Purchase Value"].sum()) if not purchased_val.empty else float(_sum_purchase_from_logs(logs_filtered, meta_df)["Purchase Amount"].sum()) if meta_df is not None else 0.0
+            purchase_total_val = float(purchased_val["Purchase Value"].sum()) if not purchased_val.empty else 0.0
+            if purchase_total_val == 0.0 and meta_df is not None:
+                purchase_total_val = float(_sum_purchase_from_logs(logs_filtered, meta_df)["Purchase Amount"].sum())
             sales_total_val = float(selling_val["Sales Value"].sum()) if not selling_val.empty else 0.0
             pnl = sales_total_val - purchase_total_val
+            pnl_class = "good" if pnl >= 0 else "bad"
 
             st.markdown('<div class="glass-card">', unsafe_allow_html=True)
             st.markdown('<div class="card-title">Summary <span class="meta">live</span></div>', unsafe_allow_html=True)
@@ -1745,7 +1796,7 @@ with tab_dash:
                     <div class="value">{sales_total_val:.2f}</div>
                     <div class="sub">{("All currencies" if currency_choice=="All" else currency_choice)}</div>
                 </div>
-                <div class="kpi {"good" if pnl>=0 else "bad"}">
+                <div class="kpi {pnl_class}">
                     <div class="label">P&L <span>📈</span></div>
                     <div class="value">{pnl:.2f}</div>
                     <div class="sub">Sales − Purchase</div>
@@ -1935,50 +1986,3 @@ for col_name in columns:
                     st.rerun()
 
         st.markdown("</div>", unsafe_allow_html=True)
-# ===================== SIDEBAR =====================
-with st.sidebar:
-    st.markdown('<h2 class="sidebar-title">☁️ Data Management</h2>', unsafe_allow_html=True)
-
-    if st.button("🔄 Refresh All Data", use_container_width=True, key="refresh_sidebar"):
-        st.cache_data.clear()
-        st.rerun()
-
-    st.divider()
-
-    with st.expander("📦 Inventory Master Sync"):
-        inv_file = st.file_uploader("Upload XLSX/CSV", type=["csv", "xlsx"], key="inv_upload")
-        if inv_file:
-            try:
-                raw = pd.read_excel(inv_file, skiprows=4, header=None) if inv_file.name.endswith(".xlsx") else pd.read_csv(inv_file, skiprows=4, header=None)
-                new_inv = pd.DataFrame()
-                new_inv["Product Name"] = raw[1]
-                new_inv["UOM"] = raw[2]
-                new_inv["Opening Stock"] = pd.to_numeric(raw[3], errors="coerce").fillna(0.0)
-                for i in range(1, 32):
-                    new_inv[str(i)] = 0.0
-                new_inv["Total Received"] = 0.0
-                new_inv["Consumption"] = 0.0
-                new_inv["Closing Stock"] = new_inv["Opening Stock"]
-                new_inv["Category"] = "General"
-
-                if st.button("🚀 Push Inventory", type="primary", use_container_width=True, key="push_inv"):
-                    save_to_sheet(new_inv.dropna(subset=["Product Name"]), "persistent_inventory")
-                    st.rerun()
-            except Exception as e:
-                st.error(f"Error: {e}")
-
-    with st.expander("📞 Supplier Metadata Sync"):
-        meta_file = st.file_uploader("Upload Product Data", type=["csv", "xlsx"], key="meta_upload")
-        if meta_file:
-            try:
-                new_meta = pd.read_excel(meta_file) if meta_file.name.endswith(".xlsx") else pd.read_csv(meta_file)
-                if st.button("🚀 Push Metadata", type="primary", use_container_width=True, key="push_meta"):
-                    save_to_sheet(new_meta, "product_metadata")
-                    st.rerun()
-            except Exception as e:
-                st.error(f"Error: {e}")
-
-    st.markdown("<hr>", unsafe_allow_html=True)
-    if st.button("🗑️ Clear Cache", use_container_width=True, key="clear_cache"):
-        st.cache_data.clear()
-        st.rerun()
