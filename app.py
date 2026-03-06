@@ -1142,7 +1142,8 @@ def _make_horiz_bar_chart(df, label_col, value_col):
         chart_df = chart_df.set_index(label_col)
         st.bar_chart(chart_df, y=value_col)
 
-
+# FIX 1: Added missing function definition line
+def _init_card_state(card_id, default_sort="High → Low", default_topn=10, default_view="Quantity"):
     """
     Per-card settings stored in st.session_state.dash_cards[card_id]
     """
@@ -1991,6 +1992,22 @@ with tab_dash:
             st.markdown('</div>', unsafe_allow_html=True)
 
             # --- Export (compute bytes and render in the top placeholder + here as fallback) ---
+            # FIX 2: Restored truncated dictionary values for export sheets
+            stock_qty_top = (
+                inv_join[["Product Name", "UOM", "Closing Stock"]]
+                .sort_values("Closing Stock", ascending=False)
+                .head(int(legacy_top_n))
+                if not inv_join.empty
+                else pd.DataFrame(columns=["Product Name", "UOM", "Closing Stock"])
+            )
+            stock_val_top = (
+                inv_join[["Product Name", "UOM", "Closing Stock", "Price", "Currency", "Stock Value"]]
+                .sort_values("Stock Value", ascending=False)
+                .head(int(legacy_top_n))
+                if not inv_join.empty
+                else pd.DataFrame(columns=["Product Name", "UOM", "Closing Stock", "Price", "Currency", "Stock Value"])
+            )
+
             export_bytes = _to_excel_bytes(
                 {
                     "KPIs": pd.DataFrame(
@@ -2017,8 +2034,8 @@ with tab_dash:
                     "Top Purchased Value": purchased_val,
                     "Top Selling Value": selling_val,
                     "Supplier Purchase": supplier_df,
-                    "Stock In Hand Qty (Top)": inv_join[["Product Name", "UOM", "Closing Stock"]].sort_values("Closing Stock", ascending=False).head(int(legacy_top_n)) if not inv_join.empty else pd.DataFrame(),
-                    "Stock In Hand Value (Top)": inv_join[["Product Name", "UOM", "Closing Stock", "Price", "Currency", "Stock Value"]].sort_values("Stock Value", ascending=False).head(int(legacy_top_n)) if not inv_join.empty else pd.DataFrame(),
+                    "Stock In Hand Qty (Top)": stock_qty_top,
+                    "Stock In Hand Value (Top)": stock_val_top,
                 }
             )
             # Render export button in the top placeholder (header area)
