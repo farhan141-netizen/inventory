@@ -1106,11 +1106,11 @@ def _make_pie_chart(df, label_col, value_col, top_n=None):
             height=420,
             autosize=True,
             legend=dict(
-                orientation="h",
-                yanchor="bottom",
-                y=-0.15,
-                xanchor="center",
-                x=0.5,
+                orientation="v",
+                yanchor="middle",
+                y=0.5,
+                xanchor="left",
+                x=1.02,
                 font=dict(size=10, color="rgba(136,146,176,0.95)"),
             ),
         )
@@ -1180,11 +1180,12 @@ def _init_card_state(card_id, default_sort="High → Low", default_topn=10, defa
             "sort": default_sort,
             "topn": default_topn,
             "view": default_view,  # Quantity/Value (used by some cards)
+            "chart_type": "Pie Chart",
         }
 
-def _card_controls(card_id: str, allow_view_mode: bool = False):
+def _card_controls(card_id: str, allow_view_mode: bool = False, allow_chart_type: bool = False):
     """
-    Kebab menu per card (⋮): sort, item count, optional view mode.
+    Kebab menu per card (⋮): sort, item count, optional view mode, optional chart type.
     """
     _init_card_state(card_id)
     state = st.session_state.dash_cards[card_id]
@@ -1210,6 +1211,15 @@ def _card_controls(card_id: str, allow_view_mode: bool = False):
                 index=0 if state["view"] == "Quantity" else 1,
                 key=f"{card_id}_view",
             )
+        if allow_chart_type:
+            _chart_opts = ["Pie Chart", "Table", "Bar Chart"]
+            _chart_idx = _chart_opts.index(state["chart_type"]) if state["chart_type"] in _chart_opts else 0
+            state["chart_type"] = st.selectbox(
+                "Chart type",
+                options=_chart_opts,
+                index=_chart_idx,
+                key=f"{card_id}_chart_type",
+            )
 
         if st.button("Refresh card", key=f"{card_id}_refresh_btn"):
             st.cache_data.clear()
@@ -1220,6 +1230,8 @@ def _card_controls(card_id: str, allow_view_mode: bool = False):
     state["topn"] = st.session_state.get(f"{card_id}_topn", state["topn"])
     if allow_view_mode:
         state["view"] = st.session_state.get(f"{card_id}_view", state["view"])
+    if allow_chart_type:
+        state["chart_type"] = st.session_state.get(f"{card_id}_chart_type", state["chart_type"])
 
     st.session_state.dash_cards[card_id] = state
     return state
@@ -1804,9 +1816,10 @@ with tab_dash:
             with inner_l:
                 with st.container(border=True):
                     st.markdown('<div class="card-title">Top Purchased (QTY) <span class="meta">receipts</span></div>', unsafe_allow_html=True)
-                    s = _card_controls("card_purchased_qty", allow_view_mode=False)
+                    s = _card_controls("card_purchased_qty", allow_view_mode=False, allow_chart_type=True)
                     asc = (s["sort"] == "Low → High")
                     topn = int(s["topn"])
+                    chart_type = s.get("chart_type", "Pie Chart")
 
                     purchased_qty = pd.DataFrame(columns=["Item", "Received Qty"])
                     if not logs_filtered.empty:
@@ -1818,9 +1831,9 @@ with tab_dash:
                             .head(topn)
                         )
 
-                    if dashboard_view == "Tables":
+                    if chart_type == "Table":
                         st.dataframe(purchased_qty, use_container_width=True, hide_index=True, height=260)
-                    elif dashboard_view == "Bar Charts":
+                    elif chart_type == "Bar Chart":
                         _make_bar_chart(purchased_qty, "Item", "Received Qty")
                     else:
                         _make_pie_chart(purchased_qty, "Item", "Received Qty", top_n=topn)
@@ -1829,9 +1842,10 @@ with tab_dash:
             with inner_r:
                 with st.container(border=True):
                     st.markdown('<div class="card-title">Top Selling (QTY) <span class="meta">dispatch</span></div>', unsafe_allow_html=True)
-                    s = _card_controls("card_selling_qty", allow_view_mode=False)
+                    s = _card_controls("card_selling_qty", allow_view_mode=False, allow_chart_type=True)
                     asc = (s["sort"] == "Low → High")
                     topn = int(s["topn"])
+                    chart_type = s.get("chart_type", "Pie Chart")
 
                     selling_qty = pd.DataFrame(columns=["Item", "Dispatched Qty"])
                     if not req_filtered.empty:
@@ -1844,9 +1858,9 @@ with tab_dash:
                             .head(topn)
                         )
 
-                    if dashboard_view == "Tables":
+                    if chart_type == "Table":
                         st.dataframe(selling_qty, use_container_width=True, hide_index=True, height=260)
-                    elif dashboard_view == "Bar Charts":
+                    elif chart_type == "Bar Chart":
                         _make_bar_chart(selling_qty, "Item", "Dispatched Qty")
                     else:
                         _make_pie_chart(selling_qty, "Item", "Dispatched Qty", top_n=topn)
@@ -1858,9 +1872,10 @@ with tab_dash:
             with inner_bl:
                 with st.container(border=True):
                     st.markdown('<div class="card-title">Top Purchased (Value) <span class="meta">Qty × Price</span></div>', unsafe_allow_html=True)
-                    s = _card_controls("card_purchased_val", allow_view_mode=False)
+                    s = _card_controls("card_purchased_val", allow_view_mode=False, allow_chart_type=True)
                     asc = (s["sort"] == "Low → High")
                     topn = int(s["topn"])
+                    chart_type = s.get("chart_type", "Pie Chart")
 
                     purchased_val = pd.DataFrame(columns=["Item", "Purchase Value"])
                     if not logs_filtered.empty and meta_df is not None and not meta_df.empty:
@@ -1881,9 +1896,9 @@ with tab_dash:
                             .head(topn)
                         )
 
-                    if dashboard_view == "Tables":
+                    if chart_type == "Table":
                         st.dataframe(purchased_val, use_container_width=True, hide_index=True, height=260)
-                    elif dashboard_view == "Bar Charts":
+                    elif chart_type == "Bar Chart":
                         _make_bar_chart(purchased_val, "Item", "Purchase Value")
                     else:
                         _make_pie_chart(purchased_val, "Item", "Purchase Value", top_n=topn)
@@ -1892,9 +1907,10 @@ with tab_dash:
             with inner_br:
                 with st.container(border=True):
                     st.markdown('<div class="card-title">Top Selling (Value) <span class="meta">DispatchQty × Price</span></div>', unsafe_allow_html=True)
-                    s = _card_controls("card_selling_val", allow_view_mode=False)
+                    s = _card_controls("card_selling_val", allow_view_mode=False, allow_chart_type=True)
                     asc = (s["sort"] == "Low → High")
                     topn = int(s["topn"])
+                    chart_type = s.get("chart_type", "Pie Chart")
 
                     selling_val = pd.DataFrame(columns=["Item", "Sales Value"])
                     if not req_filtered.empty and meta_df is not None and not meta_df.empty:
@@ -1917,9 +1933,9 @@ with tab_dash:
                             .head(topn)
                         )
 
-                    if dashboard_view == "Tables":
+                    if chart_type == "Table":
                         st.dataframe(selling_val, use_container_width=True, hide_index=True, height=260)
-                    elif dashboard_view == "Bar Charts":
+                    elif chart_type == "Bar Chart":
                         _make_bar_chart(selling_val, "Item", "Sales Value")
                     else:
                         _make_pie_chart(selling_val, "Item", "Sales Value", top_n=topn)
@@ -1974,18 +1990,21 @@ with tab_dash:
             # --- Total Purchase From Supplier card ---
             with st.container(border=True):
                 st.markdown('<div class="card-title">Total Purchase From Supplier <span class="meta">Qty × Price</span></div>', unsafe_allow_html=True)
-                s = _card_controls("card_supplier_purchase", allow_view_mode=False)
+                s = _card_controls("card_supplier_purchase", allow_view_mode=False, allow_chart_type=True)
                 asc = (s["sort"] == "Low → High")
                 topn = int(s["topn"])
+                chart_type = s.get("chart_type", "Pie Chart")
 
                 supplier_df = _sum_purchase_from_logs(logs_filtered, meta_df)
                 if not supplier_df.empty:
                     supplier_df = supplier_df.sort_values("Purchase Amount", ascending=asc).head(topn)
 
-                if dashboard_view == "Tables":
+                if chart_type == "Table":
                     st.dataframe(supplier_df, use_container_width=True, hide_index=True, height=360)
+                elif chart_type == "Pie Chart":
+                    _make_pie_chart(supplier_df, "Supplier", "Purchase Amount", top_n=topn)
                 else:
-                    # Horizontal bar chart for both "Bar Charts" and "Pie Charts" view
+                    # Bar Chart (horizontal bar chart for this supplier card)
                     if supplier_df.empty:
                         st.info("📭 No supplier purchase data.")
                     else:
