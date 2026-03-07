@@ -1695,6 +1695,16 @@ with tab_req:
                                                 all_reqs.at[idx, "DispatchQty"] = dispatch_qty_input
                                                 all_reqs.at[idx, "Status"] = "Dispatched"
                                                 all_reqs.at[idx, "Timestamp"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                                # Update warehouse consumption
+                                                inv_df = st.session_state.inventory
+                                                inv_match = inv_df[inv_df["Product Name"] == item_name]
+                                                if not inv_match.empty:
+                                                    inv_idx = inv_match.index[0]
+                                                    current_consumption = pd.to_numeric(inv_df.at[inv_idx, "Consumption"], errors="coerce") or 0.0
+                                                    inv_df.at[inv_idx, "Consumption"] = current_consumption + dispatch_qty_input
+                                                    inv_df = recalculate_item(inv_df, item_name)
+                                                    st.session_state.inventory = inv_df
+                                                    save_to_sheet(inv_df, "persistent_inventory")
                                                 if save_to_sheet(all_reqs, "restaurant_requisitions"):
                                                     st.success(f"✅ Dispatched {dispatch_qty_input}")
                                                     st.cache_data.clear()
@@ -1707,16 +1717,49 @@ with tab_req:
                                             st.rerun()
 
                                 elif status == "Dispatched":
-                                    c1, c2 = st.columns(2)
-                                    with c1:
-                                        st.caption(f"✅ Dispatched: {dispatch_qty} | Rem: {remaining_qty}")
-                                    with c2:
-                                        if st.button("🚩 Follow-up", key=f"followup_{idx}", use_container_width=True):
-                                            all_reqs.at[idx, "FollowupSent"] = True
-                                            all_reqs.at[idx, "Timestamp"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                                            save_to_sheet(all_reqs, "restaurant_requisitions")
-                                            st.success("✅ Follow-up sent!")
-                                            st.rerun()
+                                    if remaining_qty > 0:
+                                        c1, c2, c3 = st.columns([2, 1, 1])
+                                        with c1:
+                                            additional_dispatch = st.number_input(
+                                                "Additional Dispatch",
+                                                min_value=0.0,
+                                                max_value=min(remaining_qty, available_qty),
+                                                value=min(remaining_qty, available_qty),
+                                                key=f"add_dispatch_{req_id}",
+                                                label_visibility="collapsed",
+                                            )
+                                        with c2:
+                                            if st.button("🚀 Send More", key=f"add_dispatch_btn_{req_id}", use_container_width=True):
+                                                if additional_dispatch > 0:
+                                                    new_total_dispatch = dispatch_qty + additional_dispatch
+                                                    all_reqs.at[idx, "DispatchQty"] = new_total_dispatch
+                                                    new_remaining = req_qty - new_total_dispatch
+                                                    if new_remaining <= 0:
+                                                        all_reqs.at[idx, "Status"] = "Completed"
+                                                    all_reqs.at[idx, "Timestamp"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                                    # Update warehouse consumption
+                                                    inv_df = st.session_state.inventory
+                                                    inv_match = inv_df[inv_df["Product Name"] == item_name]
+                                                    if not inv_match.empty:
+                                                        inv_idx = inv_match.index[0]
+                                                        current_consumption = pd.to_numeric(inv_df.at[inv_idx, "Consumption"], errors="coerce") or 0.0
+                                                        inv_df.at[inv_idx, "Consumption"] = current_consumption + additional_dispatch
+                                                        inv_df = recalculate_item(inv_df, item_name)
+                                                        st.session_state.inventory = inv_df
+                                                        save_to_sheet(inv_df, "persistent_inventory")
+                                                    if save_to_sheet(all_reqs, "restaurant_requisitions"):
+                                                        st.success(f"✅ Dispatched additional {additional_dispatch}")
+                                                        st.cache_data.clear()
+                                                        st.rerun()
+                                        with c3:
+                                            if st.button("🚩 Follow-up", key=f"followup_{idx}", use_container_width=True):
+                                                all_reqs.at[idx, "FollowupSent"] = True
+                                                all_reqs.at[idx, "Timestamp"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                                save_to_sheet(all_reqs, "restaurant_requisitions")
+                                                st.success("✅ Follow-up sent!")
+                                                st.rerun()
+                                    else:
+                                        st.caption(f"✅ Fully Dispatched: {dispatch_qty}")
             else:
                 st.info("📭 No valid dates found in requisitions")
         else:
