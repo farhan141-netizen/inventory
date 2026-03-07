@@ -84,19 +84,25 @@ def recalculate_inventory(df):
     """Recalculate totals and closing stock"""
     day_cols = [str(i) for i in range(1, 32)]
     
+    # Ensure all day columns are numeric
+    for col in day_cols:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
+    
+    # Ensure Opening Stock and Consumption are numeric
+    df["Opening Stock"] = pd.to_numeric(df["Opening Stock"], errors='coerce').fillna(0.0)
+    df["Consumption"] = pd.to_numeric(df["Consumption"], errors='coerce').fillna(0.0)
+    
     for idx, row in df.iterrows():
         # Calculate total received from day columns
         total_received = 0.0
         for col in day_cols:
             if col in df.columns:
-                try:
-                    total_received += float(df.at[idx, col]) if pd.notna(df.at[idx, col]) else 0.0
-                except:
-                    pass
+                total_received += float(df.at[idx, col]) if pd.notna(df.at[idx, col]) else 0.0
         
         df.at[idx, "Total Received"] = total_received
         
-        # Calculate closing stock
+        # Calculate closing stock: Opening + Received - Consumption
         opening = float(df.at[idx, "Opening Stock"]) if pd.notna(df.at[idx, "Opening Stock"]) else 0.0
         consumption = float(df.at[idx, "Consumption"]) if pd.notna(df.at[idx, "Consumption"]) else 0.0
         df.at[idx, "Closing Stock"] = opening + total_received - consumption
@@ -154,6 +160,8 @@ st.markdown("""
 # --- INITIALIZATION ---
 if 'inventory' not in st.session_state:
     st.session_state.inventory = load_from_sheet("rest_01_inventory")
+    if not st.session_state.inventory.empty:
+        st.session_state.inventory = recalculate_inventory(st.session_state.inventory)
 
 if 'cart' not in st.session_state:
     st.session_state.cart = []
@@ -218,7 +226,14 @@ with tab_inv:
         
         with col1:
             if st.button("💾 Save Daily Count", type="primary", use_container_width=True, key="save_inv"):
-                st.session_state.inventory.update(edited_inv)
+                # Get the edited values and update the main inventory
+                for col in edited_inv.columns:
+                    if col not in ["Product Name", "Category", "UOM", "Opening Stock", "Total Received", "Closing Stock", "Variance"]:
+                        # Only update editable columns
+                        for edited_idx in edited_inv.index:
+                            if edited_idx in st.session_state.inventory.index:
+                                st.session_state.inventory.at[edited_idx, col] = edited_inv.at[edited_idx, col]
+                
                 st.session_state.inventory = recalculate_inventory(st.session_state.inventory)
                 if save_to_sheet(st.session_state.inventory, "rest_01_inventory"):
                     st.success("✅ Inventory saved!")
@@ -513,23 +528,29 @@ with tab_received:
                                         today = datetime.datetime.now().day
                                         day_col = str(today)
                                         
-                                        inv_idx = st.session_state.inventory[st.session_state.inventory["Product Name"] == item_name].index
-                                        if len(inv_idx) > 0:
-                                            idx_val = inv_idx[0]
+                                        # Normalize item name for matching
+                                        item_name_clean = item_name.strip().lower()
+                                        inv_match = st.session_state.inventory[
+                                            st.session_state.inventory["Product Name"].str.strip().str.lower() == item_name_clean
+                                        ]
+                                        
+                                        if not inv_match.empty:
+                                            idx_val = inv_match.index[0]
                                             
-                                            # Add to today's day column
-                                            current_day_qty = st.session_state.inventory.at[idx_val, day_col]
-                                            st.session_state.inventory.at[idx_val, day_col] = float(current_day_qty if pd.notna(current_day_qty) else 0) + dispatch_qty
+                                            # Ensure day column is numeric
+                                            if day_col in st.session_state.inventory.columns:
+                                                st.session_state.inventory[day_col] = pd.to_numeric(
+                                                    st.session_state.inventory[day_col], errors='coerce'
+                                                ).fillna(0.0)
                                             
-                                            # Update Total Received and Closing Stock
-                                            current_total = st.session_state.inventory.at[idx_val, "Total Received"]
-                                            st.session_state.inventory.at[idx_val, "Total Received"] = float(current_total) + dispatch_qty
+                                            # Add dispatched qty to today's day column
+                                            current_day_qty = float(st.session_state.inventory.at[idx_val, day_col]) if pd.notna(st.session_state.inventory.at[idx_val, day_col]) else 0.0
+                                            st.session_state.inventory.at[idx_val, day_col] = current_day_qty + dispatch_qty
                                             
-                                            # Recalculate closing stock
-                                            opening = float(st.session_state.inventory.at[idx_val, "Opening Stock"])
-                                            total_received = float(st.session_state.inventory.at[idx_val, "Total Received"])
-                                            consumption = float(st.session_state.inventory.at[idx_val, "Consumption"])
-                                            st.session_state.inventory.at[idx_val, "Closing Stock"] = opening + total_received - consumption
+                                            # Recalculate all totals for this item
+                                            st.session_state.inventory = recalculate_inventory(st.session_state.inventory)
+                                        else:
+                                            st.warning(f"⚠️ Item '{item_name}' not found in inventory. Cannot update stock.")
                                         
                                         # Save both
                                         save_to_sheet(all_reqs, "restaurant_requisitions")
