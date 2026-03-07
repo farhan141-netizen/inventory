@@ -317,7 +317,7 @@ with tab_req:
                 
             if col2.button("🚀 Submit", type="primary", use_container_width=True, key="submit_req"):
                 try:
-                    all_reqs = load_from_sheet("restaurant_requisitions", ["ReqID", "Restaurant", "Item", "Qty", "Status", "DispatchQty", "Timestamp", "RequestedDate", "FollowupSent"])
+                    all_reqs = load_from_sheet("restaurant_requisitions", ["ReqID", "Restaurant", "Item", "Qty", "Status", "DispatchQty", "AcceptedQty", "Timestamp", "RequestedDate", "FollowupSent"])
                     
                     st.info(f"📤 Sending {len(st.session_state.cart)} items...")
                     
@@ -329,6 +329,7 @@ with tab_req:
                             "Qty": float(item['qty']),
                             "Status": "Pending",
                             "DispatchQty": 0.0,
+                            "AcceptedQty": 0.0,
                             "Timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                             "RequestedDate": datetime.datetime.now().strftime("%Y-%m-%d"),
                             "FollowupSent": False
@@ -469,7 +470,15 @@ with tab_received:
     
     if not all_reqs.empty:
         all_reqs["Remaining"] = all_reqs["Qty"] - all_reqs["DispatchQty"]
-        my_dispatched = all_reqs[(all_reqs["Restaurant"] == "Restaurant 01") & (all_reqs["Status"] == "Dispatched")]
+        # Add AcceptedQty column if missing
+        if "AcceptedQty" not in all_reqs.columns:
+            all_reqs["AcceptedQty"] = 0.0
+        all_reqs["AcceptedQty"] = pd.to_numeric(all_reqs["AcceptedQty"], errors='coerce').fillna(0.0)
+        my_dispatched = all_reqs[
+            (all_reqs["Restaurant"] == "Restaurant 01") &
+            (all_reqs["Status"] == "Dispatched") &
+            (all_reqs["AcceptedQty"] < all_reqs["DispatchQty"])
+        ]
         
         if not my_dispatched.empty:
             # Convert RequestedDate safely
@@ -498,9 +507,11 @@ with tab_received:
                             req_qty = float(row["Qty"])
                             req_id = row["ReqID"]
                             remaining_qty = req_qty - dispatch_qty
+                            accepted_qty = float(row.get("AcceptedQty", 0)) if pd.notna(row.get("AcceptedQty", 0)) else 0.0
+                            accept_amount = dispatch_qty - accepted_qty
                             
                             # Color based on whether all items are received
-                            status_indicator = "🟢" if remaining_qty == 0 else "🟡"
+                            status_indicator = "🟢" if accept_amount <= 0 else "🟡"
                             
                             # Create item box with buttons inside
                             col_item, col_accept, col_reject = st.columns([2, 1, 1])
@@ -510,62 +521,67 @@ with tab_received:
                                 <div class="req-item status-dispatched">
                                     <div class="req-item-content">
                                         <b>{status_indicator} {item_name}</b><br>
-                                        Req:{req_qty} | Got:{dispatch_qty} | Rem:{remaining_qty}
+                                        Req:{req_qty} | Dispatched:{dispatch_qty} | Accepted:{accepted_qty} | To Accept:{accept_amount}
                                     </div>
                                 </div>
                                 """, unsafe_allow_html=True)
                             
                             with col_accept:
-                                if st.button(f"✅", key=f"accept_{recv_idx}_{req_id}", use_container_width=True, help="Accept & Add to Inventory"):
-                                    try:
-                                        # Keep status as Dispatched if partial, Completed if all received
-                                        if remaining_qty <= 0:
-                                            all_reqs.at[original_idx, "Status"] = "Completed"
-                                        else:
-                                            all_reqs.at[original_idx, "Status"] = "Dispatched"
-                                        
-                                        # Add to restaurant inventory - add to today's column
-                                        today = datetime.datetime.now().day
-                                        day_col = str(today)
-                                        
-                                        # Normalize item name for matching
-                                        item_name_clean = item_name.strip().lower()
-                                        inv_match = st.session_state.inventory[
-                                            st.session_state.inventory["Product Name"].str.strip().str.lower() == item_name_clean
-                                        ]
-                                        
-                                        if not inv_match.empty:
-                                            idx_val = inv_match.index[0]
+                                if accept_amount <= 0:
+                                    st.caption("✅ Accepted")
+                                else:
+                                    if st.button(f"✅", key=f"accept_{recv_idx}_{req_id}", use_container_width=True, help="Accept & Add to Inventory"):
+                                        try:
+                                            # Mark this dispatch as accepted
+                                            all_reqs.at[original_idx, "AcceptedQty"] = dispatch_qty
                                             
-                                            # Ensure day column is numeric
-                                            if day_col in st.session_state.inventory.columns:
-                                                st.session_state.inventory[day_col] = pd.to_numeric(
-                                                    st.session_state.inventory[day_col], errors='coerce'
-                                                ).fillna(0.0)
+                                            # If fully dispatched AND accepted, mark complete
+                                            if remaining_qty <= 0:
+                                                all_reqs.at[original_idx, "Status"] = "Completed"
                                             
-                                            # Add dispatched qty to today's day column
-                                            current_day_qty = float(st.session_state.inventory.at[idx_val, day_col]) if pd.notna(st.session_state.inventory.at[idx_val, day_col]) else 0.0
-                                            st.session_state.inventory.at[idx_val, day_col] = current_day_qty + dispatch_qty
+                                            # Add to restaurant inventory - add to today's column
+                                            today = datetime.datetime.now().day
+                                            day_col = str(today)
                                             
-                                            # Recalculate all totals for this item
-                                            st.session_state.inventory = recalculate_inventory(st.session_state.inventory)
-                                        else:
-                                            st.warning(f"⚠️ Item '{item_name}' not found in inventory. Cannot update stock.")
-                                        
-                                        # Save both
-                                        save_to_sheet(all_reqs, "restaurant_requisitions")
-                                        save_to_sheet(st.session_state.inventory, "rest_01_inventory")
-                                        
-                                        st.success(f"✅ Added Day {today}!")
-                                        st.rerun()
-                                    except Exception as e:
-                                        st.error(f"❌ Error: {str(e)}")
+                                            # Normalize item name for matching
+                                            item_name_clean = item_name.strip().lower()
+                                            inv_match = st.session_state.inventory[
+                                                st.session_state.inventory["Product Name"].str.strip().str.lower() == item_name_clean
+                                            ]
+                                            
+                                            if not inv_match.empty:
+                                                idx_val = inv_match.index[0]
+                                                
+                                                # Ensure day column is numeric
+                                                if day_col in st.session_state.inventory.columns:
+                                                    st.session_state.inventory[day_col] = pd.to_numeric(
+                                                        st.session_state.inventory[day_col], errors='coerce'
+                                                    ).fillna(0.0)
+                                                
+                                                # Add only unaccepted amount to today's day column
+                                                current_day_qty = float(st.session_state.inventory.at[idx_val, day_col]) if pd.notna(st.session_state.inventory.at[idx_val, day_col]) else 0.0
+                                                st.session_state.inventory.at[idx_val, day_col] = current_day_qty + accept_amount
+                                                
+                                                # Recalculate all totals for this item
+                                                st.session_state.inventory = recalculate_inventory(st.session_state.inventory)
+                                            else:
+                                                st.warning(f"⚠️ Item '{item_name}' not found in inventory. Cannot update stock.")
+                                            
+                                            # Save both
+                                            save_to_sheet(all_reqs, "restaurant_requisitions")
+                                            save_to_sheet(st.session_state.inventory, "rest_01_inventory")
+                                            
+                                            st.success(f"✅ Accepted {accept_amount} units!")
+                                            st.rerun()
+                                        except Exception as e:
+                                            st.error(f"❌ Error: {str(e)}")
                             
                             with col_reject:
                                 if st.button(f"❌", key=f"reject_{recv_idx}_{req_id}", use_container_width=True, help="Reject"):
                                     try:
                                         all_reqs.at[original_idx, "Status"] = "Pending"
                                         all_reqs.at[original_idx, "DispatchQty"] = 0
+                                        all_reqs.at[original_idx, "AcceptedQty"] = 0.0
                                         save_to_sheet(all_reqs, "restaurant_requisitions")
                                         st.warning(f"❌ Returned to pending")
                                         st.rerun()
