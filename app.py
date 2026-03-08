@@ -1,12 +1,12 @@
 import streamlit as st
-from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 import datetime
 import uuid
 import io
 
 # --- CLOUD CONNECTION ---
-conn = st.connection("gsheets", type=GSheetsConnection)
+from st_supabase_connection import SupabaseConnection
+conn = st.connection("supabase", type=SupabaseConnection)
 
 def clean_dataframe(df):
     """Ensures unique columns and removes ghost columns from Google Sheets"""
@@ -19,29 +19,32 @@ def clean_dataframe(df):
     return df
 
 @st.cache_data(ttl=60)
-def load_from_sheet(worksheet_name, default_cols=None):
-    """Safely load and clean data from Google Sheets with caching"""
+def load_from_sheet(table_name, default_cols=None):
+    """Safely load data from Supabase"""
     try:
-        df = conn.read(worksheet=worksheet_name, ttl="1m")
-        df = clean_dataframe(df)
-        if df is None or df.empty:
+        # Replaces conn.read()
+        response = conn.table(table_name).select("*").execute()
+        df = pd.DataFrame(response.data)
+        if df.empty:
             return pd.DataFrame(columns=default_cols) if default_cols else pd.DataFrame()
         return df
     except Exception:
         return pd.DataFrame(columns=default_cols) if default_cols else pd.DataFrame()
 
-def save_to_sheet(df, worksheet_name):
-    """Save cleaned data to Google Sheets and clear cache"""
+def save_to_sheet(df, table_name):
+    """Save data to Supabase using upsert (Update or Insert)"""
     if df is None or df.empty:
         return False
-
-    df = clean_dataframe(df)
     try:
-        conn.update(worksheet=worksheet_name, data=df)
+        # Convert dataframe to list of dictionaries for Supabase
+        data_dict = df.to_dict(orient="records")
+        # 'upsert' prevents breaking the game by updating existing rows 
+        # based on their primary key (e.g., 'Product Name' or 'LogID')
+        conn.table(table_name).upsert(data_dict).execute()
         st.cache_data.clear()
         return True
     except Exception as e:
-        st.error(f"Error saving to {worksheet_name}: {str(e)}")
+        st.error(f"Error saving to {table_name}: {str(e)}")
         return False
 
 # --- PAGE CONFIG ---
