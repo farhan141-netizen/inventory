@@ -1,51 +1,68 @@
 import streamlit as st
+from st_supabase_connection import SupabaseConnection
 import pandas as pd
 import datetime
 import uuid
 import io
+import numpy as np
 
 # --- CLOUD CONNECTION ---
-from st_supabase_connection import SupabaseConnection
+# This replaces the old GSheetsConnection
 conn = st.connection("supabase", type=SupabaseConnection)
 
 def clean_dataframe(df):
-    """Ensures unique columns and removes ghost columns from Google Sheets"""
+    """Ensures unique columns, removes ghost columns, and formats for Supabase"""
     if df is None or df.empty:
         return df
+    
+    # Drop unnamed/duplicate columns
     df = df.loc[:, ~df.columns.str.contains("^Unnamed", na=False)]
     df = df.dropna(axis=1, how="all")
     df = df.loc[:, ~df.columns.duplicated()]
     df.columns = [str(col).strip() for col in df.columns]
+    
+    # CRITICAL SUPABASE FIX: Convert Pandas NaNs/Empty cells to 'None' (Null)
+    # Supabase will crash if it receives 'NaN' from a dataframe
+    df = df.replace({np.nan: None})
+    
     return df
 
 @st.cache_data(ttl=60)
-def load_from_sheet(table_name, default_cols=None):
-    """Safely load data from Supabase"""
+def load_from_sheet(worksheet_name, default_cols=None):
+    """Safely load and clean data from Supabase with caching"""
     try:
         # Replaces conn.read()
-        response = conn.table(table_name).select("*").execute()
+        response = conn.table(worksheet_name).select("*").execute()
         df = pd.DataFrame(response.data)
-        if df.empty:
+        
+        df = clean_dataframe(df)
+        if df is None or df.empty:
             return pd.DataFrame(columns=default_cols) if default_cols else pd.DataFrame()
         return df
-    except Exception:
+    except Exception as e:
+        st.error(f"Database Read Error ({worksheet_name}): {e}")
         return pd.DataFrame(columns=default_cols) if default_cols else pd.DataFrame()
 
-def save_to_sheet(df, table_name):
-    """Save data to Supabase using upsert (Update or Insert)"""
+def save_to_sheet(df, worksheet_name):
+    """Save cleaned data to Supabase and clear cache"""
     if df is None or df.empty:
         return False
+
+    df = clean_dataframe(df)
     try:
         # Convert dataframe to list of dictionaries for Supabase
         data_dict = df.to_dict(orient="records")
+        
         # 'upsert' prevents breaking the game by updating existing rows 
-        # based on their primary key (e.g., 'Product Name' or 'LogID')
-        conn.table(table_name).upsert(data_dict).execute()
+        # based on their Primary Key, or inserting new ones.
+        conn.table(worksheet_name).upsert(data_dict).execute()
+        
         st.cache_data.clear()
         return True
     except Exception as e:
-        st.error(f"Error saving to {table_name}: {str(e)}")
+        st.error(f"Database Save Error ({worksheet_name}): {str(e)}")
         return False
+
 
 # --- PAGE CONFIG ---
 st.set_page_config(page_title="Warehouse Pro Cloud v8.6", layout="wide", initial_sidebar_state="expanded")
