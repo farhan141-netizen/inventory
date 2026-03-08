@@ -1,6 +1,6 @@
 streamlit
 pandas
-st-gsheets-connection
+st-supabase-connection
 openpyxl
 xlsxwriter
 plotly>=5.0.0
