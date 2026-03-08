@@ -42,9 +42,22 @@ def clean_dataframe(df):
     df.rename(columns=lambda x: col_map.get(x.lower(), x), inplace=True)
     
     # CRITICAL SUPABASE FIX: Convert Pandas NaNs/Empty cells to 'None' (Null)
-    # Supabase will crash if it receives 'NaN' from a dataframe
     df = df.replace({np.nan: None})
-    
+
+    # ✅ NEW: Cast known integer columns to int to avoid bigint type errors
+    int_cols = ["Day"]
+    for col in int_cols:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0).astype(int)
+
+    # ✅ NEW: Cast Qty to float then to int only if it's a whole number
+    # This handles both activity_logs.Qty (bigint) and inventory day cols (float8)
+    if "Qty" in df.columns:
+        df["Qty"] = pd.to_numeric(df["Qty"], errors="coerce").fillna(0)
+        # Only cast to int if ALL values are whole numbers (safe for bigint tables)
+        if (df["Qty"] % 1 == 0).all():
+            df["Qty"] = df["Qty"].astype(int)
+
     return df
 
 @st.cache_data(ttl=60)
