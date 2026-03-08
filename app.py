@@ -19,6 +19,8 @@ def clean_dataframe(df):
     df = df.loc[:, ~df.columns.str.contains("^Unnamed", na=False)]
     df = df.dropna(axis=1, how="all")
     df = df.loc[:, ~df.columns.duplicated()]
+    
+    # Clean whitespace from column names to prevent KeyErrors during merges
     df.columns = [str(col).strip() for col in df.columns]
     
     # CRITICAL SUPABASE FIX: Convert Pandas NaNs/Empty cells to 'None' (Null)
@@ -36,8 +38,16 @@ def load_from_sheet(worksheet_name, default_cols=None):
         df = pd.DataFrame(response.data)
         
         df = clean_dataframe(df)
+        
+        # Ensure the expected columns exist even if the database table is empty
+        if default_cols:
+            for col in default_cols:
+                if col not in df.columns:
+                    df[col] = None
+                    
         if df is None or df.empty:
             return pd.DataFrame(columns=default_cols) if default_cols else pd.DataFrame()
+            
         return df
     except Exception as e:
         st.error(f"Database Read Error ({worksheet_name}): {e}")
