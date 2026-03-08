@@ -20,11 +20,21 @@ def clean_dataframe(df):
     df = df.dropna(axis=1, how="all")
     df = df.loc[:, ~df.columns.duplicated()]
     
-    # Clean whitespace from column names to prevent KeyErrors during merges
+    # Fix Column Casing & Whitespace: 
+    # Supabase sometimes returns lowercase names or names with spaces.
+    # This loop ensures they match the expectations of your merge logic.
+    col_map = {
+        'product name': 'Product Name',
+        'logid': 'LogID',
+        'item': 'Item',
+        'qty': 'Qty',
+        'uom': 'UOM'
+    }
+    
     df.columns = [str(col).strip() for col in df.columns]
+    df.rename(columns=lambda x: col_map.get(x.lower(), x), inplace=True)
     
     # CRITICAL SUPABASE FIX: Convert Pandas NaNs/Empty cells to 'None' (Null)
-    # Supabase will crash if it receives 'NaN' from a dataframe
     df = df.replace({np.nan: None})
     
     return df
@@ -33,25 +43,28 @@ def clean_dataframe(df):
 def load_from_sheet(worksheet_name, default_cols=None):
     """Safely load and clean data from Supabase with caching"""
     try:
-        # Replaces conn.read()
         response = conn.table(worksheet_name).select("*").execute()
         df = pd.DataFrame(response.data)
         
+        # If Supabase returns an empty list, create a dataframe with default columns
+        if df.empty and default_cols:
+            return pd.DataFrame(columns=default_cols)
+            
         df = clean_dataframe(df)
         
-        # Ensure the expected columns exist even if the database table is empty
+        # Ensure the specific columns needed for merges exist to prevent KeyErrors
         if default_cols:
             for col in default_cols:
                 if col not in df.columns:
                     df[col] = None
                     
-        if df is None or df.empty:
-            return pd.DataFrame(columns=default_cols) if default_cols else pd.DataFrame()
-            
         return df
     except Exception as e:
-        st.error(f"Database Read Error ({worksheet_name}): {e}")
-        return pd.DataFrame(columns=default_cols) if default_cols else pd.DataFrame()
+        # Instead of showing a raw error, return an empty dataframe with columns 
+        # so the rest of the app doesn't crash on merges.
+        if default_cols:
+            return pd.DataFrame(columns=default_cols)
+        return pd.DataFrame()
 
 def save_to_sheet(df, worksheet_name):
     """Save cleaned data to Supabase and clear cache"""
@@ -60,18 +73,14 @@ def save_to_sheet(df, worksheet_name):
 
     df = clean_dataframe(df)
     try:
-        # Convert dataframe to list of dictionaries for Supabase
         data_dict = df.to_dict(orient="records")
-        
-        # 'upsert' prevents breaking the game by updating existing rows 
-        # based on their Primary Key, or inserting new ones.
         conn.table(worksheet_name).upsert(data_dict).execute()
-        
         st.cache_data.clear()
         return True
     except Exception as e:
         st.error(f"Database Save Error ({worksheet_name}): {str(e)}")
         return False
+
 
 
 # --- PAGE CONFIG ---
