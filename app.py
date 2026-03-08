@@ -1063,7 +1063,7 @@ def _prepare_metadata():
 
 def _prepare_inventory(inv_df):
     if inv_df is None or inv_df.empty:
-        return inv_df
+        return pd.DataFrame(columns=["Product Name", "Category", "Closing Stock", "UOM"])
     inv_df = inv_df.copy()
     for col in ["Product Name", "Category", "Closing Stock", "UOM"]:
         if col not in inv_df.columns:
@@ -1948,8 +1948,9 @@ with tab_dash:
         if meta_all is None or meta_all.empty:
             meta_all = pd.DataFrame(columns=["Product Name", "UOM", "Category", "Price", "Currency", "Supplier"])
 
+        _inv_for_merge = inv_df if (inv_df is not None and not inv_df.empty) else pd.DataFrame(columns=["Product Name", "Category", "Closing Stock", "UOM"])
         inv_join = pd.merge(
-            inv_df if inv_df is not None else pd.DataFrame(),
+            _inv_for_merge,
             meta_all[["Product Name", "Category", "UOM"]].drop_duplicates("Product Name"),
             on="Product Name",
             how="left",
