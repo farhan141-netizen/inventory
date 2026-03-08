@@ -21,7 +21,8 @@ def clean_dataframe(df):
     df = df.loc[:, ~df.columns.duplicated()]
     
     # Fix Column Casing & Whitespace: 
-    # This is the most common cause of KeyErrors.
+    # This is the most common cause of KeyErrors in Pandas merges.
+    # We map common database names back to the exact casing used in your app logic.
     col_map = {
         'product name': 'Product Name',
         'logid': 'LogID',
@@ -29,7 +30,11 @@ def clean_dataframe(df):
         'qty': 'Qty',
         'uom': 'UOM',
         'status': 'Status',
-        'timestamp': 'Timestamp'
+        'timestamp': 'Timestamp',
+        'category': 'Category',
+        'opening stock': 'Opening Stock',
+        'consumption': 'Consumption',
+        'closing stock': 'Closing Stock'
     }
     
     # Strip whitespace and apply mapping
@@ -53,13 +58,14 @@ def load_from_sheet(worksheet_name, default_cols=None):
         if df.empty and default_cols:
             df = pd.DataFrame(columns=default_cols)
         elif df.empty:
+            # If no defaults provided and empty, return empty DF
             return pd.DataFrame()
             
         df = clean_dataframe(df)
         
         # CRITICAL SAFETY GUARD: If we have default_cols (like 'Product Name'), 
         # ensure they exist in the DF even if the database returned nothing.
-        # This prevents the pd.merge KeyError crash.
+        # This prevents the pd.merge KeyError crash at line 1945.
         if default_cols:
             for col in default_cols:
                 if col not in df.columns:
