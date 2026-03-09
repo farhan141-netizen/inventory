@@ -1173,7 +1173,7 @@ def _make_bar_chart(df, x_col, y_col):
         chart_df = chart_df.set_index(x_col)
         st.bar_chart(chart_df, y=y_col)
 
-def _make_pie_chart(df, label_col, value_col, top_n=None, show_legend=False):
+def _make_pie_chart(df, label_col, value_col, top_n=None, show_legend=False, label_mode="%"):
     """
     Pie should respect the Top-N user selection (top_n).
     If top_n is None, default to 10 (sane default for readability).
@@ -1199,7 +1199,10 @@ def _make_pie_chart(df, label_col, value_col, top_n=None, show_legend=False):
     try:
         import plotly.express as px  # type: ignore
         fig = px.pie(pie_df, names=label_col, values=value_col, hole=0.38)
-        fig.update_traces(textposition="inside", textinfo="percent+label")
+        if label_mode in ("Qty", "Amount"):
+            fig.update_traces(textposition="inside", textinfo="value+label")
+        else:  # "%"
+            fig.update_traces(textposition="inside", textinfo="percent+label")
         if show_legend:
             legend_cfg = dict(
                 visible=True,
@@ -1294,7 +1297,7 @@ def _abbreviate_cols(df: pd.DataFrame) -> pd.DataFrame:
 
 
 @st.dialog("📊 Expanded View", width="large")
-def _show_fullscreen_card(title: str, df: pd.DataFrame, label_col: str, value_col: str, chart_type: str, top_n: int):
+def _show_fullscreen_card(title: str, df: pd.DataFrame, label_col: str, value_col: str, chart_type: str, top_n: int, label_mode: str = "%"):
     """
     Fullscreen dialog for a dashboard card.
     Pie charts show the legend on the right; tables use abbreviated column names.
@@ -1311,7 +1314,7 @@ def _show_fullscreen_card(title: str, df: pd.DataFrame, label_col: str, value_co
         else:
             _make_bar_chart(df, label_col, value_col)
     else:
-        _make_pie_chart(df, label_col, value_col, top_n=top_n, show_legend=True)
+        _make_pie_chart(df, label_col, value_col, top_n=top_n, show_legend=True, label_mode=label_mode)
 
 
 # FIX 1: Added missing function definition line
@@ -1328,6 +1331,7 @@ def _init_card_state(card_id, default_sort="High → Low", default_topn=10, defa
             "topn": default_topn,
             "view": default_view,  # Quantity/Value (used by some cards)
             "chart_type": "Pie Chart",
+            "label_mode": "%",
         }
 
 def _card_controls(card_id: str, allow_view_mode: bool = False, allow_chart_type: bool = False):
@@ -1368,6 +1372,18 @@ def _card_controls(card_id: str, allow_view_mode: bool = False, allow_chart_type
                 key=f"{card_id}_chart_type",
             )
 
+        # Show label mode only when Pie Chart is selected
+        _current_chart = st.session_state.get(f"{card_id}_chart_type", state["chart_type"])
+        if allow_chart_type and _current_chart == "Pie Chart":
+            _lm_opts = ["%", "Qty", "Amount"]
+            _lm_idx = _lm_opts.index(state["label_mode"]) if state.get("label_mode") in _lm_opts else 0
+            state["label_mode"] = st.selectbox(
+                "Pie label",
+                options=_lm_opts,
+                index=_lm_idx,
+                key=f"{card_id}_label_mode",
+            )
+
         if st.button("Refresh card", key=f"{card_id}_refresh_btn"):
             st.cache_data.clear()
             st.rerun()
@@ -1379,6 +1395,7 @@ def _card_controls(card_id: str, allow_view_mode: bool = False, allow_chart_type
         state["view"] = st.session_state.get(f"{card_id}_view", state["view"])
     if allow_chart_type:
         state["chart_type"] = st.session_state.get(f"{card_id}_chart_type", state["chart_type"])
+    state["label_mode"] = st.session_state.get(f"{card_id}_label_mode", state.get("label_mode", "%"))
 
     st.session_state.dash_cards[card_id] = state
     return state
@@ -2041,6 +2058,7 @@ with tab_dash:
                     asc = (s["sort"] == "Low → High")
                     topn = int(s["topn"])
                     chart_type = s.get("chart_type", "Pie Chart")
+                    label_mode = s.get("label_mode", "%")
 
                     purchased_qty = pd.DataFrame(columns=["Item", "Received Qty"])
                     if not logs_filtered.empty:
@@ -2057,9 +2075,9 @@ with tab_dash:
                     elif chart_type == "Bar Chart":
                         _make_bar_chart(purchased_qty, "Item", "Received Qty")
                     else:
-                        _make_pie_chart(purchased_qty, "Item", "Received Qty", top_n=topn)
+                        _make_pie_chart(purchased_qty, "Item", "Received Qty", top_n=topn, label_mode=label_mode)
                     if st.button("⛶ Expand", key="expand_card_purchased_qty", use_container_width=True):
-                        _show_fullscreen_card("Top Purchased (QTY)", purchased_qty, "Item", "Received Qty", chart_type, topn)
+                        _show_fullscreen_card("Top Purchased (QTY)", purchased_qty, "Item", "Received Qty", chart_type, topn, label_mode=label_mode)
 
             # --- Top-right: Top Selling Product (QTY) ---
             with inner_r:
@@ -2069,6 +2087,7 @@ with tab_dash:
                     asc = (s["sort"] == "Low → High")
                     topn = int(s["topn"])
                     chart_type = s.get("chart_type", "Pie Chart")
+                    label_mode = s.get("label_mode", "%")
 
                     selling_qty = pd.DataFrame(columns=["Item", "Dispatched Qty"])
                     if not req_filtered.empty:
@@ -2086,9 +2105,9 @@ with tab_dash:
                     elif chart_type == "Bar Chart":
                         _make_bar_chart(selling_qty, "Item", "Dispatched Qty")
                     else:
-                        _make_pie_chart(selling_qty, "Item", "Dispatched Qty", top_n=topn)
+                        _make_pie_chart(selling_qty, "Item", "Dispatched Qty", top_n=topn, label_mode=label_mode)
                     if st.button("⛶ Expand", key="expand_card_selling_qty", use_container_width=True):
-                        _show_fullscreen_card("Top Selling (QTY)", selling_qty, "Item", "Dispatched Qty", chart_type, topn)
+                        _show_fullscreen_card("Top Selling (QTY)", selling_qty, "Item", "Dispatched Qty", chart_type, topn, label_mode=label_mode)
 
             # --- Bottom row ---
             inner_bl, inner_br = st.columns(2, gap="small")
@@ -2101,6 +2120,7 @@ with tab_dash:
                     asc = (s["sort"] == "Low → High")
                     topn = int(s["topn"])
                     chart_type = s.get("chart_type", "Pie Chart")
+                    label_mode = s.get("label_mode", "%")
 
                     purchased_val = pd.DataFrame(columns=["Item", "Purchase Value"])
                     if not logs_filtered.empty and meta_df is not None and not meta_df.empty:
@@ -2126,9 +2146,9 @@ with tab_dash:
                     elif chart_type == "Bar Chart":
                         _make_bar_chart(purchased_val, "Item", "Purchase Value")
                     else:
-                        _make_pie_chart(purchased_val, "Item", "Purchase Value", top_n=topn)
+                        _make_pie_chart(purchased_val, "Item", "Purchase Value", top_n=topn, label_mode=label_mode)
                     if st.button("⛶ Expand", key="expand_card_purchased_val", use_container_width=True):
-                        _show_fullscreen_card("Top Purchased (Value)", purchased_val, "Item", "Purchase Value", chart_type, topn)
+                        _show_fullscreen_card("Top Purchased (Value)", purchased_val, "Item", "Purchase Value", chart_type, topn, label_mode=label_mode)
 
             # --- Bottom-right: Top Selling Product (Value) ---
             with inner_br:
@@ -2138,6 +2158,7 @@ with tab_dash:
                     asc = (s["sort"] == "Low → High")
                     topn = int(s["topn"])
                     chart_type = s.get("chart_type", "Pie Chart")
+                    label_mode = s.get("label_mode", "%")
 
                     selling_val = pd.DataFrame(columns=["Item", "Sales Value"])
                     if not req_filtered.empty and meta_df is not None and not meta_df.empty:
@@ -2165,9 +2186,9 @@ with tab_dash:
                     elif chart_type == "Bar Chart":
                         _make_bar_chart(selling_val, "Item", "Sales Value")
                     else:
-                        _make_pie_chart(selling_val, "Item", "Sales Value", top_n=topn)
+                        _make_pie_chart(selling_val, "Item", "Sales Value", top_n=topn, label_mode=label_mode)
                     if st.button("⛶ Expand", key="expand_card_selling_val", use_container_width=True):
-                        _show_fullscreen_card("Top Selling (Value)", selling_val, "Item", "Sales Value", chart_type, topn)
+                        _show_fullscreen_card("Top Selling (Value)", selling_val, "Item", "Sales Value", chart_type, topn, label_mode=label_mode)
 
         # ===== Right: Summary KPI (horizontal row) + Total Purchase From Supplier (horiz bar) =====
         with right_col:
@@ -2223,6 +2244,7 @@ with tab_dash:
                 asc = (s["sort"] == "Low → High")
                 topn = int(s["topn"])
                 chart_type = s.get("chart_type", "Pie Chart")
+                label_mode = s.get("label_mode", "%")
 
                 supplier_df = _sum_purchase_from_logs(logs_filtered, meta_df)
                 if not supplier_df.empty:
@@ -2231,7 +2253,7 @@ with tab_dash:
                 if chart_type == "Table":
                     st.dataframe(_abbreviate_cols(supplier_df), use_container_width=True, hide_index=True, height=360)
                 elif chart_type == "Pie Chart":
-                    _make_pie_chart(supplier_df, "Supplier", "Purchase Amount", top_n=topn)
+                    _make_pie_chart(supplier_df, "Supplier", "Purchase Amount", top_n=topn, label_mode=label_mode)
                 else:
                     # Bar Chart (horizontal bar chart for this supplier card)
                     if supplier_df.empty:
@@ -2240,7 +2262,7 @@ with tab_dash:
                         bar = supplier_df.rename(columns={"Purchase Amount": "Amount"})
                         _make_horiz_bar_chart(bar, "Supplier", "Amount")
                 if st.button("⛶ Expand", key="expand_card_supplier_purchase", use_container_width=True):
-                    _show_fullscreen_card("Total Purchase From Supplier", supplier_df, "Supplier", "Purchase Amount", chart_type, topn)
+                    _show_fullscreen_card("Total Purchase From Supplier", supplier_df, "Supplier", "Purchase Amount", chart_type, topn, label_mode=label_mode)
 
             # --- Export (compute bytes and render in the top placeholder + here as fallback) ---
             # FIX 2: Restored truncated dictionary values for export sheets
