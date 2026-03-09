@@ -260,6 +260,47 @@ def _r01_render_card(df, label_col, value_col, chart_type):
     else:
         _r01_make_pie(df, label_col, value_col)
 
+@st.dialog("📊 Expanded View", width="large")
+def _r01_show_fullscreen_card(title: str, df: pd.DataFrame, label_col: str, value_col: str, chart_type: str):
+    st.markdown(f"### {title}")
+    if df is None or df.empty:
+        st.info("📭 No data available.")
+        return
+    if chart_type == "Table":
+        st.dataframe(df, use_container_width=True, hide_index=True)
+        return
+    try:
+        if chart_type == "Bar Chart":
+            fig = px.bar(df, x=label_col, y=value_col,
+                         color_discrete_sequence=["rgba(0,217,255,0.7)"])
+            fig.update_layout(
+                paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                font=dict(color="rgba(224,231,255,0.85)", size=12),
+                margin=dict(l=0, r=0, t=20, b=60), height=500,
+                xaxis=dict(tickangle=-35),
+                showlegend=False,
+            )
+        else:  # Pie Chart
+            fig = px.pie(df, names=label_col, values=value_col, hole=0.38,
+                         color_discrete_sequence=px.colors.sequential.Blues_r)
+            fig.update_traces(textposition="inside", textinfo="percent+label")
+            fig.update_layout(
+                paper_bgcolor="rgba(0,0,0,0)",
+                font=dict(color="rgba(224,231,255,0.85)", size=12),
+                margin=dict(l=0, r=0, t=30, b=0), height=500,
+                legend=dict(
+                    visible=True,
+                    orientation="v",
+                    yanchor="middle", y=0.5,
+                    xanchor="left", x=1.05,
+                    font=dict(size=12, color="rgba(136,146,176,0.95)"),
+                ),
+            )
+        st.plotly_chart(fig, use_container_width=True)
+    except Exception as e:
+        st.error(f"Chart error: {e}")
+        st.dataframe(df, use_container_width=True, hide_index=True)
+
 # --- PAGE CONFIG ---
 st.set_page_config(page_title="Restaurant 01 Pro", layout="wide")
 
@@ -922,6 +963,8 @@ with tab_dash:
                     .head(topn1)
                 )
             _r01_render_card(most_req, "Item", "Requested Qty", s1["chart_type"])
+            if st.button("⛶ Expand", key="expand_r01_most_requested", use_container_width=True):
+                _r01_show_fullscreen_card("Most Requested Items", most_req, "Item", "Requested Qty", s1["chart_type"])
 
     with row1_r:
         with st.container(border=True):
@@ -944,6 +987,8 @@ with tab_dash:
                         .head(topn2)
                     )
             _r01_render_card(most_recv, "Item", "Received Qty", s2["chart_type"])
+            if st.button("⛶ Expand", key="expand_r01_most_received", use_container_width=True):
+                _r01_show_fullscreen_card("Most Received Items", most_recv, "Item", "Received Qty", s2["chart_type"])
 
     # --- Row 2: Current Stock Balance | Low Stock Alert ---
     row2_l, row2_r = st.columns(2, gap="medium")
@@ -967,6 +1012,8 @@ with tab_dash:
                     .head(topn3)
                 )
             _r01_render_card(stock_bal, "Product Name", "Closing Stock", s3["chart_type"])
+            if st.button("⛶ Expand", key="expand_r01_stock_balance", use_container_width=True):
+                _r01_show_fullscreen_card("Current Stock Balance", stock_bal, "Product Name", "Closing Stock", s3["chart_type"])
 
     with row2_r:
         with st.container(border=True):
@@ -991,6 +1038,8 @@ with tab_dash:
             else:
                 st.warning(f"⚠️ {len(low_stock)} items with low/zero stock")
                 _r01_render_card(low_stock, "Product Name", "Closing Stock", s4["chart_type"])
+                if st.button("⛶ Expand", key="expand_r01_low_stock", use_container_width=True):
+                    _r01_show_fullscreen_card("Low / Zero Stock Items", low_stock, "Product Name", "Closing Stock", s4["chart_type"])
 
     # --- Row 3: Requisition Status Breakdown | Top Pending Items ---
     row3_l, row3_r = st.columns(2, gap="medium")
@@ -1011,6 +1060,8 @@ with tab_dash:
                     .sort_values("Count", ascending=False)
                 )
             _r01_render_card(status_breakdown, "Status", "Count", s5["chart_type"])
+            if st.button("⛶ Expand", key="expand_r01_req_status", use_container_width=True):
+                _r01_show_fullscreen_card("Requisition Status Breakdown", status_breakdown, "Status", "Count", s5["chart_type"])
 
     with row3_r:
         with st.container(border=True):
@@ -1033,6 +1084,8 @@ with tab_dash:
                         .head(topn6)
                     )
             _r01_render_card(pending_items, "Item", "Pending Qty", s6["chart_type"])
+            if st.button("⛶ Expand", key="expand_r01_pending_items", use_container_width=True):
+                _r01_show_fullscreen_card("Top Pending Items", pending_items, "Item", "Pending Qty", s6["chart_type"])
 
     # --- Row 4: Daily Requisition Trend | Category Stock Distribution ---
     row4_l, row4_r = st.columns(2, gap="medium")
@@ -1042,10 +1095,13 @@ with tab_dash:
             st.markdown('<div class="r01-card-title">📅 Daily Requisition Trend <span class="meta">requests over time</span></div>', unsafe_allow_html=True)
             trend_df = pd.DataFrame(columns=["Date", "Total Qty"])
             if not req_filtered.empty and "RequestedDate" in req_filtered.columns and "Qty" in req_filtered.columns:
+                _trend_src = req_filtered.copy()
+                _trend_src["_date"] = pd.to_datetime(_trend_src["RequestedDate"], errors="coerce").dt.date
+                _trend_src = _trend_src.dropna(subset=["_date"])
                 trend_df = (
-                    req_filtered.groupby(req_filtered["RequestedDate"].dt.date, as_index=False)["Qty"]
+                    _trend_src.groupby("_date", as_index=False)["Qty"]
                     .sum()
-                    .rename(columns={"RequestedDate": "Date", "Qty": "Total Qty"})
+                    .rename(columns={"_date": "Date", "Qty": "Total Qty"})
                     .sort_values("Date")
                 )
             if not trend_df.empty:
@@ -1065,6 +1121,8 @@ with tab_dash:
                     st.dataframe(trend_df, use_container_width=True, hide_index=True)
             else:
                 st.info("📭 No trend data in selected range.")
+            if st.button("⛶ Expand", key="expand_r01_trend", use_container_width=True):
+                _r01_show_fullscreen_card("Daily Requisition Trend", trend_df, "Date", "Total Qty", "Bar Chart")
 
     with row4_r:
         with st.container(border=True):
@@ -1083,6 +1141,8 @@ with tab_dash:
                     .sort_values("Total Stock", ascending=(s7["sort"] == "Low → High"))
                 )
             _r01_render_card(cat_stock, "Category", "Total Stock", s7["chart_type"])
+            if st.button("⛶ Expand", key="expand_r01_cat_stock", use_container_width=True):
+                _r01_show_fullscreen_card("Stock by Category", cat_stock, "Category", "Total Stock", s7["chart_type"])
 
     # --- Export ---
     st.markdown("---")
