@@ -3,53 +3,100 @@ import pandas as pd
 import datetime
 import uuid
 import io
-from streamlit_gsheets import GSheetsConnection
+import numpy as np
+from st_supabase_connection import SupabaseConnection
 
-# --- CONNECTION ---
-@st.cache_resource
-def get_connection():
-    return st.connection("gsheets", type=GSheetsConnection)
+conn = st.connection("supabase", type=SupabaseConnection)
 
-def load_from_sheet(worksheet_name, default_cols=None):
-    """Load from Google Sheets"""
+# Column name remap: Supabase returns lowercase, app expects Title Case
+_COL_REMAP = {
+    "product name":   "Product Name",
+    "category":       "Category",
+    "uom":            "UOM",
+    "opening stock":  "Opening Stock",
+    "total received": "Total Received",
+    "consumption":    "Consumption",
+    "closing stock":  "Closing Stock",
+    "physical count": "Physical Count",
+    "variance":       "Variance",
+    "reqid":          "ReqID",
+    "restaurant":     "Restaurant",
+    "item":           "Item",
+    "qty":            "Qty",
+    "status":         "Status",
+    "dispatchqty":    "DispatchQty",
+    "acceptedqty":    "AcceptedQty",
+    "timestamp":      "Timestamp",
+    "requesteddate":  "RequestedDate",
+    "followupsent":   "FollowupSent",
+}
+
+def _remap_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Rename lowercased Supabase columns back to expected Title Case."""
+    return df.rename(columns={k: v for k, v in _COL_REMAP.items() if k in df.columns})
+
+def load_from_sheet(table_name, default_cols=None):
+    """Load from Supabase table."""
     try:
-        conn = get_connection()
-        df = conn.read(worksheet=worksheet_name, ttl="5m")
-        if df is None or df.empty:
+        response = conn.table(table_name).select("*").execute()
+        data = response.data
+        if not data:
             return pd.DataFrame(columns=default_cols) if default_cols else pd.DataFrame()
+        df = pd.DataFrame(data)
+        df = _remap_columns(df)
+        df = df.replace({None: np.nan})
         return df
     except Exception as e:
-        st.warning(f"Sheet '{worksheet_name}' not found or empty. Creating with default columns...")
+        st.warning(f"Table '{table_name}' not found or empty: {e}")
         return pd.DataFrame(columns=default_cols) if default_cols else pd.DataFrame()
 
-def save_to_sheet(df, worksheet_name):
-    """Save to Google Sheets with automatic sheet creation"""
+def _clean_for_supabase(df: pd.DataFrame) -> pd.DataFrame:
+    """Cast types to avoid Supabase bigint/float errors."""
+    df = df.copy()
+    df = df.replace({np.nan: None})
+
+    # Float columns — keep as float
+    float_cols = ["Qty", "DispatchQty", "AcceptedQty", "Opening Stock",
+                  "Total Received", "Consumption", "Closing Stock", "Variance"]
+    for col in float_cols:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    # Day columns 1–31 — float
+    for day in range(1, 32):
+        col = str(day)
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
+
+    return df
+
+# Map: table_name → primary key column
+_TABLE_PK = {
+    "rest_01_inventory":        "Product Name",
+    "restaurant_requisitions":  "ReqID",
+}
+
+def save_to_sheet(df, table_name):
+    """Upsert DataFrame rows into a Supabase table."""
     try:
         if df is None or df.empty:
-            st.error(f"Cannot save empty dataframe to {worksheet_name}")
+            st.error(f"Cannot save empty dataframe to {table_name}")
             return False
-        
-        conn = get_connection()
-        
-        # Try to update existing sheet
-        try:
-            conn.update(worksheet=worksheet_name, data=df)
-            st.cache_data.clear()
+
+        df = _clean_for_supabase(df)
+        records = df.to_dict(orient="records")
+
+        pk = _TABLE_PK.get(table_name)
+        response = conn.table(table_name).upsert(records, on_conflict=pk).execute()
+
+        if response.data is not None:
             return True
-        except Exception as update_error:
-            # If sheet doesn't exist, create it
-            st.info(f"📝 Creating new sheet: {worksheet_name}")
-            try:
-                conn.create(worksheet=worksheet_name, data=df)
-                st.cache_data.clear()
-                st.success(f"✅ Sheet '{worksheet_name}' created successfully!")
-                return True
-            except Exception as create_error:
-                st.error(f"❌ Could not create sheet: {str(create_error)}")
-                return False
-                
+        else:
+            st.error(f"❌ Save error ({table_name}): no response data")
+            return False
+
     except Exception as e:
-        st.error(f"❌ Error saving to {worksheet_name}: {str(e)}")
+        st.error(f"❌ Database Save Error ({table_name}): {e}")
         return False
 
 def create_standard_inventory(df):
@@ -178,9 +225,10 @@ st.markdown("""
 col_refresh, col_empty = st.columns([1, 5])
 with col_refresh:
     if st.button("🔄 Refresh Data", use_container_width=True, key="refresh_all"):
-        st.cache_data.clear()
+        for key in ["inventory"]:
+            if key in st.session_state:
+                del st.session_state[key]
         st.rerun()
-
 # --- TABS ---
 tab_inv, tab_req, tab_pending, tab_received, tab_history = st.tabs(["📋 Inventory Count", "🛒 Send Requisition", "🚚 Pending Orders", "📦 Received Items", "📊 History"])
 
