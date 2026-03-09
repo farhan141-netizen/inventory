@@ -1199,8 +1199,18 @@ def _make_pie_chart(df, label_col, value_col, top_n=None, show_legend=False, lab
     try:
         import plotly.express as px  # type: ignore
         fig = px.pie(pie_df, names=label_col, values=value_col, hole=0.38)
-        if label_mode in ("Qty", "Amount"):
-            fig.update_traces(textposition="inside", textinfo="value+label")
+        if label_mode == "Qty":
+            fig.update_traces(
+                textposition="inside",
+                textinfo="value+label",
+                texttemplate="%{label}<br>%{value:.0f}",
+            )
+        elif label_mode == "Amount":
+            fig.update_traces(
+                textposition="inside",
+                textinfo="value+label",
+                texttemplate="%{label}<br>%{value:.2f}",
+            )
         else:  # "%"
             fig.update_traces(textposition="inside", textinfo="percent+label")
         if show_legend:
@@ -1399,6 +1409,24 @@ def _card_controls(card_id: str, allow_view_mode: bool = False, allow_chart_type
 
     st.session_state.dash_cards[card_id] = state
     return state
+
+def _add_amount_col(df: pd.DataFrame, item_col: str, qty_col: str, meta_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Adds an 'Amount' column = qty_col × Price from meta_df.
+    df must have `item_col` matching 'Product Name' in meta_df.
+    """
+    if df is None or df.empty:
+        return df
+    df = df.copy()
+    if meta_df is not None and not meta_df.empty and "Price" in meta_df.columns:
+        price_map = meta_df.dropna(subset=["Product Name", "Price"]).set_index("Product Name")["Price"].to_dict()
+        df["Price"] = df[item_col].map(price_map).fillna(0.0)
+        df["Price"] = pd.to_numeric(df["Price"], errors="coerce").fillna(0.0)
+        df["Amount"] = (pd.to_numeric(df[qty_col], errors="coerce").fillna(0.0) * df["Price"]).round(2)
+    else:
+        df["Amount"] = 0.0
+    return df
+
 
 def _sum_purchase_from_logs(logs_filtered: pd.DataFrame, meta_df: pd.DataFrame):
     """
@@ -2070,14 +2098,20 @@ with tab_dash:
                             .head(topn)
                         )
 
-                    if chart_type == "Table":
-                        st.dataframe(_abbreviate_cols(purchased_qty), use_container_width=True, hide_index=True, height=260)
-                    elif chart_type == "Bar Chart":
-                        _make_bar_chart(purchased_qty, "Item", "Received Qty")
+                    if label_mode == "Amount":
+                        purchased_qty = _add_amount_col(purchased_qty, "Item", "Received Qty", meta_df)
+                        _display_col = "Amount"
                     else:
-                        _make_pie_chart(purchased_qty, "Item", "Received Qty", top_n=topn, label_mode=label_mode)
+                        _display_col = "Received Qty"
+
+                    if chart_type == "Table":
+                        st.dataframe(_abbreviate_cols(purchased_qty[["Item", _display_col]]), use_container_width=True, hide_index=True, height=260)
+                    elif chart_type == "Bar Chart":
+                        _make_bar_chart(purchased_qty, "Item", _display_col)
+                    else:
+                        _make_pie_chart(purchased_qty, "Item", _display_col, top_n=topn, label_mode=label_mode)
                     if st.button("⛶ Expand", key="expand_card_purchased_qty", use_container_width=True):
-                        _show_fullscreen_card("Top Purchased (QTY)", purchased_qty, "Item", "Received Qty", chart_type, topn, label_mode=label_mode)
+                        _show_fullscreen_card("Top Purchased (QTY)", purchased_qty[["Item", _display_col]], "Item", _display_col, chart_type, topn, label_mode=label_mode)
 
             # --- Top-right: Top Selling Product (QTY) ---
             with inner_r:
@@ -2100,14 +2134,20 @@ with tab_dash:
                             .head(topn)
                         )
 
-                    if chart_type == "Table":
-                        st.dataframe(_abbreviate_cols(selling_qty), use_container_width=True, hide_index=True, height=260)
-                    elif chart_type == "Bar Chart":
-                        _make_bar_chart(selling_qty, "Item", "Dispatched Qty")
+                    if label_mode == "Amount":
+                        selling_qty = _add_amount_col(selling_qty, "Item", "Dispatched Qty", meta_df)
+                        _display_col = "Amount"
                     else:
-                        _make_pie_chart(selling_qty, "Item", "Dispatched Qty", top_n=topn, label_mode=label_mode)
+                        _display_col = "Dispatched Qty"
+
+                    if chart_type == "Table":
+                        st.dataframe(_abbreviate_cols(selling_qty[["Item", _display_col]]), use_container_width=True, hide_index=True, height=260)
+                    elif chart_type == "Bar Chart":
+                        _make_bar_chart(selling_qty, "Item", _display_col)
+                    else:
+                        _make_pie_chart(selling_qty, "Item", _display_col, top_n=topn, label_mode=label_mode)
                     if st.button("⛶ Expand", key="expand_card_selling_qty", use_container_width=True):
-                        _show_fullscreen_card("Top Selling (QTY)", selling_qty, "Item", "Dispatched Qty", chart_type, topn, label_mode=label_mode)
+                        _show_fullscreen_card("Top Selling (QTY)", selling_qty[["Item", _display_col]], "Item", _display_col, chart_type, topn, label_mode=label_mode)
 
             # --- Bottom row ---
             inner_bl, inner_br = st.columns(2, gap="small")
@@ -2141,14 +2181,27 @@ with tab_dash:
                             .head(topn)
                         )
 
-                    if chart_type == "Table":
-                        st.dataframe(_abbreviate_cols(purchased_val), use_container_width=True, hide_index=True, height=260)
-                    elif chart_type == "Bar Chart":
-                        _make_bar_chart(purchased_val, "Item", "Purchase Value")
+                    if label_mode == "Qty" and not logs_filtered.empty:
+                        _pv_display = (
+                            logs_filtered.groupby("Item", as_index=False)["Qty"]
+                            .sum()
+                            .rename(columns={"Qty": "Received Qty"})
+                            .sort_values("Received Qty", ascending=asc)
+                            .head(topn)
+                        )
+                        _display_col_pv = "Received Qty"
                     else:
-                        _make_pie_chart(purchased_val, "Item", "Purchase Value", top_n=topn, label_mode=label_mode)
+                        _pv_display = purchased_val
+                        _display_col_pv = "Purchase Value"
+
+                    if chart_type == "Table":
+                        st.dataframe(_abbreviate_cols(_pv_display[["Item", _display_col_pv]]), use_container_width=True, hide_index=True, height=260)
+                    elif chart_type == "Bar Chart":
+                        _make_bar_chart(_pv_display, "Item", _display_col_pv)
+                    else:
+                        _make_pie_chart(_pv_display, "Item", _display_col_pv, top_n=topn, label_mode=label_mode)
                     if st.button("⛶ Expand", key="expand_card_purchased_val", use_container_width=True):
-                        _show_fullscreen_card("Top Purchased (Value)", purchased_val, "Item", "Purchase Value", chart_type, topn, label_mode=label_mode)
+                        _show_fullscreen_card("Top Purchased (Value)", _pv_display[["Item", _display_col_pv]], "Item", _display_col_pv, chart_type, topn, label_mode=label_mode)
 
             # --- Bottom-right: Top Selling Product (Value) ---
             with inner_br:
@@ -2181,14 +2234,28 @@ with tab_dash:
                             .head(topn)
                         )
 
-                    if chart_type == "Table":
-                        st.dataframe(_abbreviate_cols(selling_val), use_container_width=True, hide_index=True, height=260)
-                    elif chart_type == "Bar Chart":
-                        _make_bar_chart(selling_val, "Item", "Sales Value")
+                    if label_mode == "Qty" and not req_filtered.empty:
+                        disp_only_qty = req_filtered[req_filtered["Status"].isin(["Dispatched", "Completed"])][["Item", "DispatchQty"]].copy()
+                        _sv_display = (
+                            disp_only_qty.groupby("Item", as_index=False)["DispatchQty"]
+                            .sum()
+                            .rename(columns={"DispatchQty": "Dispatched Qty"})
+                            .sort_values("Dispatched Qty", ascending=asc)
+                            .head(topn)
+                        )
+                        _display_col_sv = "Dispatched Qty"
                     else:
-                        _make_pie_chart(selling_val, "Item", "Sales Value", top_n=topn, label_mode=label_mode)
+                        _sv_display = selling_val
+                        _display_col_sv = "Sales Value"
+
+                    if chart_type == "Table":
+                        st.dataframe(_abbreviate_cols(_sv_display[["Item", _display_col_sv]]), use_container_width=True, hide_index=True, height=260)
+                    elif chart_type == "Bar Chart":
+                        _make_bar_chart(_sv_display, "Item", _display_col_sv)
+                    else:
+                        _make_pie_chart(_sv_display, "Item", _display_col_sv, top_n=topn, label_mode=label_mode)
                     if st.button("⛶ Expand", key="expand_card_selling_val", use_container_width=True):
-                        _show_fullscreen_card("Top Selling (Value)", selling_val, "Item", "Sales Value", chart_type, topn, label_mode=label_mode)
+                        _show_fullscreen_card("Top Selling (Value)", _sv_display[["Item", _display_col_sv]], "Item", _display_col_sv, chart_type, topn, label_mode=label_mode)
 
         # ===== Right: Summary KPI (horizontal row) + Total Purchase From Supplier (horiz bar) =====
         with right_col:
@@ -2250,19 +2317,38 @@ with tab_dash:
                 if not supplier_df.empty:
                     supplier_df = supplier_df.sort_values("Purchase Amount", ascending=asc).head(topn)
 
+                if label_mode == "Qty" and not logs_filtered.empty and meta_df is not None and not meta_df.empty:
+                    _supp_qty = pd.merge(
+                        logs_filtered.rename(columns={"Item": "Product Name"})[["Product Name", "Qty"]],
+                        meta_df[["Product Name", "Supplier"]],
+                        on="Product Name",
+                        how="left",
+                    )
+                    _supp_qty["Supplier"] = _supp_qty["Supplier"].fillna("Unknown").astype(str).str.strip().replace("", "Unknown")
+                    _supp_display = (
+                        _supp_qty.groupby("Supplier", as_index=False)["Qty"]
+                        .sum()
+                        .sort_values("Qty", ascending=asc)
+                        .head(topn)
+                    )
+                    _display_col_sup = "Qty"
+                else:
+                    _supp_display = supplier_df
+                    _display_col_sup = "Purchase Amount"
+
                 if chart_type == "Table":
-                    st.dataframe(_abbreviate_cols(supplier_df), use_container_width=True, hide_index=True, height=360)
+                    st.dataframe(_abbreviate_cols(_supp_display), use_container_width=True, hide_index=True, height=360)
                 elif chart_type == "Pie Chart":
-                    _make_pie_chart(supplier_df, "Supplier", "Purchase Amount", top_n=topn, label_mode=label_mode)
+                    _make_pie_chart(_supp_display, "Supplier", _display_col_sup, top_n=topn, label_mode=label_mode)
                 else:
                     # Bar Chart (horizontal bar chart for this supplier card)
-                    if supplier_df.empty:
+                    if _supp_display.empty:
                         st.info("📭 No supplier purchase data.")
                     else:
-                        bar = supplier_df.rename(columns={"Purchase Amount": "Amount"})
+                        bar = _supp_display.rename(columns={_display_col_sup: "Amount"})
                         _make_horiz_bar_chart(bar, "Supplier", "Amount")
                 if st.button("⛶ Expand", key="expand_card_supplier_purchase", use_container_width=True):
-                    _show_fullscreen_card("Total Purchase From Supplier", supplier_df, "Supplier", "Purchase Amount", chart_type, topn, label_mode=label_mode)
+                    _show_fullscreen_card("Total Purchase From Supplier", _supp_display, "Supplier", _display_col_sup, chart_type, topn, label_mode=label_mode)
 
             # --- Export (compute bytes and render in the top placeholder + here as fallback) ---
             # FIX 2: Restored truncated dictionary values for export sheets
