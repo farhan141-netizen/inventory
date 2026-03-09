@@ -5,7 +5,6 @@ import uuid
 import io
 import numpy as np
 from st_supabase_connection import SupabaseConnection
-
 conn = st.connection("supabase", type=SupabaseConnection)
 
 # Column name remap: Supabase returns lowercase, app expects Title Case
