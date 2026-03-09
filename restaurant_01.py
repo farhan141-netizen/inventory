@@ -50,18 +50,22 @@ def load_from_sheet(table_name, default_cols=None):
         return pd.DataFrame(columns=default_cols) if default_cols else pd.DataFrame()
 
 def _clean_for_supabase(df: pd.DataFrame) -> pd.DataFrame:
-    """Cast types to avoid Supabase bigint/float errors."""
+    """Cast types correctly to avoid Supabase bigint/float errors."""
     df = df.copy()
     df = df.replace({np.nan: None})
 
-    # Float columns — keep as float
+    # Float columns
     float_cols = ["Qty", "DispatchQty", "AcceptedQty", "Opening Stock",
                   "Total Received", "Consumption", "Closing Stock", "Variance"]
     for col in float_cols:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
+            # Cast to int if all non-null values are whole numbers (avoids bigint error)
+            non_null = df[col].dropna()
+            if len(non_null) == 0 or (non_null % 1 == 0).all():
+                df[col] = df[col].apply(lambda x: int(x) if pd.notna(x) else None)
 
-    # Day columns 1–31 — float
+    # Day columns 1–31 — keep as float
     for day in range(1, 32):
         col = str(day)
         if col in df.columns:
@@ -395,11 +399,11 @@ with tab_req:
                         st.session_state.cart = []
                         st.rerun()
                     else:
-                        st.error("❌ Failed to send requisition. Please check your Google Sheets permissions.")
+                        st.error("❌ Failed to send requisition. Please check your Supabase connection and table permissions.")
                 
                 except Exception as e:
                     st.error(f"❌ Error: {str(e)}")
-                    st.write("Please ensure your Google Sheet has proper permissions and try again.")
+                    st.write("Please ensure your Supabase connection has proper permissions and try again.")
         else:
             st.write("🛒 Cart is empty")
 
@@ -741,7 +745,8 @@ with st.sidebar:
     
     # REFRESH BUTTON IN SIDEBAR
     if st.button("🔄 Refresh All Data", use_container_width=True, key="refresh_sidebar"):
-        st.cache_data.clear()
+        if "inventory" in st.session_state:
+            del st.session_state["inventory"]
         st.rerun()
     
     st.divider()
@@ -811,5 +816,6 @@ with st.sidebar:
     
     st.divider()
     if st.button("🗑️ Clear Cache", use_container_width=True, key="clear_cache_rest"):
-        st.cache_data.clear()
+        if "inventory" in st.session_state:
+            del st.session_state["inventory"]
         st.rerun()
