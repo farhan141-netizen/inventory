@@ -4,6 +4,7 @@ import datetime
 import uuid
 import io
 import numpy as np
+import plotly.express as px
 from st_supabase_connection import SupabaseConnection
 conn = st.connection("supabase", type=SupabaseConnection)
 
@@ -170,6 +171,95 @@ def recalculate_inventory(df):
     
     return df
 
+# --- Dashboard card state helpers ---
+def _r01_init_card_state(card_id, default_sort="High → Low", default_topn=10):
+    if "r01_dash_cards" not in st.session_state:
+        st.session_state.r01_dash_cards = {}
+    if card_id not in st.session_state.r01_dash_cards:
+        st.session_state.r01_dash_cards[card_id] = {
+            "sort": default_sort,
+            "topn": default_topn,
+            "chart_type": "Pie Chart",
+        }
+
+def _r01_card_controls(card_id: str):
+    """Kebab ⋮ popover for per-card settings."""
+    _r01_init_card_state(card_id)
+    state = st.session_state.r01_dash_cards[card_id]
+    with st.popover("⋮", use_container_width=False):
+        st.caption("Card settings")
+        state["sort"] = st.selectbox(
+            "Sort order",
+            options=["High → Low", "Low → High"],
+            index=0 if state["sort"] == "High → Low" else 1,
+            key=f"{card_id}_sort",
+        )
+        state["topn"] = st.selectbox(
+            "Item count",
+            options=[3, 5, 10, 25, 50, 100],
+            index=[3, 5, 10, 25, 50, 100].index(state["topn"]) if state["topn"] in [3, 5, 10, 25, 50, 100] else 2,
+            key=f"{card_id}_topn",
+        )
+        _chart_opts = ["Pie Chart", "Bar Chart", "Table"]
+        state["chart_type"] = st.selectbox(
+            "Chart type",
+            options=_chart_opts,
+            index=_chart_opts.index(state["chart_type"]) if state["chart_type"] in _chart_opts else 0,
+            key=f"{card_id}_chart_type",
+        )
+        if st.button("Refresh card", key=f"{card_id}_refresh"):
+            for k in ["inventory"]:
+                if k in st.session_state:
+                    del st.session_state[k]
+            st.rerun()
+    state["sort"] = st.session_state.get(f"{card_id}_sort", state["sort"])
+    state["topn"] = st.session_state.get(f"{card_id}_topn", state["topn"])
+    state["chart_type"] = st.session_state.get(f"{card_id}_chart_type", state["chart_type"])
+    st.session_state.r01_dash_cards[card_id] = state
+    return state
+
+def _r01_make_pie(df, label_col, value_col):
+    if df is None or df.empty:
+        st.info("📭 No data.")
+        return
+    try:
+        fig = px.pie(df, names=label_col, values=value_col, hole=0.45,
+                     color_discrete_sequence=px.colors.sequential.Blues_r)
+        fig.update_traces(textposition="inside", textinfo="percent+label")
+        fig.update_layout(
+            paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+            font=dict(color="rgba(224,231,255,0.85)", size=11),
+            margin=dict(l=0, r=0, t=20, b=0), height=260, showlegend=False,
+        )
+        st.plotly_chart(fig, use_container_width=True)
+    except Exception:
+        st.dataframe(df, use_container_width=True, hide_index=True)
+
+def _r01_make_bar(df, label_col, value_col):
+    if df is None or df.empty:
+        st.info("📭 No data.")
+        return
+    try:
+        fig = px.bar(df, x=label_col, y=value_col,
+                     color_discrete_sequence=["rgba(0,217,255,0.7)"])
+        fig.update_layout(
+            paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+            font=dict(color="rgba(224,231,255,0.85)", size=11),
+            margin=dict(l=0, r=0, t=20, b=40), height=260,
+            xaxis=dict(tickangle=-35),
+        )
+        st.plotly_chart(fig, use_container_width=True)
+    except Exception:
+        st.dataframe(df, use_container_width=True, hide_index=True)
+
+def _r01_render_card(df, label_col, value_col, chart_type):
+    if chart_type == "Table":
+        st.dataframe(df, use_container_width=True, hide_index=True, height=260)
+    elif chart_type == "Bar Chart":
+        _r01_make_bar(df, label_col, value_col)
+    else:
+        _r01_make_pie(df, label_col, value_col)
+
 # --- PAGE CONFIG ---
 st.set_page_config(page_title="Restaurant 01 Pro", layout="wide")
 
@@ -204,6 +294,21 @@ st.markdown("""
     .req-item-buttons { display: flex; gap: 4px; margin-left: 8px; }
     
     hr { margin: 4px 0; opacity: 0.1; }
+
+    /* Dashboard additions */
+    .r01-dash-kpi-row { display:flex; flex-direction:row; gap:10px; flex-wrap:nowrap; margin-bottom:14px; }
+    .r01-dash-kpi-box {
+        flex:1; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.10);
+        border-radius:14px; padding:14px 10px 12px; min-width:0; text-align:center;
+    }
+    .r01-dash-kpi-box .kpi-icon { font-size:18px; margin-bottom:4px; }
+    .r01-dash-kpi-box .kpi-label { font-size:11px; color:#888cb0; font-weight:500; margin-bottom:6px; }
+    .r01-dash-kpi-box .kpi-value { font-size:18px; font-weight:700; color:#e0e7ff; font-family:monospace; }
+    .r01-dash-kpi-box .kpi-value.bad { color:#ff6b6b; }
+    .r01-dash-kpi-box .kpi-value.good { color:#2ee59d; }
+    .r01-card-title { font-size:13px; font-weight:600; color:rgba(224,231,255,0.92);
+        margin:0 0 8px 0; display:flex; align-items:center; justify-content:space-between; }
+    .r01-card-title .meta { font-size:11px; color:#888cb0; font-weight:400; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -233,7 +338,7 @@ with col_refresh:
                 del st.session_state[key]
         st.rerun()
 # --- TABS ---
-tab_inv, tab_req, tab_pending, tab_received, tab_history = st.tabs(["📋 Inventory Count", "🛒 Send Requisition", "🚚 Pending Orders", "📦 Received Items", "📊 History"])
+tab_inv, tab_req, tab_pending, tab_received, tab_history, tab_dash = st.tabs(["📋 Inventory Count", "🛒 Send Requisition", "🚚 Pending Orders", "📦 Received Items", "📊 History", "📊 Dashboard"])
 
 # ===================== INVENTORY TAB =====================
 with tab_inv:
@@ -738,6 +843,270 @@ with tab_history:
             st.info("📭 No history found")
     else:
         st.info("📭 No orders yet")
+
+# ===================== DASHBOARD TAB =====================
+with tab_dash:
+    st.markdown('<div class="section-title">📊 Restaurant 01 Dashboard</div>', unsafe_allow_html=True)
+
+    # --- Date range controls ---
+    today = datetime.date.today()
+    _QUICK_OPTIONS = ["Last 7 days", "Last 14 days", "Last 30 days", "Custom"]
+    _QUICK_DAYS    = {"Last 7 days": 7, "Last 14 days": 14, "Last 30 days": 30}
+    d_col1, d_col2, d_col3, d_col4 = st.columns([1.2, 1.2, 1.2, 1])
+    with d_col1:
+        quick = st.selectbox("Quick range", _QUICK_OPTIONS, key="r01_dash_quick")
+    if quick == "Custom":
+        with d_col2:
+            start_date = st.date_input("From", today - datetime.timedelta(days=30), key="r01_dash_from")
+        with d_col3:
+            end_date = st.date_input("To", today, key="r01_dash_to")
+    else:
+        start_date = today - datetime.timedelta(days=_QUICK_DAYS[quick])
+        end_date   = today
+
+    # --- Load data ---
+    all_reqs_dash = load_from_sheet("restaurant_requisitions")
+    inv_dash = st.session_state.inventory.copy() if not st.session_state.inventory.empty else pd.DataFrame()
+
+    # Filter requisitions by date range
+    req_filtered = pd.DataFrame()
+    if not all_reqs_dash.empty and "RequestedDate" in all_reqs_dash.columns:
+        all_reqs_dash["RequestedDate"] = pd.to_datetime(all_reqs_dash["RequestedDate"], errors="coerce")
+        all_reqs_dash = all_reqs_dash[all_reqs_dash["Restaurant"] == "Restaurant 01"]
+        req_filtered = all_reqs_dash[
+            (all_reqs_dash["RequestedDate"] >= pd.Timestamp(start_date)) &
+            (all_reqs_dash["RequestedDate"] <= pd.Timestamp(end_date))
+        ]
+
+    # --- KPI row ---
+    total_items      = len(inv_dash) if not inv_dash.empty else 0
+    total_req_qty    = int(pd.to_numeric(req_filtered["Qty"], errors="coerce").sum()) if not req_filtered.empty and "Qty" in req_filtered.columns else 0
+    total_dispatched = int(pd.to_numeric(req_filtered["DispatchQty"], errors="coerce").sum()) if not req_filtered.empty and "DispatchQty" in req_filtered.columns else 0
+    pending_count    = int((req_filtered["Status"] == "Pending").sum()) if not req_filtered.empty and "Status" in req_filtered.columns else 0
+    total_stock      = float(pd.to_numeric(inv_dash["Closing Stock"], errors="coerce").sum()) if not inv_dash.empty and "Closing Stock" in inv_dash.columns else 0.0
+    fulfillment_pct  = round((total_dispatched / total_req_qty * 100), 1) if total_req_qty > 0 else 0.0
+    fulf_class       = "good" if fulfillment_pct >= 80 else ("bad" if fulfillment_pct < 50 else "")
+
+    st.markdown(f"""
+    <div class="r01-dash-kpi-row">
+        <div class="r01-dash-kpi-box"><div class="kpi-icon">📦</div><div class="kpi-label">Total Products</div><div class="kpi-value">{total_items}</div></div>
+        <div class="r01-dash-kpi-box"><div class="kpi-icon">🛒</div><div class="kpi-label">Total Requested</div><div class="kpi-value">{total_req_qty}</div></div>
+        <div class="r01-dash-kpi-box"><div class="kpi-icon">🚚</div><div class="kpi-label">Total Dispatched</div><div class="kpi-value">{total_dispatched}</div></div>
+        <div class="r01-dash-kpi-box"><div class="kpi-icon">⏳</div><div class="kpi-label">Pending Orders</div><div class="kpi-value {'bad' if pending_count > 0 else ''}">{pending_count}</div></div>
+        <div class="r01-dash-kpi-box"><div class="kpi-icon">📊</div><div class="kpi-label">Total Stock</div><div class="kpi-value">{total_stock:,.1f}</div></div>
+        <div class="r01-dash-kpi-box"><div class="kpi-icon">✅</div><div class="kpi-label">Fulfillment %</div><div class="kpi-value {fulf_class}">{fulfillment_pct}%</div></div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("---")
+
+    # --- Row 1: Most Requested | Most Received ---
+    row1_l, row1_r = st.columns(2, gap="medium")
+
+    with row1_l:
+        with st.container(border=True):
+            c_title, c_ctrl = st.columns([5, 1])
+            with c_title:
+                st.markdown('<div class="r01-card-title">🛒 Most Requested Items <span class="meta">by qty</span></div>', unsafe_allow_html=True)
+            with c_ctrl:
+                s1 = _r01_card_controls("r01_most_requested")
+            asc1  = (s1["sort"] == "Low → High")
+            topn1 = int(s1["topn"])
+            most_req = pd.DataFrame(columns=["Item", "Requested Qty"])
+            if not req_filtered.empty and "Item" in req_filtered.columns and "Qty" in req_filtered.columns:
+                most_req = (
+                    req_filtered.groupby("Item", as_index=False)["Qty"]
+                    .sum()
+                    .rename(columns={"Qty": "Requested Qty"})
+                    .sort_values("Requested Qty", ascending=asc1)
+                    .head(topn1)
+                )
+            _r01_render_card(most_req, "Item", "Requested Qty", s1["chart_type"])
+
+    with row1_r:
+        with st.container(border=True):
+            c_title, c_ctrl = st.columns([5, 1])
+            with c_title:
+                st.markdown('<div class="r01-card-title">📦 Most Received Items <span class="meta">dispatched qty</span></div>', unsafe_allow_html=True)
+            with c_ctrl:
+                s2 = _r01_card_controls("r01_most_received")
+            asc2  = (s2["sort"] == "Low → High")
+            topn2 = int(s2["topn"])
+            most_recv = pd.DataFrame(columns=["Item", "Received Qty"])
+            if not req_filtered.empty and "DispatchQty" in req_filtered.columns:
+                disp = req_filtered[req_filtered["Status"].isin(["Dispatched", "Completed"])]
+                if not disp.empty:
+                    most_recv = (
+                        disp.groupby("Item", as_index=False)["DispatchQty"]
+                        .sum()
+                        .rename(columns={"DispatchQty": "Received Qty"})
+                        .sort_values("Received Qty", ascending=asc2)
+                        .head(topn2)
+                    )
+            _r01_render_card(most_recv, "Item", "Received Qty", s2["chart_type"])
+
+    # --- Row 2: Current Stock Balance | Low Stock Alert ---
+    row2_l, row2_r = st.columns(2, gap="medium")
+
+    with row2_l:
+        with st.container(border=True):
+            c_title, c_ctrl = st.columns([5, 1])
+            with c_title:
+                st.markdown('<div class="r01-card-title">📊 Current Stock Balance <span class="meta">closing stock</span></div>', unsafe_allow_html=True)
+            with c_ctrl:
+                s3 = _r01_card_controls("r01_stock_balance")
+            asc3  = (s3["sort"] == "Low → High")
+            topn3 = int(s3["topn"])
+            stock_bal = pd.DataFrame(columns=["Product Name", "Closing Stock"])
+            if not inv_dash.empty and "Closing Stock" in inv_dash.columns:
+                stock_bal = (
+                    inv_dash[["Product Name", "Closing Stock"]]
+                    .copy()
+                    .assign(**{"Closing Stock": lambda d: pd.to_numeric(d["Closing Stock"], errors="coerce").fillna(0)})
+                    .sort_values("Closing Stock", ascending=asc3)
+                    .head(topn3)
+                )
+            _r01_render_card(stock_bal, "Product Name", "Closing Stock", s3["chart_type"])
+
+    with row2_r:
+        with st.container(border=True):
+            c_title, c_ctrl = st.columns([5, 1])
+            with c_title:
+                st.markdown('<div class="r01-card-title">⚠️ Low / Zero Stock Items <span class="meta">needs reorder</span></div>', unsafe_allow_html=True)
+            with c_ctrl:
+                s4 = _r01_card_controls("r01_low_stock")
+            topn4 = int(s4["topn"])
+            low_stock = pd.DataFrame(columns=["Product Name", "Closing Stock"])
+            if not inv_dash.empty and "Closing Stock" in inv_dash.columns:
+                low_stock = (
+                    inv_dash[["Product Name", "Closing Stock"]]
+                    .copy()
+                    .assign(**{"Closing Stock": lambda d: pd.to_numeric(d["Closing Stock"], errors="coerce").fillna(0)})
+                    .query("`Closing Stock` <= 5")
+                    .sort_values("Closing Stock", ascending=True)
+                    .head(topn4)
+                )
+            if low_stock.empty:
+                st.success("✅ All items have sufficient stock!")
+            else:
+                st.warning(f"⚠️ {len(low_stock)} items with low/zero stock")
+                _r01_render_card(low_stock, "Product Name", "Closing Stock", s4["chart_type"])
+
+    # --- Row 3: Requisition Status Breakdown | Top Pending Items ---
+    row3_l, row3_r = st.columns(2, gap="medium")
+
+    with row3_l:
+        with st.container(border=True):
+            c_title, c_ctrl = st.columns([5, 1])
+            with c_title:
+                st.markdown('<div class="r01-card-title">🔵 Requisition Status Breakdown <span class="meta">by count</span></div>', unsafe_allow_html=True)
+            with c_ctrl:
+                s5 = _r01_card_controls("r01_req_status")
+            status_breakdown = pd.DataFrame(columns=["Status", "Count"])
+            if not req_filtered.empty and "Status" in req_filtered.columns:
+                status_breakdown = (
+                    req_filtered.groupby("Status", as_index=False)
+                    .size()
+                    .rename(columns={"size": "Count"})
+                    .sort_values("Count", ascending=False)
+                )
+            _r01_render_card(status_breakdown, "Status", "Count", s5["chart_type"])
+
+    with row3_r:
+        with st.container(border=True):
+            c_title, c_ctrl = st.columns([5, 1])
+            with c_title:
+                st.markdown('<div class="r01-card-title">⏳ Top Pending Items <span class="meta">unfulfilled qty</span></div>', unsafe_allow_html=True)
+            with c_ctrl:
+                s6 = _r01_card_controls("r01_pending_items")
+            asc6  = (s6["sort"] == "Low → High")
+            topn6 = int(s6["topn"])
+            pending_items = pd.DataFrame(columns=["Item", "Pending Qty"])
+            if not req_filtered.empty and "Status" in req_filtered.columns:
+                pend_df = req_filtered[req_filtered["Status"] == "Pending"].copy()
+                if not pend_df.empty and "Qty" in pend_df.columns:
+                    pending_items = (
+                        pend_df.groupby("Item", as_index=False)["Qty"]
+                        .sum()
+                        .rename(columns={"Qty": "Pending Qty"})
+                        .sort_values("Pending Qty", ascending=asc6)
+                        .head(topn6)
+                    )
+            _r01_render_card(pending_items, "Item", "Pending Qty", s6["chart_type"])
+
+    # --- Row 4: Daily Requisition Trend | Category Stock Distribution ---
+    row4_l, row4_r = st.columns(2, gap="medium")
+
+    with row4_l:
+        with st.container(border=True):
+            st.markdown('<div class="r01-card-title">📅 Daily Requisition Trend <span class="meta">requests over time</span></div>', unsafe_allow_html=True)
+            trend_df = pd.DataFrame(columns=["Date", "Total Qty"])
+            if not req_filtered.empty and "RequestedDate" in req_filtered.columns and "Qty" in req_filtered.columns:
+                trend_df = (
+                    req_filtered.groupby(req_filtered["RequestedDate"].dt.date, as_index=False)["Qty"]
+                    .sum()
+                    .rename(columns={"RequestedDate": "Date", "Qty": "Total Qty"})
+                    .sort_values("Date")
+                )
+            if not trend_df.empty:
+                try:
+                    fig_trend = px.line(
+                        trend_df, x="Date", y="Total Qty", markers=True,
+                        color_discrete_sequence=["rgba(0,217,255,0.85)"],
+                    )
+                    fig_trend.update_layout(
+                        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                        font=dict(color="rgba(224,231,255,0.85)", size=11),
+                        margin=dict(l=0, r=0, t=20, b=40), height=260,
+                        xaxis=dict(tickangle=-35),
+                    )
+                    st.plotly_chart(fig_trend, use_container_width=True)
+                except Exception:
+                    st.dataframe(trend_df, use_container_width=True, hide_index=True)
+            else:
+                st.info("📭 No trend data in selected range.")
+
+    with row4_r:
+        with st.container(border=True):
+            c_title, c_ctrl = st.columns([5, 1])
+            with c_title:
+                st.markdown('<div class="r01-card-title">🗂️ Stock by Category <span class="meta">closing stock</span></div>', unsafe_allow_html=True)
+            with c_ctrl:
+                s7 = _r01_card_controls("r01_cat_stock")
+            cat_stock = pd.DataFrame(columns=["Category", "Total Stock"])
+            if not inv_dash.empty and "Category" in inv_dash.columns and "Closing Stock" in inv_dash.columns:
+                cat_stock = (
+                    inv_dash.assign(**{"Closing Stock": lambda d: pd.to_numeric(d["Closing Stock"], errors="coerce").fillna(0)})
+                    .groupby("Category", as_index=False)["Closing Stock"]
+                    .sum()
+                    .rename(columns={"Closing Stock": "Total Stock"})
+                    .sort_values("Total Stock", ascending=(s7["sort"] == "Low → High"))
+                )
+            _r01_render_card(cat_stock, "Category", "Total Stock", s7["chart_type"])
+
+    # --- Export ---
+    st.markdown("---")
+    if st.button("📤 Export Dashboard to Excel", use_container_width=True, key="r01_dash_export", type="primary"):
+        try:
+            buf = io.BytesIO()
+            with pd.ExcelWriter(buf, engine="xlsxwriter") as writer:
+                if not most_req.empty:      most_req.to_excel(writer, index=False, sheet_name="Most Requested")
+                if not most_recv.empty:     most_recv.to_excel(writer, index=False, sheet_name="Most Received")
+                if not stock_bal.empty:     stock_bal.to_excel(writer, index=False, sheet_name="Stock Balance")
+                if not low_stock.empty:     low_stock.to_excel(writer, index=False, sheet_name="Low Stock")
+                if not status_breakdown.empty: status_breakdown.to_excel(writer, index=False, sheet_name="Req Status")
+                if not pending_items.empty: pending_items.to_excel(writer, index=False, sheet_name="Pending Items")
+                if not trend_df.empty:      trend_df.to_excel(writer, index=False, sheet_name="Daily Trend")
+                if not cat_stock.empty:     cat_stock.to_excel(writer, index=False, sheet_name="Category Stock")
+            st.download_button(
+                "📥 Download Excel",
+                data=buf.getvalue(),
+                file_name=f"R01_Dashboard_{start_date}_to_{end_date}.xlsx",
+                use_container_width=True,
+                key="r01_dash_dl",
+            )
+        except Exception as e:
+            st.error(f"Export error: {e}")
 
 # ===================== SIDEBAR =====================
 with st.sidebar:
