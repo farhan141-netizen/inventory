@@ -42,10 +42,8 @@ def login_ui():
             
             if reg_submit:
                 try:
-                    # Note: You might need to disable Email Confirmation in Supabase Auth 
-                    # settings for this to work immediately.
                     res = conn.client.auth.sign_up({"email": reg_email, "password": reg_password})
-                    st.success("Registration successful! Check your email if confirmation is required, otherwise you may now login.")
+                    st.success("Registration successful! You may now login.")
                 except Exception as e:
                     st.error(f"Registration Failed: {str(e)}")
 
@@ -70,7 +68,6 @@ def clean_dataframe(df, expected_cols=None):
     if df is None:
         return pd.DataFrame(columns=expected_cols) if expected_cols else pd.DataFrame()
     
-    # Clean column names
     df = df.loc[:, ~df.columns.str.contains("^Unnamed", na=False)]
     df = df.dropna(axis=1, how="all")
     df = df.loc[:, ~df.columns.duplicated()]
@@ -98,7 +95,6 @@ def clean_dataframe(df, expected_cols=None):
             if col not in df.columns:
                 df[col] = None
     
-    # Replace NaNs with None for Supabase compatibility
     df = df.replace({np.nan: None})
     return df
 
@@ -106,11 +102,8 @@ def clean_dataframe(df, expected_cols=None):
 def _cached_load_from_sheet(worksheet_name, user_id, default_cols=None):
     """Internal cached function that uses user_id as a caching key"""
     try:
-        # DATA ISOLATION: Filter by user_id
         response = conn.table(worksheet_name).select("*").eq("user_id", user_id).execute()
         df = pd.DataFrame(response.data) if response.data else pd.DataFrame()
-        
-        # Clean and ensure skeleton
         df = clean_dataframe(df, expected_cols=default_cols)
         
         if df.empty and default_cols:
@@ -118,7 +111,7 @@ def _cached_load_from_sheet(worksheet_name, user_id, default_cols=None):
             
         return df
     except Exception as e:
-        st.warning(f"Database unavailable for {worksheet_name}. Reason: {str(e)}")
+        st.warning(f"Database issue for {worksheet_name}. Error: {str(e)}")
         if default_cols:
             return pd.DataFrame(columns=default_cols)
         return pd.DataFrame()
@@ -134,34 +127,30 @@ def load_from_sheet(worksheet_name, default_cols=None):
 def save_to_sheet(df, worksheet_name):
     """Save cleaned data to Supabase under the current user's ID"""
     if st.session_state.user is None:
-        st.error("Authentication session expired. Please log in again.")
+        st.error("Authentication session expired.")
         return False
         
     if df is None or df.empty:
         return False
 
+    # Force the cleaning and injection of user_id
     df = clean_dataframe(df)
-    
-    # DATA ISOLATION: Force inject the current user's ID
     current_user_id = st.session_state.user.id
     df['user_id'] = current_user_id
     
     try:
         data_dict = df.to_dict(orient="records")
-        # Perform the upsert
+        # EXECUTE THE UPSERT
         conn.table(worksheet_name).upsert(data_dict).execute()
+        
+        # CLEAR CACHE: This ensures that the NEXT load_from_sheet 
+        # actually pulls the new "Pizza Sauce" from the cloud.
         st.cache_data.clear()
+        st.toast(f"✅ Successfully saved to {worksheet_name}!")
         return True
     except Exception as e:
-        # Detailed error reporting
-        st.error(f"Database Save Error on '{worksheet_name}': {str(e)}")
-        # Debug info for developer
-        with st.expander("Show Technical Details"):
-            st.write("Target Table:", worksheet_name)
-            st.write("User ID applied:", current_user_id)
-            st.write("Data Sample:", df.head(3))
+        st.error(f"❌ Database Save Error on '{worksheet_name}': {str(e)}")
         return False
-
 
 # --- PAGE CONFIG ---
 st.set_page_config(page_title="Warehouse Pro Cloud v8.6", layout="wide", initial_sidebar_state="expanded")
