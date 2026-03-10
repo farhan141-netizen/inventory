@@ -42,8 +42,10 @@ def login_ui():
             
             if reg_submit:
                 try:
+                    # Note: You might need to disable Email Confirmation in Supabase Auth 
+                    # settings for this to work immediately.
                     res = conn.client.auth.sign_up({"email": reg_email, "password": reg_password})
-                    st.success("Registration successful! You may now login.")
+                    st.success("Registration successful! Check your email if confirmation is required, otherwise you may now login.")
                 except Exception as e:
                     st.error(f"Registration Failed: {str(e)}")
 
@@ -58,7 +60,7 @@ with st.sidebar:
     if st.button("🚪 Logout", use_container_width=True):
         conn.client.auth.sign_out()
         st.session_state.user = None
-        st.cache_data.clear() # Clear cache so next user doesn't see old data
+        st.cache_data.clear()
         st.rerun()
     st.divider()
 
@@ -68,6 +70,7 @@ def clean_dataframe(df, expected_cols=None):
     if df is None:
         return pd.DataFrame(columns=expected_cols) if expected_cols else pd.DataFrame()
     
+    # Clean column names
     df = df.loc[:, ~df.columns.str.contains("^Unnamed", na=False)]
     df = df.dropna(axis=1, how="all")
     df = df.loc[:, ~df.columns.duplicated()]
@@ -84,7 +87,7 @@ def clean_dataframe(df, expected_cols=None):
         'opening stock': 'Opening Stock',
         'consumption': 'Consumption',
         'closing stock': 'Closing Stock',
-        'user_id': 'user_id' # Keep the user ID!
+        'user_id': 'user_id'
     }
     
     df.columns = [str(col).strip() for col in df.columns]
@@ -95,6 +98,7 @@ def clean_dataframe(df, expected_cols=None):
             if col not in df.columns:
                 df[col] = None
     
+    # Replace NaNs with None for Supabase compatibility
     df = df.replace({np.nan: None})
     return df
 
@@ -102,9 +106,11 @@ def clean_dataframe(df, expected_cols=None):
 def _cached_load_from_sheet(worksheet_name, user_id, default_cols=None):
     """Internal cached function that uses user_id as a caching key"""
     try:
-        # DATA ISOLATION: Only fetch rows where user_id matches the logged-in user
+        # DATA ISOLATION: Filter by user_id
         response = conn.table(worksheet_name).select("*").eq("user_id", user_id).execute()
         df = pd.DataFrame(response.data) if response.data else pd.DataFrame()
+        
+        # Clean and ensure skeleton
         df = clean_dataframe(df, expected_cols=default_cols)
         
         if df.empty and default_cols:
@@ -112,7 +118,6 @@ def _cached_load_from_sheet(worksheet_name, user_id, default_cols=None):
             
         return df
     except Exception as e:
-        # PRINT THE EXACT ERROR so you know if it's a missing column or RLS issue
         st.warning(f"Database unavailable for {worksheet_name}. Reason: {str(e)}")
         if default_cols:
             return pd.DataFrame(columns=default_cols)
@@ -120,31 +125,42 @@ def _cached_load_from_sheet(worksheet_name, user_id, default_cols=None):
 
 def load_from_sheet(worksheet_name, default_cols=None):
     """Safely load data isolated to the current user"""
-    # Grab the logged in user's ID and pass it to the loader
+    if st.session_state.user is None:
+        return pd.DataFrame(columns=default_cols) if default_cols else pd.DataFrame()
+    
     current_user_id = st.session_state.user.id
     return _cached_load_from_sheet(worksheet_name, current_user_id, default_cols)
 
 def save_to_sheet(df, worksheet_name):
     """Save cleaned data to Supabase under the current user's ID"""
+    if st.session_state.user is None:
+        st.error("Authentication session expired. Please log in again.")
+        return False
+        
     if df is None or df.empty:
         return False
 
     df = clean_dataframe(df)
     
-    # DATA ISOLATION: Force inject the current user's ID into every row before saving
+    # DATA ISOLATION: Force inject the current user's ID
     current_user_id = st.session_state.user.id
     df['user_id'] = current_user_id
     
     try:
         data_dict = df.to_dict(orient="records")
+        # Perform the upsert
         conn.table(worksheet_name).upsert(data_dict).execute()
         st.cache_data.clear()
         return True
     except Exception as e:
-        # Show exactly why the upload/save is failing
-        st.error(f"Database Save Error ({worksheet_name}): {str(e)}")
+        # Detailed error reporting
+        st.error(f"Database Save Error on '{worksheet_name}': {str(e)}")
+        # Debug info for developer
+        with st.expander("Show Technical Details"):
+            st.write("Target Table:", worksheet_name)
+            st.write("User ID applied:", current_user_id)
+            st.write("Data Sample:", df.head(3))
         return False
-
 
 
 # --- PAGE CONFIG ---
