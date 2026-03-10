@@ -72,8 +72,10 @@ def clean_dataframe(df, expected_cols=None):
     df = df.dropna(axis=1, how="all")
     df = df.loc[:, ~df.columns.duplicated()]
     
+    # Mapping table for Supabase <-> App Logic
     col_map = {
         'product name': 'Product Name',
+        'product_name': 'Product Name',
         'logid': 'LogID',
         'item': 'Item',
         'qty': 'Qty',
@@ -82,12 +84,15 @@ def clean_dataframe(df, expected_cols=None):
         'timestamp': 'Timestamp',
         'category': 'Category',
         'opening stock': 'Opening Stock',
+        'opening_stock': 'Opening Stock',
         'consumption': 'Consumption',
         'closing stock': 'Closing Stock',
+        'closing_stock': 'Closing Stock',
         'user_id': 'user_id'
     }
     
     df.columns = [str(col).strip() for col in df.columns]
+    df.rename(columns=lambda x: col_map.get(x.lower().replace(" ", "_"), x), inplace=True)
     df.rename(columns=lambda x: col_map.get(x.lower(), x), inplace=True)
     
     if expected_cols:
@@ -139,17 +144,21 @@ def save_to_sheet(df, worksheet_name):
     df['user_id'] = current_user_id
     
     try:
+        # CONVERT TO DICT: Supabase expects list of dicts
         data_dict = df.to_dict(orient="records")
+        
         # EXECUTE THE UPSERT
         conn.table(worksheet_name).upsert(data_dict).execute()
         
-        # CLEAR CACHE: This ensures that the NEXT load_from_sheet 
-        # actually pulls the new "Pizza Sauce" from the cloud.
         st.cache_data.clear()
         st.toast(f"✅ Successfully saved to {worksheet_name}!")
         return True
     except Exception as e:
         st.error(f"❌ Database Save Error on '{worksheet_name}': {str(e)}")
+        # Provide a snippet of what we tried to send to help debug column names
+        with st.expander("Debug Info"):
+            st.write("Columns attempted:", list(df.columns))
+            st.write("Data snippet:", df.head(1).to_dict())
         return False
 
 # --- PAGE CONFIG ---
