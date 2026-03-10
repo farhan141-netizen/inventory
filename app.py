@@ -99,7 +99,17 @@ def clean_dataframe(df, expected_cols=None):
         for col in expected_cols:
             if col not in df.columns:
                 df[col] = None
+
+    # --- DATATYPE FIX FOR SUPABASE ---
+    # Convert numeric columns from Float (0.0) to Integer (0) where applicable
+    # to avoid the "invalid input syntax for type integer" error.
+    int_cols = ['Qty', 'Opening Stock', 'Consumption', 'Closing Stock']
+    for col in int_cols:
+        if col in df.columns:
+            # Fill NaNs with 0 before conversion, then convert to int
+            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
     
+    # Convert all other NaNs to None for Supabase Null safety
     df = df.replace({np.nan: None})
     return df
 
