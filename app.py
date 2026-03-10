@@ -112,7 +112,8 @@ def _cached_load_from_sheet(worksheet_name, user_id, default_cols=None):
             
         return df
     except Exception as e:
-        st.warning(f"Database unavailable. Using local skeleton.")
+        # PRINT THE EXACT ERROR so you know if it's a missing column or RLS issue
+        st.warning(f"Database unavailable for {worksheet_name}. Reason: {str(e)}")
         if default_cols:
             return pd.DataFrame(columns=default_cols)
         return pd.DataFrame()
@@ -140,6 +141,7 @@ def save_to_sheet(df, worksheet_name):
         st.cache_data.clear()
         return True
     except Exception as e:
+        # Show exactly why the upload/save is failing
         st.error(f"Database Save Error ({worksheet_name}): {str(e)}")
         return False
 
