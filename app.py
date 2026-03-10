@@ -6,23 +6,72 @@ import uuid
 import io
 import numpy as np
 
-# --- CLOUD CONNECTION ---
-# This replaces the old GSheetsConnection
+# --- 1. CLOUD CONNECTION ---
 conn = st.connection("supabase", type=SupabaseConnection)
 
-def clean_dataframe(df):
-    """Ensures unique columns, removes ghost columns, and formats for Supabase"""
-    if df is None or df.empty:
-        return df
+# --- 2. AUTHENTICATION SYSTEM ---
+if "user" not in st.session_state:
+    st.session_state.user = None
+
+def login_ui():
+    """Renders the Login and Registration screens"""
+    st.title("📦 Inventory Management System")
+    st.subheader("Please login to access your workspace")
     
-    # Drop unnamed/duplicate columns
+    tab1, tab2 = st.tabs(["🔐 Login", "📝 Register"])
+    
+    with tab1:
+        with st.form("login_form"):
+            email = st.text_input("Email")
+            password = st.text_input("Password", type="password")
+            submit = st.form_submit_button("Login", use_container_width=True)
+            
+            if submit:
+                try:
+                    res = conn.client.auth.sign_in_with_password({"email": email, "password": password})
+                    st.session_state.user = res.user
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Login Failed: Incorrect email or password.")
+                    
+    with tab2:
+        with st.form("register_form"):
+            reg_email = st.text_input("Email")
+            reg_password = st.text_input("Password", type="password")
+            reg_submit = st.form_submit_button("Register Account", use_container_width=True)
+            
+            if reg_submit:
+                try:
+                    res = conn.client.auth.sign_up({"email": reg_email, "password": reg_password})
+                    st.success("Registration successful! You may now login.")
+                except Exception as e:
+                    st.error(f"Registration Failed: {str(e)}")
+
+# If no user is logged in, show the login screen and STOP the rest of the app
+if st.session_state.user is None:
+    login_ui()
+    st.stop()
+
+# --- 3. SIDEBAR USER PROFILE ---
+with st.sidebar:
+    st.success(f"👤 Logged in as:\n**{st.session_state.user.email}**")
+    if st.button("🚪 Logout", use_container_width=True):
+        conn.client.auth.sign_out()
+        st.session_state.user = None
+        st.cache_data.clear() # Clear cache so next user doesn't see old data
+        st.rerun()
+    st.divider()
+
+# --- 4. ISOLATED DATA ENGINE ---
+def clean_dataframe(df, expected_cols=None):
+    """Ensures unique columns and formats for Supabase"""
+    if df is None:
+        return pd.DataFrame(columns=expected_cols) if expected_cols else pd.DataFrame()
+    
     df = df.loc[:, ~df.columns.str.contains("^Unnamed", na=False)]
     df = df.dropna(axis=1, how="all")
     df = df.loc[:, ~df.columns.duplicated()]
     
-    # Fix Column Casing & Whitespace: 
-    # This is the most common cause of KeyErrors in Pandas merges.
-    # We map common database names back to the exact casing used in your app logic.
     col_map = {
         'product name': 'Product Name',
         'logid': 'LogID',
@@ -34,78 +83,60 @@ def clean_dataframe(df):
         'category': 'Category',
         'opening stock': 'Opening Stock',
         'consumption': 'Consumption',
-        'closing stock': 'Closing Stock'
+        'closing stock': 'Closing Stock',
+        'user_id': 'user_id' # Keep the user ID!
     }
     
-    # Strip whitespace and apply mapping
     df.columns = [str(col).strip() for col in df.columns]
     df.rename(columns=lambda x: col_map.get(x.lower(), x), inplace=True)
     
-    # CRITICAL SUPABASE FIX: Convert Pandas NaNs/Empty cells to 'None' (Null)
+    if expected_cols:
+        for col in expected_cols:
+            if col not in df.columns:
+                df[col] = None
+    
     df = df.replace({np.nan: None})
-
-    # ✅ NEW: Cast known integer columns to int to avoid bigint type errors
-    int_cols = ["Day"]
-    for col in int_cols:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0).astype(int)
-
-    # ✅ NEW: Cast Qty to float then to int only if it's a whole number
-    # This handles both activity_logs.Qty (bigint) and inventory day cols (float8)
-    if "Qty" in df.columns:
-        df["Qty"] = pd.to_numeric(df["Qty"], errors="coerce").fillna(0)
-        # Only cast to int if ALL values are whole numbers (safe for bigint tables)
-        if (df["Qty"] % 1 == 0).all():
-            df["Qty"] = df["Qty"].astype(int)
-
     return df
 
 @st.cache_data(ttl=60)
-def load_from_sheet(worksheet_name, default_cols=None):
-    """Safely load and clean data from Supabase with caching and merge protection"""
+def _cached_load_from_sheet(worksheet_name, user_id, default_cols=None):
+    """Internal cached function that uses user_id as a caching key"""
     try:
-        response = conn.table(worksheet_name).select("*").execute()
-        df = pd.DataFrame(response.data)
+        # DATA ISOLATION: Only fetch rows where user_id matches the logged-in user
+        response = conn.table(worksheet_name).select("*").eq("user_id", user_id).execute()
+        df = pd.DataFrame(response.data) if response.data else pd.DataFrame()
+        df = clean_dataframe(df, expected_cols=default_cols)
         
-        # If the table is empty, start with default columns
         if df.empty and default_cols:
-            df = pd.DataFrame(columns=default_cols)
-        elif df.empty:
-            # If no defaults provided and empty, return empty DF
-            return pd.DataFrame()
+            return pd.DataFrame(columns=default_cols)
             
-        df = clean_dataframe(df)
-        
-        # CRITICAL SAFETY GUARD: If we have default_cols (like 'Product Name'), 
-        # ensure they exist in the DF even if the database returned nothing.
-        # This prevents the pd.merge KeyError crash at line 1945.
-        if default_cols:
-            for col in default_cols:
-                if col not in df.columns:
-                    df[col] = None
-                    
         return df
     except Exception as e:
-        # If the whole connection fails, return a safe "skeleton" dataframe 
-        # so the rest of the app logic (like merges) doesn't crash.
+        st.warning(f"Database unavailable. Using local skeleton.")
         if default_cols:
             return pd.DataFrame(columns=default_cols)
         return pd.DataFrame()
 
+def load_from_sheet(worksheet_name, default_cols=None):
+    """Safely load data isolated to the current user"""
+    # Grab the logged in user's ID and pass it to the loader
+    current_user_id = st.session_state.user.id
+    return _cached_load_from_sheet(worksheet_name, current_user_id, default_cols)
+
 def save_to_sheet(df, worksheet_name):
-    """Save cleaned data to Supabase and clear cache"""
+    """Save cleaned data to Supabase under the current user's ID"""
     if df is None or df.empty:
         return False
 
     df = clean_dataframe(df)
+    
+    # DATA ISOLATION: Force inject the current user's ID into every row before saving
+    current_user_id = st.session_state.user.id
+    df['user_id'] = current_user_id
+    
     try:
-        # Convert dataframe to list of dictionaries for Supabase
         data_dict = df.to_dict(orient="records")
-        
-        # 'upsert' prevents breaking the game by updating existing rows 
-        # based on their Primary Key, or inserting new ones.
         conn.table(worksheet_name).upsert(data_dict).execute()
-        
         st.cache_data.clear()
         return True
     except Exception as e:
