@@ -208,6 +208,9 @@ def after_login_set_session(user_id: str):
     Call after login to resolve memberships and set session state.
     If no memberships are present, session org_id/location_id remain None (so app can show setup wizard).
     """
+    # Clear the logged_out flag so normal session bootstrap can resume
+    if "logged_out" in st.session_state:
+        del st.session_state["logged_out"]
     memberships = get_user_memberships(user_id)
     st.session_state.user_id = user_id
     st.session_state.memberships = memberships or []
@@ -376,6 +379,11 @@ def save_to_sheet(df: pd.DataFrame, table_name: str, pk: str = None):
     if loc_id and table_name in ("persistent_inventory", "activity_logs", "monthly_history", "orders_db", "rest_01_inventory"):
         df["location_id"] = loc_id
 
+    # Inject user_id for tables that require it (activity_logs has NOT NULL user_id)
+    user_id = st.session_state.get("user_id")
+    if user_id and table_name == "activity_logs":
+        df["user_id"] = user_id
+
     # Convert NaN to None for JSON compatibility
     df = df.where(pd.notnull(df), None)
 
@@ -430,6 +438,7 @@ def logout_user():
         pass
 
     # Force a rerun (so UI shows login/register)
+    st.session_state["logged_out"] = True
     safe_rerun()
 
 # Confirmation dialog (uses your @st.dialog pattern)
@@ -919,7 +928,10 @@ st.markdown(
 
 # --- Ensure session state reflects current authenticated user ---
 current_uid = get_current_user_id()  # uses helper defined earlier
-if current_uid:
+if st.session_state.get("logged_out"):
+    # User explicitly logged out — do not re-populate session from auth
+    pass
+elif current_uid:
     # If session_state does not already match the current auth user, populate it
     if st.session_state.get("user_id") != current_uid:
         try:
@@ -934,6 +946,30 @@ else:
         if _k in st.session_state:
             del st.session_state[_k]
     # (Optional) you can show your login/register UI here or let the app's existing logic do that.
+
+
+# --- ONBOARDING: show setup wizard if user is logged in but has no org ---
+_uid = st.session_state.get("user_id")
+_memberships = st.session_state.get("memberships", [])
+if _uid and not _memberships and not st.session_state.get("logged_out"):
+    st.markdown("## 🏢 Welcome! Set up your organization")
+    st.info("You're logged in but haven't set up an organization yet. Please fill in the details below to get started.")
+    with st.form("onboarding_form"):
+        _org_name = st.text_input("Organization Name", placeholder="e.g., My Warehouse Co.")
+        _loc_name = st.text_input("First Location Name", value="Main Warehouse", placeholder="e.g., Main Warehouse")
+        _submitted = st.form_submit_button("🚀 Create Organization & Location", type="primary", use_container_width=True)
+        if _submitted:
+            if not _org_name.strip():
+                st.error("Please enter an organization name.")
+            else:
+                _ok = onboard_new_user(user_id=_uid, org_name=_org_name.strip(), initial_location_name=_loc_name.strip() or "Main Warehouse")
+                if _ok:
+                    st.success("✅ Organization created! Reloading...")
+                    st.cache_data.clear()
+                    st.rerun()
+                else:
+                    st.error("❌ Failed to create organization. Please try again or contact support.")
+    st.stop()  # Don't render the rest of the app until onboarding is complete
 
 
 # --- CORE CALCULATION ENGINE ---
@@ -986,6 +1022,7 @@ def apply_transaction(item_name, day_num, qty, is_undo=False):
                         "Day": day_num,
                         "Status": "Active",
                         "LogDate": datetime.date.today().strftime("%Y-%m-%d"),
+                        "user_id": st.session_state.get("user_id"),
                     }
                 ]
             )
