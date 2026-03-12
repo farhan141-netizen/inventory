@@ -308,16 +308,18 @@ def save_to_sheet(df: pd.DataFrame, table_name: str, pk: str = None):
 # Replace your existing logout helper + dialog with this robust version
 
 def logout_user():
-    """Sign out and clear session state, then rerun app (with safe fallbacks)."""
+    """Sign out, clear session-state keys, clear cache and try to rerun the app safely."""
+    # Try to sign out from Supabase client (best-effort)
     try:
-        if hasattr(conn, "auth") and hasattr(conn.auth, "sign_out"):
+        if hasattr(conn, "auth") and callable(getattr(conn.auth, "sign_out", None)):
             conn.auth.sign_out()
-        elif hasattr(conn, "sign_out"):
+        elif callable(getattr(conn, "sign_out", None)):
             conn.sign_out()
     except Exception:
-        # ignore sign-out errors — we'll clear session anyway
+        # Ignore sign-out errors
         pass
 
+    # Keys to clear from session_state
     keys_to_clear = [
         "user_id",
         "org_id",
@@ -332,38 +334,38 @@ def logout_user():
         if k in st.session_state:
             del st.session_state[k]
 
+    # Clear cache (best-effort)
     try:
-        st.cache_data.clear()
+        if hasattr(st, "cache_data"):
+            st.cache_data.clear()
     except Exception:
         pass
 
-    # Try safe rerun fallbacks:
+    # Try known rerun functions in order, using getattr to avoid AttributeError
+    for potential in ("rerun", "experimental_rerun"):
+        fn = getattr(st, potential, None)
+        if callable(fn):
+            try:
+                fn()
+                return  # if rerun succeeded, stop here
+            except Exception:
+                # If calling failed, try the next fallback
+                continue
+
+    # Last-resort: stop the script so Streamlit can re-run on next interaction
     try:
-        # preferred (older/newer aliases)
-        if hasattr(st, "rerun"):
-            st.rerun()
+        if callable(getattr(st, "stop", None)):
+            st.stop()
             return
     except Exception:
         pass
 
-    try:
-        if hasattr(st, "experimental_rerun"):
-            st.experimental_rerun()
-            return
-    except Exception:
-        pass
-
-    # Last-resort: stop execution (Streamlit will rerun on next interaction)
-    try:
-        st.stop()
-    except Exception:
-        # If even st.stop is unavailable, raise a controlled exception to break execution
-        raise RuntimeError("Logout: unable to programmatically rerun/stop the app; session cleared.")
-    
+    # If nothing worked, raise a controlled error so the run stops safely
+    raise RuntimeError("Logout cleared session but could not programmatically rerun or stop the app.")
 
 @st.dialog("🔒 Confirm Logout")
 def _logout_confirm_dialog():
-    """Dialog shown when user presses Logout; confirm before logging out."""
+    """Confirmation dialog displayed when user clicks 'Logout'."""
     st.subheader("Confirm Logout")
     st.write("Are you sure you want to log out? Your session will be cleared from this browser.")
     c1, c2 = st.columns([1, 1])
