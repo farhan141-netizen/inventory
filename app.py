@@ -1635,6 +1635,201 @@ def _to_excel_bytes(sheets: dict):
             (df if isinstance(df, pd.DataFrame) else pd.DataFrame(df)).to_excel(writer, index=False, sheet_name=safe_name)
     return buf.getvalue()
 
+
+def _make_master_template_bytes() -> bytes:
+    """Generate a downloadable Master Inventory Template xlsx with MASTER_TEMPLATE and INSTRUCTIONS sheets."""
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="xlsxwriter") as writer:
+        # --- MASTER_TEMPLATE sheet (headers only, no example rows) ---
+        template_cols = [
+            "Product Name",
+            "UOM",
+            "Opening Stock",
+            "Category",
+            "Supplier",
+            "Contact",
+            "Email",
+            "Lead Time",
+            "Price",
+            "Currency",
+        ]
+        template_df = pd.DataFrame(columns=template_cols)
+        template_df.to_excel(writer, index=False, sheet_name="MASTER_TEMPLATE")
+
+        workbook = writer.book
+        tmpl_ws = writer.sheets["MASTER_TEMPLATE"]
+
+        # Format header row
+        header_fmt = workbook.add_format({
+            "bold": True,
+            "bg_color": "#2E4057",
+            "font_color": "#FFFFFF",
+            "border": 1,
+        })
+        required_fmt = workbook.add_format({
+            "bold": True,
+            "bg_color": "#E63946",
+            "font_color": "#FFFFFF",
+            "border": 1,
+        })
+        for col_idx, col_name in enumerate(template_cols):
+            fmt = required_fmt if col_name in ("Product Name", "UOM", "Opening Stock") else header_fmt
+            tmpl_ws.write(0, col_idx, col_name, fmt)
+        # Set column widths
+        col_widths = [20, 10, 15, 15, 20, 15, 25, 12, 10, 10]
+        for i, w in enumerate(col_widths):
+            tmpl_ws.set_column(i, i, w)
+
+        # --- INSTRUCTIONS sheet ---
+        instructions = [
+            ["Master Inventory Template – Instructions"],
+            [""],
+            ["REQUIRED COLUMNS (highlighted in red in the template):"],
+            ["  • Product Name  – unique product identifier (text, required)"],
+            ["  • UOM           – unit of measure e.g. kg, pcs, ltr (text, required)"],
+            ["  • Opening Stock – current stock on hand (number ≥ 0, required; use 0 if unknown)"],
+            [""],
+            ["OPTIONAL COLUMNS:"],
+            ["  • Category   – product category; defaults to 'General' if left blank"],
+            ["  • Supplier   – supplier / vendor name"],
+            ["  • Contact    – supplier contact person name"],
+            ["  • Email      – supplier email address"],
+            ["  • Lead Time  – order lead time in days (number ≥ 0)"],
+            ["  • Price      – unit price (number ≥ 0)"],
+            ["  • Currency   – currency code e.g. USD, EUR; defaults to 'USD' if blank"],
+            [""],
+            ["RULES:"],
+            ["  1. Do NOT rename or reorder the column headers."],
+            ["  2. One row = one product."],
+            ["  3. Product Name must be unique within the file (case-insensitive)."],
+            ["  4. Opening Stock, Price, and Lead Time must be numbers (no text)."],
+            ["  5. Leave optional cells blank – do not enter 'N/A' or '-'."],
+            ["  6. Remove this sheet and any example rows before uploading."],
+            ["     (The import reads the MASTER_TEMPLATE sheet only.)"],
+            [""],
+            ["WHAT HAPPENS ON IMPORT:"],
+            ["  • Product metadata (supplier info, price, category) → product_metadata table"],
+            ["  • Inventory baseline (opening stock + day columns)  → persistent_inventory table"],
+            ["  • Re-uploading the same file updates existing products for your organisation."],
+        ]
+        inst_df = pd.DataFrame(instructions, columns=["Instructions"])
+        inst_df.to_excel(writer, index=False, sheet_name="INSTRUCTIONS")
+        inst_ws = writer.sheets["INSTRUCTIONS"]
+        title_fmt = workbook.add_format({"bold": True, "font_size": 13})
+        # Re-apply title formatting to the first data row (row 1, after the column header at row 0)
+        inst_ws.write(1, 0, instructions[0][0], title_fmt)
+        inst_ws.set_column(0, 0, 80)
+
+    return buf.getvalue()
+
+
+def _validate_master_template(df: pd.DataFrame):
+    """
+    Validate a DataFrame read from the MASTER_TEMPLATE sheet.
+    Returns (cleaned_df, errors_list).
+    errors_list is a list of dicts: {row, column, message, value}.
+    """
+    errors = []
+    df = df.copy()
+
+    # Trim whitespace on all string columns
+    str_cols = df.select_dtypes(include=["object", "string"]).columns
+    for col in str_cols:
+        df[col] = df[col].astype(str).str.strip()
+        df[col] = df[col].replace({"nan": "", "None": "", "NaN": ""})
+
+    required_cols = ["Product Name", "UOM", "Opening Stock"]
+    for col in required_cols:
+        if col not in df.columns:
+            errors.append({"Row": "–", "Column": col, "Message": f"Required column '{col}' is missing from the file.", "Value": ""})
+
+    if errors:
+        return df, errors
+
+    # Validate each row
+    seen_names: dict = {}  # lower-case name -> first row index
+
+    for idx, row in df.iterrows():
+        row_num = idx + 2  # 1-based, +1 for header
+
+        # Product Name
+        pname = str(row.get("Product Name", "")).strip()
+        if not pname:
+            errors.append({"Row": row_num, "Column": "Product Name", "Message": "Product Name is required.", "Value": pname})
+        else:
+            key = pname.lower()
+            if key in seen_names:
+                errors.append({
+                    "Row": row_num,
+                    "Column": "Product Name",
+                    "Message": f"Duplicate of row {seen_names[key]}.",
+                    "Value": pname,
+                })
+            else:
+                seen_names[key] = row_num
+
+        # UOM
+        uom = str(row.get("UOM", "")).strip()
+        if not uom:
+            errors.append({"Row": row_num, "Column": "UOM", "Message": "UOM is required.", "Value": uom})
+
+        # Opening Stock
+        try:
+            os_val = float(row.get("Opening Stock", 0))
+            if os_val < 0:
+                raise ValueError("negative")
+            df.at[idx, "Opening Stock"] = os_val
+        except (ValueError, TypeError):
+            errors.append({
+                "Row": row_num,
+                "Column": "Opening Stock",
+                "Message": "Must be a number ≥ 0.",
+                "Value": str(row.get("Opening Stock", "")),
+            })
+
+        # Price (optional numeric)
+        price_raw = row.get("Price", "")
+        if str(price_raw).strip() not in ("", "nan", "None"):
+            try:
+                p_val = float(price_raw)
+                if p_val < 0:
+                    raise ValueError("negative")
+                df.at[idx, "Price"] = p_val
+            except (ValueError, TypeError):
+                errors.append({
+                    "Row": row_num,
+                    "Column": "Price",
+                    "Message": "Must be a number ≥ 0 if provided.",
+                    "Value": str(price_raw),
+                })
+
+        # Lead Time (optional numeric)
+        lt_raw = row.get("Lead Time", "")
+        if str(lt_raw).strip() not in ("", "nan", "None"):
+            try:
+                lt_val = float(lt_raw)
+                if lt_val < 0:
+                    raise ValueError("negative")
+                df.at[idx, "Lead Time"] = lt_val
+            except (ValueError, TypeError):
+                errors.append({
+                    "Row": row_num,
+                    "Column": "Lead Time",
+                    "Message": "Must be a number ≥ 0 if provided.",
+                    "Value": str(lt_raw),
+                })
+
+        # Currency – normalize to uppercase; default USD
+        curr = str(row.get("Currency", "")).strip()
+        df.at[idx, "Currency"] = curr.upper() if curr and curr not in ("nan", "None") else "USD"
+
+        # Category – default General
+        cat = str(row.get("Category", "")).strip()
+        df.at[idx, "Category"] = cat if cat and cat not in ("nan", "None") else "General"
+
+    return df, errors
+
+
 def _make_bar_chart(df, x_col, y_col):
     """
     Streamlit bar_chart may reorder categories (often alphabetically).
@@ -1960,7 +2155,134 @@ def _sum_purchase_from_logs(logs_filtered: pd.DataFrame, meta_df: pd.DataFrame):
 
 @st.dialog("📦 Bulk Upload", width="large")
 def bulk_upload_modal():
-    st.subheader("📦 Inventory Master Sync")
+    # =========================================================
+    # SECTION 1 – MASTER INVENTORY TEMPLATE (download + upload)
+    # =========================================================
+    st.subheader("📋 Master Inventory Template")
+    st.caption(
+        "Use this template to initialize all products, supplier info, and opening stock "
+        "for your organisation in one step."
+    )
+
+    # Step 1 – Download template
+    st.markdown("**Step 1 – Download the template**")
+    st.download_button(
+        label="⬇️ Download Master Template",
+        data=_make_master_template_bytes(),
+        file_name="master_inventory_template.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True,
+        key="dl_master_template",
+    )
+
+    st.divider()
+
+    # Step 2 – Upload completed template
+    st.markdown("**Step 2 – Upload your completed template**")
+    master_file = st.file_uploader(
+        "Upload Master Template",
+        type=["xlsx"],
+        key="master_upload_modal",
+        help="Upload the filled-in master_inventory_template.xlsx file.",
+    )
+
+    if master_file:
+        try:
+            raw_df = pd.read_excel(master_file, sheet_name="MASTER_TEMPLATE")
+        except Exception as e:
+            st.error(f"❌ Could not read MASTER_TEMPLATE sheet: {e}")
+            st.info("Make sure you are uploading the Master Template file (not a different format).")
+            raw_df = None
+
+        if raw_df is not None:
+            if raw_df.empty:
+                st.warning("⚠️ The template has no data rows. Please fill in at least one product.")
+            else:
+                # Step 3 – Validate
+                cleaned_df, errors = _validate_master_template(raw_df)
+
+                if errors:
+                    st.error(f"❌ Validation failed — {len(errors)} error(s) found. Fix them and re-upload.")
+                    st.dataframe(
+                        pd.DataFrame(errors),
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+                else:
+                    st.success(f"✅ Validation passed — {len(cleaned_df)} product(s) ready to import.")
+                    st.markdown("**Step 3 – Preview (first 20 rows)**")
+                    st.dataframe(cleaned_df.head(20), use_container_width=True, hide_index=True)
+
+                    # Step 4 – Confirm import
+                    st.markdown("**Step 4 – Confirm Import**")
+                    col_info, col_btn = st.columns([3, 1])
+                    with col_info:
+                        st.info(
+                            f"This will upsert **{len(cleaned_df)}** product(s) into "
+                            "`product_metadata` and `persistent_inventory` for your organisation."
+                        )
+                    with col_btn:
+                        do_import = st.button(
+                            "✅ Import Products",
+                            type="primary",
+                            use_container_width=True,
+                            key="confirm_master_import",
+                        )
+
+                    if do_import:
+                        org_id = st.session_state.get("org_id")
+                        location_id = st.session_state.get("location_id")
+
+                        if not org_id:
+                            st.error("❌ No organisation selected. Please complete onboarding first.")
+                            st.stop()
+                        if not location_id:
+                            st.error("❌ No location selected. Please select a location first.")
+                            st.stop()
+
+                        # Build meta_df (no Opening Stock)
+                        meta_cols = [
+                            "Product Name", "UOM", "Supplier", "Contact",
+                            "Email", "Category", "Lead Time", "Price", "Currency",
+                        ]
+                        meta_df = cleaned_df.reindex(columns=meta_cols)
+
+                        # Build inv_df (Opening Stock + day columns + computed fields)
+                        inv_df = cleaned_df[["Product Name", "UOM", "Opening Stock", "Category"]].copy()
+                        for day in range(1, 32):
+                            inv_df[str(day)] = 0.0
+                        inv_df["Total Received"] = 0.0
+                        inv_df["Consumption"] = 0.0
+                        inv_df["Closing Stock"] = inv_df["Opening Stock"].copy()
+                        inv_df["Physical Count"] = None
+                        inv_df["Variance"] = 0.0
+
+                        try:
+                            save_to_sheet(
+                                meta_df,
+                                "product_metadata",
+                                pk='org_id,"Product Name"',
+                            )
+                            save_to_sheet(
+                                inv_df,
+                                "persistent_inventory",
+                                pk='org_id,location_id,"Product Name"',
+                            )
+                            st.success(
+                                f"🎉 Successfully imported {len(cleaned_df)} product(s)! "
+                                "Inventory and metadata have been updated."
+                            )
+                            st.cache_data.clear()
+                            st.rerun()
+                        except Exception as exc:
+                            st.error(f"❌ Import failed: {exc}")
+
+    st.divider()
+
+    # =========================================================
+    # SECTION 2 – LEGACY INVENTORY SYNC (unchanged)
+    # =========================================================
+    st.subheader("📦 Inventory Master Sync (Legacy)")
     inv_file = st.file_uploader("Upload XLSX/CSV", type=["csv", "xlsx"], key="inv_upload_modal")
     if inv_file:
         try:
