@@ -926,45 +926,140 @@ st.markdown(
 )
 
 
+def _show_login_page():
+    """Render a centered login / register form. Returns without stopping — caller must st.stop()."""
+    st.markdown(
+        """
+        <div style="max-width:420px;margin:80px auto 0 auto;">
+            <div style="text-align:center;margin-bottom:28px;">
+                <span class="dash-title-pill">🔐 Warehouse Pro Cloud</span>
+                <p style="color:var(--muted);font-size:13px;margin-top:8px;">Sign in to access your inventory</p>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    # Center the form using columns
+    _, center, _ = st.columns([1, 2, 1])
+    with center:
+        mode = st.radio("", ["Sign In", "Register"], horizontal=True, key="login_mode", label_visibility="collapsed")
+        email = st.text_input("📧 Email", placeholder="you@example.com", key="login_email")
+        password = st.text_input("🔑 Password", type="password", placeholder="••••••••", key="login_password")
+
+        if mode == "Sign In":
+            if st.button("🔓 Sign In", use_container_width=True, type="primary", key="signin_btn"):
+                if not email.strip() or not password.strip():
+                    st.error("Please enter both email and password.")
+                    return
+                try:
+                    resp = conn.auth.sign_in_with_password({"email": email.strip(), "password": password.strip()})
+                    user = None
+                    if hasattr(resp, "user") and resp.user:
+                        user = resp.user
+                    elif isinstance(resp, dict) and resp.get("user"):
+                        user = resp["user"]
+                    if user:
+                        uid = getattr(user, "id", None) or (user.get("id") if isinstance(user, dict) else None)
+                        if uid:
+                            # Clear logged_out flag and populate session
+                            if "logged_out" in st.session_state:
+                                del st.session_state["logged_out"]
+                            after_login_set_session(uid)
+                            st.success("✅ Signed in!")
+                            st.cache_data.clear()
+                            st.rerun()
+                        else:
+                            st.error("Sign in succeeded but user ID not found. Please try again.")
+                    else:
+                        st.error("❌ Invalid email or password.")
+                except Exception as e:
+                    st.error(f"❌ Sign in failed: {e}")
+        else:
+            if st.button("📝 Create Account", use_container_width=True, type="primary", key="signup_btn"):
+                if not email.strip() or not password.strip():
+                    st.error("Please enter both email and password.")
+                    return
+                if len(password) < 6:
+                    st.error("Password must be at least 6 characters.")
+                    return
+                try:
+                    resp = conn.auth.sign_up({"email": email.strip(), "password": password.strip()})
+                    user = None
+                    if hasattr(resp, "user") and resp.user:
+                        user = resp.user
+                    elif isinstance(resp, dict) and resp.get("user"):
+                        user = resp["user"]
+                    if user:
+                        uid = getattr(user, "id", None) or (user.get("id") if isinstance(user, dict) else None)
+                        if uid:
+                            if "logged_out" in st.session_state:
+                                del st.session_state["logged_out"]
+                            after_login_set_session(uid)
+                            st.success("✅ Account created! Welcome.")
+                            st.cache_data.clear()
+                            st.rerun()
+                        else:
+                            st.warning("Account created. Please check your email for a confirmation link, then sign in.")
+                    else:
+                        st.warning("Account may have been created. Please check your email and sign in.")
+                except Exception as e:
+                    st.error(f"❌ Registration failed: {e}")
+
+
 # --- Ensure session state reflects current authenticated user ---
 current_uid = get_current_user_id()  # uses helper defined earlier
+
 if st.session_state.get("logged_out"):
-    # User explicitly logged out — do not re-populate session from auth
-    pass
+    # User explicitly logged out — show login page, do not re-populate session
+    _show_login_page()
+    st.stop()
 elif current_uid:
-    # If session_state does not already match the current auth user, populate it
+    # Active auth session — populate session state if not already done
     if st.session_state.get("user_id") != current_uid:
         try:
-            # after_login_set_session populates memberships, org_id, location_id, role
             after_login_set_session(current_uid)
         except Exception:
-            # fallback: set minimal session key so the app treats the user as logged in
             st.session_state["user_id"] = current_uid
 else:
-    # No user authenticated: ensure app treats the session as logged-out
-    for _k in ("user_id", "org_id", "location_id", "memberships", "role"):
-        if _k in st.session_state:
-            del st.session_state[_k]
-    # (Optional) you can show your login/register UI here or let the app's existing logic do that.
+    # No auth session at all — show login page
+    _show_login_page()
+    st.stop()
 
 
 # --- ONBOARDING: show setup wizard if user is logged in but has no org ---
 _uid = st.session_state.get("user_id")
 _memberships = st.session_state.get("memberships", [])
-if _uid and not _memberships and not st.session_state.get("logged_out"):
-    st.markdown("## 🏢 Welcome! Set up your organization")
-    st.info("You're logged in but haven't set up an organization yet. Please fill in the details below to get started.")
-    with st.form("onboarding_form"):
-        _org_name = st.text_input("Organization Name", placeholder="e.g., My Warehouse Co.")
-        _loc_name = st.text_input("First Location Name", value="Main Warehouse", placeholder="e.g., Main Warehouse")
-        _submitted = st.form_submit_button("🚀 Create Organization & Location", type="primary", use_container_width=True)
+if _uid and not _memberships:
+    st.markdown(
+        """
+        <div style="max-width:500px;margin:60px auto 0 auto;text-align:center;">
+            <span class="dash-title-pill">🏢 Set Up Your Organization</span>
+            <p style="color:var(--muted);font-size:13px;margin-top:10px;">
+                You're logged in but haven't set up an organization yet.<br>
+                Fill in the details below to get started.
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    _, center_col, _ = st.columns([1, 2, 1])
+    with center_col:
+        with st.form("onboarding_form"):
+            _org_name = st.text_input("🏢 Organization Name", placeholder="e.g., My Warehouse Co.")
+            _loc_name = st.text_input("📍 First Location Name", value="Main Warehouse", placeholder="e.g., Main Warehouse")
+            _submitted = st.form_submit_button("🚀 Create Organization & Location", type="primary", use_container_width=True)
         if _submitted:
             if not _org_name.strip():
                 st.error("Please enter an organization name.")
             else:
-                _ok = onboard_new_user(user_id=_uid, org_name=_org_name.strip(), initial_location_name=_loc_name.strip() or "Main Warehouse")
+                _ok = onboard_new_user(
+                    user_id=_uid,
+                    org_name=_org_name.strip(),
+                    initial_location_name=_loc_name.strip() or "Main Warehouse",
+                )
                 if _ok:
-                    st.success("✅ Organization created! Reloading...")
+                    st.success("✅ Organization created! Loading your workspace...")
                     st.cache_data.clear()
                     st.rerun()
                 else:
