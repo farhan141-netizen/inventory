@@ -1958,9 +1958,211 @@ def _sum_purchase_from_logs(logs_filtered: pd.DataFrame, meta_df: pd.DataFrame):
     )
     return out
 
+def _build_master_template_xlsx() -> bytes:
+    """Generate the downloadable Master Inventory Template as xlsx bytes."""
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="xlsxwriter") as writer:
+        # Sheet 1: MASTER_TEMPLATE — headers only, no example rows
+        template_cols = [
+            "Product Name", "UOM", "Opening Stock", "Category",
+            "Supplier", "Contact", "Email", "Lead Time", "Price", "Currency",
+        ]
+        pd.DataFrame(columns=template_cols).to_excel(
+            writer, index=False, sheet_name="MASTER_TEMPLATE"
+        )
+
+        # Sheet 2: INSTRUCTIONS
+        instructions = pd.DataFrame({
+            "Instructions": [
+                "• Required columns: Product Name, UOM, Opening Stock",
+                "• Opening Stock must be numeric and >= 0",
+                "• Do not rename or reorder column headers",
+                "• One row = one product",
+                "• Category defaults to 'General' if left empty",
+                "• Currency defaults to 'USD' if left empty",
+                "• Lead Time and Price must be numeric and >= 0 if provided",
+                "• Product Name must be unique (case-insensitive) within the file",
+            ]
+        })
+        instructions.to_excel(writer, index=False, sheet_name="INSTRUCTIONS")
+    return buf.getvalue()
+
+
+def _validate_master_template(df: pd.DataFrame):
+    """
+    Validate a parsed MASTER_TEMPLATE DataFrame.
+    Returns (cleaned_df, errors_list).
+    errors_list items: {"Row": int, "Product Name": str, "Error": str}
+    """
+    errors = []
+    required_cols = {"Product Name", "UOM", "Opening Stock"}
+    missing = required_cols - set(df.columns)
+    if missing:
+        errors.append({"Row": "-", "Product Name": "-", "Error": f"Missing required columns: {', '.join(sorted(missing))}"})
+        return df, errors
+
+    df = df.copy()
+
+    # Trim string fields
+    for col in ["Product Name", "UOM", "Category", "Supplier", "Contact", "Email", "Currency"]:
+        if col in df.columns:
+            df[col] = df[col].astype(str).str.strip().replace({"nan": "", "None": ""})
+
+    # Drop fully empty rows
+    df = df[df["Product Name"].str.len() > 0].reset_index(drop=True)
+
+    # Check for duplicates (case-insensitive)
+    seen_names: dict[str, int] = {}
+    for i, row in df.iterrows():
+        name = row["Product Name"]
+        name_lower = name.lower()
+        if name_lower in seen_names:
+            errors.append({"Row": i + 1, "Product Name": name, "Error": f"Duplicate of row {seen_names[name_lower] + 1}"})
+        else:
+            seen_names[name_lower] = i
+
+    for i, row in df.iterrows():
+        name = row["Product Name"]
+        row_num = i + 1
+
+        # UOM required
+        uom = str(row.get("UOM", "")).strip()
+        if not uom or uom in ("", "nan"):
+            errors.append({"Row": row_num, "Product Name": name, "Error": "UOM is required"})
+
+        # Opening Stock numeric >= 0
+        opening = pd.to_numeric(row.get("Opening Stock"), errors="coerce")
+        if pd.isna(opening) or opening < 0:
+            errors.append({"Row": row_num, "Product Name": name, "Error": "Opening Stock must be numeric and >= 0"})
+
+        # Price numeric >= 0 if provided
+        price_raw = row.get("Price")
+        if price_raw is not None and str(price_raw).strip() not in ("", "nan"):
+            price_val = pd.to_numeric(price_raw, errors="coerce")
+            if pd.isna(price_val) or price_val < 0:
+                errors.append({"Row": row_num, "Product Name": name, "Error": "Price must be numeric and >= 0"})
+
+        # Lead Time numeric >= 0 if provided
+        lt_raw = row.get("Lead Time")
+        if lt_raw is not None and str(lt_raw).strip() not in ("", "nan"):
+            lt_val = pd.to_numeric(lt_raw, errors="coerce")
+            if pd.isna(lt_val) or lt_val < 0:
+                errors.append({"Row": row_num, "Product Name": name, "Error": "Lead Time must be numeric and >= 0"})
+
+    # Apply defaults
+    df["Category"] = df["Category"].apply(lambda v: "General" if (not v or v in ("nan", "")) else v)
+    if "Currency" in df.columns:
+        df["Currency"] = df["Currency"].apply(lambda v: "USD" if (not v or v in ("nan", "")) else str(v).upper())
+    else:
+        df["Currency"] = "USD"
+
+    return df, errors
+
+
 @st.dialog("📦 Bulk Upload", width="large")
 def bulk_upload_modal():
-    st.subheader("📦 Inventory Master Sync")
+    # ── Section A: Download Master Template ──────────────────────────────
+    st.subheader("⬇️ Master Inventory Template")
+    st.caption("Download, fill in your products, then upload below to initialize your inventory.")
+    template_bytes = _build_master_template_xlsx()
+    st.download_button(
+        label="⬇️ Download Master Template",
+        data=template_bytes,
+        file_name="Master_Inventory_Template.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True,
+        key="dl_master_template",
+    )
+
+    st.divider()
+
+    # ── Section B: Upload + validate master template ──────────────────────
+    st.subheader("📤 Upload Master Template")
+    master_file = st.file_uploader("Upload Master Template", type=["xlsx"], key="master_upload_modal")
+
+    if master_file:
+        try:
+            raw_df = pd.read_excel(master_file, sheet_name="MASTER_TEMPLATE")
+        except Exception as e:
+            st.error(f"Could not read MASTER_TEMPLATE sheet: {e}")
+            return
+
+        cleaned_df, errors = _validate_master_template(raw_df)
+
+        if errors:
+            st.error(f"❌ Validation failed — {len(errors)} error(s). Fix the file and re-upload.")
+            st.dataframe(pd.DataFrame(errors), use_container_width=True, hide_index=True)
+            return
+
+        # Show count summary
+        st.success(f"✅ Validation passed — {len(cleaned_df)} product(s) ready to import.")
+        col_a, col_b = st.columns(2)
+        with col_a:
+            st.metric("Total Products", len(cleaned_df))
+        with col_b:
+            cats = cleaned_df["Category"].nunique() if "Category" in cleaned_df.columns else 0
+            st.metric("Categories", cats)
+
+        # Preview first 20 rows
+        st.caption("Preview (first 20 rows):")
+        st.dataframe(cleaned_df.head(20), use_container_width=True, hide_index=True)
+
+        st.divider()
+
+        # ── Section C: Confirm Import ─────────────────────────────────────
+        org_id = st.session_state.get("org_id")
+        location_id = st.session_state.get("location_id")
+
+        if not org_id or not location_id:
+            st.error("⚠️ org_id or location_id not found in session. Please log in and select a location first.")
+            return
+
+        if st.button("✅ Import Products", type="primary", use_container_width=True, key="import_master_btn"):
+            # 1) Upsert product_metadata (all columns except Opening Stock)
+            meta_cols = ["Product Name", "UOM", "Supplier", "Contact", "Email", "Category", "Lead Time", "Price", "Currency"]
+            meta_df = cleaned_df[[c for c in meta_cols if c in cleaned_df.columns]].copy()
+            # Fill missing optional columns with empty string / NaN
+            for col in meta_cols:
+                if col not in meta_df.columns:
+                    meta_df[col] = None
+            save_to_sheet(meta_df, "product_metadata", pk='org_id,"Product Name"')
+
+            # 2) Build inventory rows — only for products that do NOT already exist
+            existing_inv = load_from_sheet("persistent_inventory")
+            if not existing_inv.empty and "Product Name" in existing_inv.columns:
+                existing_names = set(existing_inv["Product Name"].astype(str).str.strip().str.lower())
+            else:
+                existing_names = set()
+
+            new_rows_mask = cleaned_df["Product Name"].str.strip().str.lower().apply(lambda n: n not in existing_names)
+            new_products_df = cleaned_df[new_rows_mask].copy()
+
+            if new_products_df.empty:
+                st.info("ℹ️ All products already exist in inventory — no new rows created. Metadata was updated.")
+            else:
+                inv_df = pd.DataFrame()
+                inv_df["Product Name"] = new_products_df["Product Name"].values
+                inv_df["UOM"] = new_products_df["UOM"].values
+                inv_df["Opening Stock"] = pd.to_numeric(new_products_df["Opening Stock"], errors="coerce").fillna(0.0).values
+                inv_df["Category"] = new_products_df["Category"].values
+                for i in range(1, 32):
+                    inv_df[str(i)] = 0.0
+                inv_df["Total Received"] = 0.0
+                inv_df["Consumption"] = 0.0
+                inv_df["Closing Stock"] = inv_df["Opening Stock"]
+                inv_df["Physical Count"] = None
+                inv_df["Variance"] = 0.0
+
+                save_to_sheet(inv_df, "persistent_inventory", pk='org_id,location_id,"Product Name"')
+                st.success(f"✅ {len(inv_df)} new product(s) added to inventory.")
+
+            st.cache_data.clear()
+            st.rerun()
+
+    st.divider()
+
+    # ── Legacy: raw XLSX/CSV inventory sync ──────────────────────────────
+    st.subheader("📦 Inventory Master Sync (Legacy)")
     inv_file = st.file_uploader("Upload XLSX/CSV", type=["csv", "xlsx"], key="inv_upload_modal")
     if inv_file:
         try:
@@ -1983,7 +2185,7 @@ def bulk_upload_modal():
 
     st.divider()
 
-    st.subheader("📞 Supplier Metadata Sync")
+    st.subheader("📞 Supplier Metadata Sync (Legacy)")
     meta_file = st.file_uploader("Upload Product Data", type=["csv", "xlsx"], key="meta_upload_modal")
     if meta_file:
         try:
