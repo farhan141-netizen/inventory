@@ -304,6 +304,56 @@ def save_to_sheet(df: pd.DataFrame, table_name: str, pk: str = None):
         st.error(f"Database Save Error on '{table_name}': {e}")
         return False
 
+
+def logout_user():
+    """Sign out and clear session state, then rerun app."""
+    try:
+        if hasattr(conn, "auth") and hasattr(conn.auth, "sign_out"):
+            conn.auth.sign_out()
+        elif hasattr(conn, "sign_out"):
+            conn.sign_out()
+    except Exception:
+        pass
+
+    keys_to_clear = [
+        "user_id",
+        "org_id",
+        "location_id",
+        "memberships",
+        "role",
+        "dash_cards",
+        "inventory",
+        "log_page",
+    ]
+    for k in keys_to_clear:
+        if k in st.session_state:
+            del st.session_state[k]
+
+    try:
+        st.cache_data.clear()
+    except Exception:
+        pass
+
+    # Rerun so UI updates to logged-out state
+    st.experimental_rerun()
+
+
+@st.dialog("🔒 Confirm Logout")
+def _logout_confirm_dialog():
+    """Dialog shown when user presses Logout; confirm before logging out."""
+    st.subheader("Confirm Logout")
+    st.write("Are you sure you want to log out? Your session will be cleared from this browser.")
+    c1, c2 = st.columns([1, 1])
+    with c1:
+        if st.button("Yes, logout", type="primary", use_container_width=True, key="confirm_logout_btn"):
+            logout_user()
+    with c2:
+        if st.button("Cancel", use_container_width=True, key="cancel_logout_btn"):
+            # Dialog auto-closes when function returns without logging out
+            st.info("Cancelled")
+
+
+
 # --- PAGE CONFIG ---
 st.set_page_config(page_title="Warehouse Pro Cloud v8.6", layout="wide", initial_sidebar_state="expanded")
 
