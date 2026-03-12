@@ -415,9 +415,8 @@ _SERVER_UUID_PK_TABLES = ("persistent_inventory",)
 def save_to_sheet(df: pd.DataFrame, table_name: str, pk: str = None):
     """
     Org-aware save. Ensures org_id and (optionally) location_id are written to every record.
-    pk: optional conflict-target override (e.g. 'Product Name' or 'ReqID'). When omitted,
-        the conflict target is looked up from _ON_CONFLICT_BY_TABLE; tables not in the
-        mapping fall back to a plain upsert (no on_conflict argument).
+    pk: optional conflict-target override. When omitted, conflict target is looked up
+        from _ON_CONFLICT_BY_TABLE.
     """
     if df is None:
         return False
@@ -447,36 +446,16 @@ def save_to_sheet(df: pd.DataFrame, table_name: str, pk: str = None):
 
     records = df.to_dict(orient="records")
 
-    # ✅ IMPORTANT: Do not send id=None for tables where DB generates UUIDs
-    # Postgres defaults (gen_random_uuid) only apply when the column is omitted.
-    if table_name == "persistent_inventory":
-        for r in records:
-            if r.get("id") in (None, "", "null"):
-                r.pop("id", None)
-
-    # Resolve conflict target: explicit pk overrides mapping; missing → plain upsert
-    conflict_target = pk if pk else _ON_CONFLICT_BY_TABLE.get(table_name)
-
-    # For tables whose primary key is server-generated (uuid default gen_random_uuid()),
-    # never send id: null — Postgres only applies the default when the column is omitted.
-    # Sending null bypasses the default and causes a NOT NULL violation.
-    if table_name in _SERVER_UUID_PK_TABLES and "id" in df.columns:
-        if df["id"].isna().all():
-            # All rows lack an id → drop the column so the DB default fires
-            df = df.drop(columns=["id"])
-        # else: some rows already have ids (e.g. updates); only omit the ones that are null
-        # by stripping them per-record below
-
-    records = df.to_dict(orient="records")
-
-    # Strip id: None from individual records for server-UUID-PK tables
+    # IMPORTANT: for server-generated uuid PK tables, omit id if it's null/blank
     if table_name in _SERVER_UUID_PK_TABLES:
-        records = [
-            {k: v for k, v in rec.items() if not (k == "id" and v is None)}
-            for rec in records
-        ]
+        cleaned = []
+        for rec in records:
+            v = rec.get("id")
+            if v is None or str(v).strip().lower() in ("", "none", "null", "nan"):
+                rec.pop("id", None)
+            cleaned.append(rec)
+        records = cleaned
 
-    # Resolve conflict target: explicit pk overrides mapping; missing → plain upsert
     conflict_target = pk if pk else _ON_CONFLICT_BY_TABLE.get(table_name)
 
     try:
@@ -490,7 +469,6 @@ def save_to_sheet(df: pd.DataFrame, table_name: str, pk: str = None):
     except Exception as e:
         st.error(f"Database Save Error on '{table_name}': {e}")
         return False
-
 
 # Replace your existing logout helper + dialog with this robust version
 
