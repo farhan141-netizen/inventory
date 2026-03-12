@@ -356,10 +356,23 @@ def load_from_sheet(table_name, default_cols=None, allow_global_meta=False):
             return pd.DataFrame(columns=default_cols)
         return pd.DataFrame()
 
+# Mapping of table names to their upsert conflict-target columns.
+# Values are comma-separated column names as expected by Supabase's on_conflict parameter.
+# Columns that contain spaces must be wrapped in double-quotes (e.g. "Product Name").
+# These must match the unique indexes defined in sql/unique_indexes.sql.
+_ON_CONFLICT_BY_TABLE = {
+    "product_metadata": 'org_id,"Product Name"',
+    "persistent_inventory": 'org_id,location_id,"Product Name"',
+    "user_memberships": "user_id,org_id,location_id",
+}
+
+
 def save_to_sheet(df: pd.DataFrame, table_name: str, pk: str = None):
     """
     Org-aware save. Ensures org_id and (optionally) location_id are written to every record.
-    pk: optional primary key column name to use for upsert on conflict (e.g., 'Product Name' or 'ReqID').
+    pk: optional conflict-target override (e.g. 'Product Name' or 'ReqID'). When omitted,
+        the conflict target is looked up from _ON_CONFLICT_BY_TABLE; tables not in the
+        mapping fall back to a plain upsert (no on_conflict argument).
     """
     if df is None:
         return False
@@ -389,10 +402,12 @@ def save_to_sheet(df: pd.DataFrame, table_name: str, pk: str = None):
 
     records = df.to_dict(orient="records")
 
+    # Resolve conflict target: explicit pk overrides mapping; missing → plain upsert
+    conflict_target = pk if pk else _ON_CONFLICT_BY_TABLE.get(table_name)
+
     try:
-        if pk:
-            # some clients support upsert(records, on_conflict=pk)
-            conn.table(table_name).upsert(records, on_conflict=pk).execute()
+        if conflict_target:
+            conn.table(table_name).upsert(records, on_conflict=conflict_target).execute()
         else:
             conn.table(table_name).upsert(records).execute()
 
