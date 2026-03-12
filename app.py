@@ -405,6 +405,12 @@ _ON_CONFLICT_BY_TABLE = {
     "activity_logs": 'org_id,location_id,"LogID"',
 }
 
+# Tables whose primary key is server-generated (uuid DEFAULT gen_random_uuid()).
+# When saving to these tables, null/blank id values must be omitted from the
+# upsert payload so that Postgres can apply the column default.  Sending an
+# explicit null bypasses the default and causes a NOT NULL violation.
+_SERVER_UUID_PK_TABLES = ("persistent_inventory",)
+
 
 def save_to_sheet(df: pd.DataFrame, table_name: str, pk: str = None):
     """
@@ -439,7 +445,24 @@ def save_to_sheet(df: pd.DataFrame, table_name: str, pk: str = None):
     # Convert NaN to None for JSON compatibility
     df = df.where(pd.notnull(df), None)
 
+    # For tables whose primary key is server-generated (uuid default gen_random_uuid()),
+    # never send id: null — Postgres only applies the default when the column is omitted.
+    # Sending null bypasses the default and causes a NOT NULL violation.
+    if table_name in _SERVER_UUID_PK_TABLES and "id" in df.columns:
+        if df["id"].isna().all():
+            # All rows lack an id → drop the column so the DB default fires
+            df = df.drop(columns=["id"])
+        # else: some rows already have ids (e.g. updates); only omit the ones that are null
+        # by stripping them per-record below
+
     records = df.to_dict(orient="records")
+
+    # Strip id: None from individual records for server-UUID-PK tables
+    if table_name in _SERVER_UUID_PK_TABLES:
+        records = [
+            {k: v for k, v in rec.items() if not (k == "id" and v is None)}
+            for rec in records
+        ]
 
     # Resolve conflict target: explicit pk overrides mapping; missing → plain upsert
     conflict_target = pk if pk else _ON_CONFLICT_BY_TABLE.get(table_name)
