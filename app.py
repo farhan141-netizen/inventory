@@ -34,7 +34,7 @@ def safe_rerun():
     # Try to change query params (this causes a rerun in most builds)
     try:
         if callable(getattr(st, "experimental_set_query_params", None)):
-            st.experimental_set_query_params(_r=_uuid.uuid4().hex)
+            st.experimental_set_query_params(_r=uuid.uuid4().hex)
             return
     except Exception:
         pass
@@ -923,6 +923,26 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
+
+# --- Ensure session state reflects current authenticated user ---
+current_uid = get_current_user_id()  # uses helper defined earlier
+if current_uid:
+    # If session_state does not already match the current auth user, populate it
+    if st.session_state.get("user_id") != current_uid:
+        try:
+            # after_login_set_session populates memberships, org_id, location_id, role
+            after_login_set_session(current_uid)
+        except Exception:
+            # fallback: set minimal session key so the app treats the user as logged in
+            st.session_state["user_id"] = current_uid
+else:
+    # No user authenticated: ensure app treats the session as logged-out
+    for _k in ("user_id", "org_id", "location_id", "memberships", "role"):
+        if _k in st.session_state:
+            del st.session_state[_k]
+    # (Optional) you can show your login/register UI here or let the app's existing logic do that.
+
 
 # --- CORE CALCULATION ENGINE ---
 def recalculate_item(df, item_name):
