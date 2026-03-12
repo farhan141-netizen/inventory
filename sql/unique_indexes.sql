@@ -23,3 +23,10 @@ create unique index if not exists ux_persistent_inventory_org_loc_product
 -- user_memberships: unique per user + organisation + location
 create unique index if not exists ux_user_memberships_user_org_loc
     on public.user_memberships(user_id, org_id, location_id);
+
+-- activity_logs: unique per organisation + location + log entry
+-- Enables tenant-safe upserts so re-saving the same log entry never creates duplicates.
+-- LogID is an 8-char identifier generated per log row; combined with org_id + location_id
+-- it forms a stable, collision-free composite key.
+create unique index if not exists ux_activity_logs_org_loc_logid
+    on public.activity_logs(org_id, location_id, "LogID");
