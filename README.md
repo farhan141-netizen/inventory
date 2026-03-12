@@ -19,13 +19,16 @@ SUPABASE_KEY = "<your-anon-or-service-role-key>"
 
 Open the **Supabase SQL Editor** for your project and run the contents of [`sql/unique_indexes.sql`](sql/unique_indexes.sql).
 
-This creates three idempotent unique indexes that enable safe org-scoped upserts for the following tables:
+This creates four idempotent unique indexes that enable safe org-scoped upserts for the following tables:
 
 | Table | Unique index columns |
 |---|---|
 | `product_metadata` | `org_id`, `"Product Name"` |
 | `persistent_inventory` | `org_id`, `location_id`, `"Product Name"` |
 | `user_memberships` | `user_id`, `org_id`, `location_id` |
+| `activity_logs` | `org_id`, `location_id`, `"LogID"` |
+
+The `activity_logs` index ensures that re-saving the same log entry (identified by `LogID`) for the same organisation and location never creates duplicate rows. This makes activity-log upserts fully tenant-safe and idempotent.
 
 > **Why `CREATE UNIQUE INDEX` instead of `ADD CONSTRAINT`?**  
 > Some Supabase/Postgres versions do not support the `ADD CONSTRAINT IF NOT EXISTS` syntax and will return a syntax error. `CREATE UNIQUE INDEX IF NOT EXISTS` is fully idempotent and compatible, and Postgres uses unique indexes to resolve `ON CONFLICT` clauses in upserts.

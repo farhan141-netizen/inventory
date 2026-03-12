@@ -112,6 +112,10 @@ def get_current_user_id():
     return None
 
 
+# Module-level constant for the 31 possible day columns in inventory tables.
+_DAY_COLUMNS = [str(d) for d in range(1, 32)]
+
+
 def clean_dataframe(df):
     """Ensures unique columns, removes ghost columns, and formats for Supabase"""
     if df is None or df.empty:
@@ -182,6 +186,20 @@ def clean_dataframe(df):
             s = str(v).strip()
             return None if s in ("", "nan") else v
         df["Contact"] = df["Contact"].apply(_blank_to_none)
+
+    # ✅ Coerce inventory quantity columns: empty strings / invalid text → 0
+    # These columns map to float8 columns in persistent_inventory / monthly_history.
+    _inventory_num_cols = [
+        "Opening Stock", "Total Received", "Consumption", "Closing Stock", "Variance",
+    ]
+    for col in _inventory_num_cols:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+
+    # ✅ Coerce day columns "1".."31": empty strings / invalid text → 0
+    for col in _DAY_COLUMNS:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
 
     return df
 
@@ -384,6 +402,7 @@ _ON_CONFLICT_BY_TABLE = {
     "product_metadata": 'org_id,"Product Name"',
     "persistent_inventory": 'org_id,location_id,"Product Name"',
     "user_memberships": "user_id,org_id,location_id",
+    "activity_logs": 'org_id,location_id,"LogID"',
 }
 
 
