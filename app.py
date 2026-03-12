@@ -163,6 +163,26 @@ def clean_dataframe(df):
             # in case of mixed types or strings, keep as numeric float
             df["Qty"] = pd.to_numeric(df["Qty"], errors="coerce").fillna(0)
 
+    # ✅ Coerce numeric DB columns so empty strings don't cause bigint/numeric errors
+    # Lead Time is an integer column; empty/invalid → None (NULL in DB)
+    if "Lead Time" in df.columns:
+        df["Lead Time"] = pd.to_numeric(df["Lead Time"], errors="coerce")
+        df["Lead Time"] = df["Lead Time"].where(df["Lead Time"].notna(), other=None)
+
+    # Price is a numeric/float column; empty/invalid → None
+    if "Price" in df.columns:
+        df["Price"] = pd.to_numeric(df["Price"], errors="coerce")
+        df["Price"] = df["Price"].where(df["Price"].notna(), other=None)
+
+    # Contact: coerce to None if empty string (DB may store as numeric/bigint)
+    if "Contact" in df.columns:
+        def _blank_to_none(v):
+            if v is None:
+                return None
+            s = str(v).strip()
+            return None if s in ("", "nan") else v
+        df["Contact"] = df["Contact"].apply(_blank_to_none)
+
     return df
 
 # -------------------------
@@ -1125,6 +1145,7 @@ def apply_transaction(item_name, day_num, qty, is_undo=False):
             new_log = pd.DataFrame(
                 [
                     {
+                        "id": str(uuid.uuid4()),
                         "LogID": str(uuid.uuid4())[:8],
                         "Timestamp": datetime.datetime.now().strftime("%H:%M:%S"),
                         "Item": item_name,
@@ -1139,6 +1160,12 @@ def apply_transaction(item_name, day_num, qty, is_undo=False):
             logs_df = load_from_sheet("activity_logs", ["LogID", "Timestamp", "Item", "Qty", "Day", "Status", "LogDate"])
             if "LogDate" not in logs_df.columns:
                 logs_df["LogDate"] = ""
+            # Ensure every existing log row has an id so the NOT NULL constraint is satisfied
+            if "id" not in logs_df.columns:
+                logs_df["id"] = [str(uuid.uuid4()) for _ in range(len(logs_df))]
+            else:
+                mask = logs_df["id"].apply(lambda x: pd.isna(x) or str(x).strip() == "")
+                logs_df.loc[mask, "id"] = [str(uuid.uuid4()) for _ in range(mask.sum())]
             save_to_sheet(pd.concat([logs_df, new_log], ignore_index=True), "activity_logs")
 
         df = recalculate_item(df, item_name)
