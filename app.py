@@ -305,14 +305,17 @@ def save_to_sheet(df: pd.DataFrame, table_name: str, pk: str = None):
         return False
 
 
+# Replace your existing logout helper + dialog with this robust version
+
 def logout_user():
-    """Sign out and clear session state, then rerun app."""
+    """Sign out and clear session state, then rerun app (with safe fallbacks)."""
     try:
         if hasattr(conn, "auth") and hasattr(conn.auth, "sign_out"):
             conn.auth.sign_out()
         elif hasattr(conn, "sign_out"):
             conn.sign_out()
     except Exception:
+        # ignore sign-out errors — we'll clear session anyway
         pass
 
     keys_to_clear = [
@@ -334,9 +337,29 @@ def logout_user():
     except Exception:
         pass
 
-    # Rerun so UI updates to logged-out state
-    st.experimental_rerun()
+    # Try safe rerun fallbacks:
+    try:
+        # preferred (older/newer aliases)
+        if hasattr(st, "rerun"):
+            st.rerun()
+            return
+    except Exception:
+        pass
 
+    try:
+        if hasattr(st, "experimental_rerun"):
+            st.experimental_rerun()
+            return
+    except Exception:
+        pass
+
+    # Last-resort: stop execution (Streamlit will rerun on next interaction)
+    try:
+        st.stop()
+    except Exception:
+        # If even st.stop is unavailable, raise a controlled exception to break execution
+        raise RuntimeError("Logout: unable to programmatically rerun/stop the app; session cleared.")
+    
 
 @st.dialog("🔒 Confirm Logout")
 def _logout_confirm_dialog():
@@ -349,9 +372,7 @@ def _logout_confirm_dialog():
             logout_user()
     with c2:
         if st.button("Cancel", use_container_width=True, key="cancel_logout_btn"):
-            # Dialog auto-closes when function returns without logging out
-            st.info("Cancelled")
-
+            st.info("Logout cancelled")
 
 
 # --- PAGE CONFIG ---
