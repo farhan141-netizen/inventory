@@ -1744,21 +1744,39 @@ if "log_page" not in st.session_state:
 # --- HEADER ROW ---
 hdr_left, hdr_mid, hdr_right = st.columns([4, 1, 1])
 with hdr_left:
-    st.markdown("""
-    <div class="wp-header">
-        <div>
-            <div class="title">Warehouse Pro Cloud</div>
-            <div class="subtitle">v8.6 · Calm operational command center</div>
+    st.markdown(
+        """
+        <div class="wp-header">
+            <div>
+                <div class="title">Warehouse Pro Cloud</div>
+                <div class="subtitle">v8.6 · Calm operational command center</div>
+            </div>
         </div>
-    </div>
-    """, unsafe_allow_html=True)
+        """,
+        unsafe_allow_html=True,
+    )
+
 with hdr_mid:
+    # keep your Bulk Upload button here (assumes bulk_upload_modal defined elsewhere)
     if st.button("📦 Bulk Upload", use_container_width=True, key="bulk_upload_btn"):
-        bulk_upload_modal()
+        try:
+            bulk_upload_modal()  # if defined in your app
+        except Exception:
+            st.warning("Bulk upload modal not available.")
+
 with hdr_right:
+    # Refresh button
     if st.button("🔄 Refresh Data", use_container_width=True, key="refresh_all"):
         st.cache_data.clear()
-        st.rerun()
+        st.experimental_rerun()
+
+    # Small spacer (keeps layout similar to screenshot)
+    st.write("")
+
+    # Logout button triggers the confirmation dialog
+    if st.button("🔓 Logout", use_container_width=True, key="logout_btn"):
+        # Open the dialog defined above
+        _logout_confirm_dialog()
 
 # ===================== SIDEBAR =====================
 with st.sidebar:
