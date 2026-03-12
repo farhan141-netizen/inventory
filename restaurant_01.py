@@ -35,21 +35,6 @@ def _remap_columns(df: pd.DataFrame) -> pd.DataFrame:
     """Rename lowercased Supabase columns back to expected Title Case."""
     return df.rename(columns={k: v for k, v in _COL_REMAP.items() if k in df.columns})
 
-def load_from_sheet(table_name, default_cols=None):
-    """Load from Supabase table."""
-    try:
-        response = conn.table(table_name).select("*").execute()
-        data = response.data
-        if not data:
-            return pd.DataFrame(columns=default_cols) if default_cols else pd.DataFrame()
-        df = pd.DataFrame(data)
-        df = _remap_columns(df)
-        df = df.replace({None: np.nan})
-        return df
-    except Exception as e:
-        st.warning(f"Table '{table_name}' not found or empty: {e}")
-        return pd.DataFrame(columns=default_cols) if default_cols else pd.DataFrame()
-
 def _clean_for_supabase(df: pd.DataFrame) -> pd.DataFrame:
     """Cast types correctly to avoid Supabase bigint/float errors."""
     df = df.copy()
@@ -80,16 +65,58 @@ _TABLE_PK = {
     "restaurant_requisitions":  "ReqID",
 }
 
+# Location-scoped tables in restaurant_01
+_LOCATION_SCOPED_TABLES = {"rest_01_inventory", "restaurant_requisitions"}
+
+def load_from_sheet(table_name, default_cols=None):
+    """Load from Supabase table with org/location filtering."""
+    try:
+        org_id = st.session_state.get("org_id")
+        location_id = st.session_state.get("location_id")
+
+        q = conn.table(table_name).select("*")
+
+        if org_id:
+            q = q.eq("org_id", org_id)
+        if location_id and table_name in _LOCATION_SCOPED_TABLES:
+            q = q.eq("location_id", location_id)
+
+        response = q.execute()
+        data = response.data
+        if not data:
+            return pd.DataFrame(columns=default_cols) if default_cols else pd.DataFrame()
+        df = pd.DataFrame(data)
+        df = _remap_columns(df)
+        df = df.replace({None: np.nan})
+        return df
+    except Exception as e:
+        st.warning(f"Table '{table_name}' not found or empty: {e}")
+        return pd.DataFrame(columns=default_cols) if default_cols else pd.DataFrame()
+
 def save_to_sheet(df, table_name):
-    """Upsert DataFrame rows into a Supabase table."""
+    """Upsert DataFrame rows into a Supabase table with org/location isolation."""
     try:
         if df is None or df.empty:
             st.error(f"Cannot save empty dataframe to {table_name}")
             return False
 
+        df = df.copy()
         df = _clean_for_supabase(df)
-        records = df.to_dict(orient="records")
 
+        # Inject org_id for multi-tenant isolation
+        org_id = st.session_state.get("org_id")
+        if org_id:
+            df["org_id"] = org_id
+
+        # Inject location_id for location-scoped tables
+        location_id = st.session_state.get("location_id")
+        if location_id and table_name in _LOCATION_SCOPED_TABLES:
+            df["location_id"] = location_id
+
+        # Replace NaN with None for JSON serialisation
+        df = df.where(pd.notnull(df), None)
+
+        records = df.to_dict(orient="records")
         pk = _TABLE_PK.get(table_name)
         response = conn.table(table_name).upsert(records, on_conflict=pk).execute()
 

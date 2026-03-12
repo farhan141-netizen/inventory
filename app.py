@@ -171,45 +171,6 @@ def clean_dataframe(df):
 # These helpers create orgs/locations and manage user memberships in Supabase.
 # Use these in your signup/onboarding logic.
 
-def create_organization(owner_user_id: str, org_name: str) -> Optional[dict]:
-    """Create org and return created row dict or None."""
-    try:
-        payload = {"name": org_name, "owner_id": owner_user_id}
-        resp = conn.table("organizations").insert(payload).execute()
-        return resp.data[0] if resp.data else None
-    except Exception as e:
-        st.error(f"Failed to create organization: {e}")
-        return None
-
-def create_location(org_id: str, name: str, loc_type: str = "warehouse") -> Optional[dict]:
-    """Create a location (warehouse/outlet) and return row dict or None."""
-    try:
-        payload = {"org_id": org_id, "name": name, "type": loc_type}
-        resp = conn.table("locations").insert(payload).execute()
-        return resp.data[0] if resp.data else None
-    except Exception as e:
-        st.error(f"Failed to create location: {e}")
-        return None
-
-def add_membership(user_id: str, org_id: str, location_id: Optional[str] = None, role: str = "owner") -> Optional[dict]:
-    """Add membership linking a user to an org (and optional location)."""
-    try:
-        payload = {"user_id": user_id, "org_id": org_id, "location_id": location_id, "role": role}
-        resp = conn.table("user_memberships").insert(payload).execute()
-        return resp.data[0] if resp.data else None
-    except Exception as e:
-        st.error(f"Failed to add membership: {e}")
-        return None
-
-def get_user_memberships(user_id: str):
-    """Return list of membership dicts for a user."""
-    try:
-        resp = conn.table("user_memberships").select("*").eq("user_id", user_id).execute()
-        return resp.data if resp.data else []
-    except Exception as e:
-        st.warning(f"Failed to fetch memberships: {e}")
-        return []
-
 # -------------------------
 #  --- Onboarding & Session helpers
 # -------------------------
@@ -267,19 +228,46 @@ def after_login_set_session(user_id: str):
 def location_switcher_ui():
     """
     Shows a sidebar selectbox if the logged-in user has multiple memberships.
+    Displays real org/location names instead of UUIDs.
     Updates st.session_state.org_id / location_id / role based on selection.
     """
     memberships = st.session_state.get("memberships", []) or []
     if not memberships:
         return
 
-    # Create a display label for each membership. If you want nicer labels, fetch location names from 'locations' table.
+    # Collect unique org and location IDs to look up names
+    org_ids = list({m.get("org_id") for m in memberships if m.get("org_id")})
+    loc_ids = list({m.get("location_id") for m in memberships if m.get("location_id")})
+
+    # Fetch org names
+    org_names = {}
+    if org_ids:
+        try:
+            resp = conn.table("organizations").select("id, name").in_("id", org_ids).execute()
+            for row in (resp.data or []):
+                org_names[row["id"]] = row["name"]
+        except Exception:
+            pass
+
+    # Fetch location names
+    loc_names = {}
+    if loc_ids:
+        try:
+            resp = conn.table("locations").select("id, name").in_("id", loc_ids).execute()
+            for row in (resp.data or []):
+                loc_names[row["id"]] = row["name"]
+        except Exception:
+            pass
+
+    # Build human-readable labels
     labels = []
     for m in memberships:
-        org_id = m.get("org_id")[:8] if m.get("org_id") else "no-org"
-        loc_id = m.get("location_id")[:8] if m.get("location_id") else "no-loc"
+        oid = m.get("org_id")
+        lid = m.get("location_id")
         role = m.get("role", "member")
-        labels.append(f"{org_id} · {loc_id} · {role}")
+        org_label = org_names.get(oid, oid[:8] if oid else "no-org")
+        loc_label = loc_names.get(lid, lid[:8] if lid else "no-loc")
+        labels.append(f"{org_label} · {loc_label} · {role}")
 
     if len(labels) > 1:
         pick = st.sidebar.selectbox("Select organization / location", labels, key="location_picker")
@@ -339,6 +327,9 @@ def load_from_sheet(table_name, default_cols=None, allow_global_meta=False):
         if org_id:
             q = q.eq("org_id", org_id)
         # apply location filter for location-scoped tables
+        # Note: restaurant_requisitions uses from_location_id / to_location_id
+        # (not location_id), so it is intentionally excluded from location filtering here.
+        # It is still filtered by org_id above.
         if loc_id and table_name in ("persistent_inventory", "activity_logs", "monthly_history", "orders_db", "rest_01_inventory"):
             q = q.eq("location_id", loc_id)
 
@@ -424,7 +415,8 @@ def logout_user():
     # Keys to clear (extend if your app stores additional keys)
     keys_to_clear = [
         "user_id", "org_id", "location_id", "memberships", "role",
-        "dash_cards", "inventory", "log_page", "bulk_upload_state"
+        "dash_cards", "r01_dash_cards", "inventory", "log_page",
+        "bulk_upload_state", "cart",
     ]
     for k in keys_to_clear:
         if k in st.session_state:
