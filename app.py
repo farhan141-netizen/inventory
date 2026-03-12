@@ -445,6 +445,18 @@ def save_to_sheet(df: pd.DataFrame, table_name: str, pk: str = None):
     # Convert NaN to None for JSON compatibility
     df = df.where(pd.notnull(df), None)
 
+    records = df.to_dict(orient="records")
+
+    # ✅ IMPORTANT: Do not send id=None for tables where DB generates UUIDs
+    # Postgres defaults (gen_random_uuid) only apply when the column is omitted.
+    if table_name == "persistent_inventory":
+        for r in records:
+            if r.get("id") in (None, "", "null"):
+                r.pop("id", None)
+
+    # Resolve conflict target: explicit pk overrides mapping; missing → plain upsert
+    conflict_target = pk if pk else _ON_CONFLICT_BY_TABLE.get(table_name)
+
     # For tables whose primary key is server-generated (uuid default gen_random_uuid()),
     # never send id: null — Postgres only applies the default when the column is omitted.
     # Sending null bypasses the default and causes a NOT NULL violation.
