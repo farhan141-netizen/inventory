@@ -446,15 +446,13 @@ def save_to_sheet(df: pd.DataFrame, table_name: str, pk: str = None):
 
     records = df.to_dict(orient="records")
 
-    # IMPORTANT: for server-generated uuid PK tables, omit id if it's null/blank
+    # IMPORTANT: for server-generated uuid PK tables, always omit 'id' from the payload.
+    # Conflict resolution is via a unique index (org_id, location_id, "Product Name"),
+    # not via id, so id is not needed.  Sending id=null (or any non-null stale id from
+    # a local DataFrame) bypasses Postgres DEFAULT gen_random_uuid() and causes a NOT NULL
+    # violation on new rows, or unexpected id-mismatches on updates.
     if table_name in _SERVER_UUID_PK_TABLES:
-        cleaned = []
-        for rec in records:
-            v = rec.get("id")
-            if v is None or str(v).strip().lower() in ("", "none", "null", "nan"):
-                rec.pop("id", None)
-            cleaned.append(rec)
-        records = cleaned
+        records = [{k: v for k, v in rec.items() if k != "id"} for rec in records]
 
     conflict_target = pk if pk else _ON_CONFLICT_BY_TABLE.get(table_name)
 
@@ -1173,7 +1171,8 @@ def apply_transaction(item_name, day_num, qty, is_undo=False):
             df.at[idx, col_name] = current_val + float(qty)
 
         if not is_undo:
-            # LogDate added for dashboard filtering (new logs only)
+            # Insert only the new log row; id and user_id are included so the NOT NULL
+            # constraints on activity_logs are satisfied without reloading the full table.
             new_log = pd.DataFrame(
                 [
                     {
@@ -1189,20 +1188,12 @@ def apply_transaction(item_name, day_num, qty, is_undo=False):
                     }
                 ]
             )
-            logs_df = load_from_sheet("activity_logs", ["LogID", "Timestamp", "Item", "Qty", "Day", "Status", "LogDate"])
-            if "LogDate" not in logs_df.columns:
-                logs_df["LogDate"] = ""
-            # Ensure every existing log row has an id so the NOT NULL constraint is satisfied
-            if "id" not in logs_df.columns:
-                logs_df["id"] = [str(uuid.uuid4()) for _ in range(len(logs_df))]
-            else:
-                mask = logs_df["id"].apply(lambda x: pd.isna(x) or str(x).strip() == "")
-                logs_df.loc[mask, "id"] = [str(uuid.uuid4()) for _ in range(mask.sum())]
-            save_to_sheet(pd.concat([logs_df, new_log], ignore_index=True), "activity_logs")
+            save_to_sheet(new_log, "activity_logs")
 
         df = recalculate_item(df, item_name)
         st.session_state.inventory = df
-        save_to_sheet(df, "persistent_inventory")
+        # Save only the single modified inventory row to avoid sending id=null for other rows
+        save_to_sheet(df.loc[[idx]].copy(), "persistent_inventory")
         return True
     return False
 
@@ -1215,7 +1206,8 @@ def undo_entry(log_id):
         item, qty, day = logs.at[idx, "Item"], logs.at[idx, "Qty"], logs.at[idx, "Day"]
         if apply_transaction(item, day, -qty, is_undo=True):
             logs.at[idx, "Status"] = "Undone"
-            save_to_sheet(logs, "activity_logs")
+            # Save only the single updated log row (conflict on LogID upserts in place)
+            save_to_sheet(logs.loc[[idx]].copy(), "activity_logs")
             st.rerun()
 
 # --- MODALS ---
@@ -1263,9 +1255,7 @@ def manage_categories_modal():
                     }
                 ]
             )
-            meta_df = pd.concat([meta_df, new_category], ignore_index=True)
-
-            if save_to_sheet(meta_df, "product_metadata"):
+            if save_to_sheet(new_category, "product_metadata"):
                 st.success(f"✅ Category '{category_name}' added successfully!")
                 st.balloons()
                 st.rerun()
@@ -1423,8 +1413,11 @@ def add_item_modal():
                 "Category": category,
             }
         )
-        st.session_state.inventory = pd.concat([st.session_state.inventory, pd.DataFrame([new_row])], ignore_index=True)
-        save_to_sheet(st.session_state.inventory, "persistent_inventory")
+        new_row_df = pd.DataFrame([new_row])
+        st.session_state.inventory = pd.concat([st.session_state.inventory, new_row_df], ignore_index=True)
+        # Upsert only the new product row so existing rows with valid ids are untouched
+        # and so that no id=null payload reaches persistent_inventory.
+        save_to_sheet(new_row_df, "persistent_inventory")
 
         supplier_meta = pd.DataFrame(
             [
@@ -1441,9 +1434,8 @@ def add_item_modal():
                 }
             ]
         )
-        meta_df = load_from_sheet("product_metadata")
-        meta_df = pd.concat([meta_df, supplier_meta], ignore_index=True)
-        save_to_sheet(meta_df, "product_metadata")
+        # Upsert only the new metadata row (conflict on org_id,"Product Name" handles updates)
+        save_to_sheet(supplier_meta, "product_metadata")
 
         st.success(f"✅ Product '{name}' created with supplier '{supplier}' at {currency} {price}!")
         st.balloons()
@@ -1487,9 +1479,7 @@ def add_supplier_modal():
             ]
         )
 
-        meta_df = pd.concat([meta_df, supplier_entry], ignore_index=True)
-
-        if save_to_sheet(meta_df, "product_metadata"):
+        if save_to_sheet(supplier_entry, "product_metadata"):
             st.success(f"✅ Supplier '{supplier_name}' added successfully!")
             st.balloons()
             st.rerun()
