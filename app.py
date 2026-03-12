@@ -5,77 +5,28 @@ import datetime
 import uuid
 import io
 import numpy as np
+from typing import Optional
+from org_helpers import create_organization, create_location, add_membership
+from org_helpers import get_user_memberships
 
 # --- 1. CLOUD CONNECTION ---
 conn = st.connection("supabase", type=SupabaseConnection)
 
-# --- 2. AUTHENTICATION SYSTEM ---
-if "user" not in st.session_state:
-    st.session_state.user = None
 
-def login_ui():
-    """Renders the Login and Registration screens"""
-    st.title("📦 Inventory Management System")
-    st.subheader("Please login to access your workspace")
+def clean_dataframe(df):
+    """Ensures unique columns, removes ghost columns, and formats for Supabase"""
+    if df is None or df.empty:
+        return df
     
-    tab1, tab2 = st.tabs(["🔐 Login", "📝 Register"])
-    
-    with tab1:
-        with st.form("login_form"):
-            email = st.text_input("Email")
-            password = st.text_input("Password", type="password")
-            submit = st.form_submit_button("Login", use_container_width=True)
-            
-            if submit:
-                try:
-                    res = conn.client.auth.sign_in_with_password({"email": email, "password": password})
-                    st.session_state.user = res.user
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Login Failed: Incorrect email or password.")
-                    
-    with tab2:
-        with st.form("register_form"):
-            reg_email = st.text_input("Email")
-            reg_password = st.text_input("Password", type="password")
-            reg_submit = st.form_submit_button("Register Account", use_container_width=True)
-            
-            if reg_submit:
-                try:
-                    res = conn.client.auth.sign_up({"email": reg_email, "password": reg_password})
-                    st.success("Registration successful! You may now login.")
-                except Exception as e:
-                    st.error(f"Registration Failed: {str(e)}")
-
-# If no user is logged in, show the login screen and STOP the rest of the app
-if st.session_state.user is None:
-    login_ui()
-    st.stop()
-
-# --- 3. SIDEBAR USER PROFILE ---
-with st.sidebar:
-    st.success(f"👤 Logged in as:\n**{st.session_state.user.email}**")
-    if st.button("🚪 Logout", use_container_width=True):
-        conn.client.auth.sign_out()
-        st.session_state.user = None
-        st.cache_data.clear()
-        st.rerun()
-    st.divider()
-
-# --- 4. ISOLATED DATA ENGINE ---
-def clean_dataframe(df, expected_cols=None):
-    """Ensures unique columns and formats for Supabase"""
-    if df is None:
-        return pd.DataFrame(columns=expected_cols) if expected_cols else pd.DataFrame()
-    
+    # Drop unnamed/duplicate columns
     df = df.loc[:, ~df.columns.str.contains("^Unnamed", na=False)]
     df = df.dropna(axis=1, how="all")
     df = df.loc[:, ~df.columns.duplicated()]
     
-    # Mapping table for Supabase <-> App Logic
+    # Fix Column Casing & Whitespace: 
+    # We map common database names back to the exact casing used in your app logic.
     col_map = {
         'product name': 'Product Name',
-        'product_name': 'Product Name',
         'logid': 'LogID',
         'item': 'Item',
         'qty': 'Qty',
@@ -84,91 +35,273 @@ def clean_dataframe(df, expected_cols=None):
         'timestamp': 'Timestamp',
         'category': 'Category',
         'opening stock': 'Opening Stock',
-        'opening_stock': 'Opening Stock',
         'consumption': 'Consumption',
-        'closing stock': 'Closing Stock',
-        'closing_stock': 'Closing Stock',
-        'user_id': 'user_id'
+        'closing stock': 'Closing Stock'
     }
     
+    # Strip whitespace and apply mapping
     df.columns = [str(col).strip() for col in df.columns]
-    df.rename(columns=lambda x: col_map.get(x.lower().replace(" ", "_"), x), inplace=True)
     df.rename(columns=lambda x: col_map.get(x.lower(), x), inplace=True)
     
-    if expected_cols:
-        for col in expected_cols:
-            if col not in df.columns:
-                df[col] = None
+    # CRITICAL SUPABASE FIX: Convert Pandas NaNs/Empty cells to 'None' (Null)
+    df = df.replace({np.nan: None})
 
-    # --- DATATYPE FIX FOR SUPABASE ---
-    # Convert numeric columns from Float (0.0) to Integer (0) where applicable
-    # to avoid the "invalid input syntax for type integer" error.
-    int_cols = ['Qty', 'Opening Stock', 'Consumption', 'Closing Stock']
+    # ✅ NEW: Cast known integer columns to int to avoid bigint type errors
+    int_cols = ["Day"]
     for col in int_cols:
         if col in df.columns:
-            # Fill NaNs with 0 before conversion, then convert to int
-            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
-    
-    # Convert all other NaNs to None for Supabase Null safety
-    df = df.replace({np.nan: None})
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0).astype(int)
+
+    # ✅ NEW: Cast Qty to float then to int only if it's a whole number
+    # This handles both activity_logs.Qty (bigint) and inventory day cols (float8)
+    if "Qty" in df.columns:
+        df["Qty"] = pd.to_numeric(df["Qty"], errors="coerce").fillna(0)
+        # Only cast to int if ALL values are whole numbers (safe for bigint tables)
+        try:
+            if (df["Qty"] % 1 == 0).all():
+                df["Qty"] = df["Qty"].astype(int)
+        except Exception:
+            # in case of mixed types or strings, keep as numeric float
+            df["Qty"] = pd.to_numeric(df["Qty"], errors="coerce").fillna(0)
+
     return df
 
-@st.cache_data(ttl=60)
-def _cached_load_from_sheet(worksheet_name, user_id, default_cols=None):
-    """Internal cached function that uses user_id as a caching key"""
+# -------------------------
+#  --- Org / Location helpers
+# -------------------------
+# These helpers create orgs/locations and manage user memberships in Supabase.
+# Use these in your signup/onboarding logic.
+
+def create_organization(owner_user_id: str, org_name: str) -> Optional[dict]:
+    """Create org and return created row dict or None."""
     try:
-        response = conn.table(worksheet_name).select("*").eq("user_id", user_id).execute()
-        df = pd.DataFrame(response.data) if response.data else pd.DataFrame()
-        df = clean_dataframe(df, expected_cols=default_cols)
-        
+        payload = {"name": org_name, "owner_id": owner_user_id}
+        resp = conn.table("organizations").insert(payload).execute()
+        return resp.data[0] if resp.data else None
+    except Exception as e:
+        st.error(f"Failed to create organization: {e}")
+        return None
+
+def create_location(org_id: str, name: str, loc_type: str = "warehouse") -> Optional[dict]:
+    """Create a location (warehouse/outlet) and return row dict or None."""
+    try:
+        payload = {"org_id": org_id, "name": name, "type": loc_type}
+        resp = conn.table("locations").insert(payload).execute()
+        return resp.data[0] if resp.data else None
+    except Exception as e:
+        st.error(f"Failed to create location: {e}")
+        return None
+
+def add_membership(user_id: str, org_id: str, location_id: Optional[str] = None, role: str = "owner") -> Optional[dict]:
+    """Add membership linking a user to an org (and optional location)."""
+    try:
+        payload = {"user_id": user_id, "org_id": org_id, "location_id": location_id, "role": role}
+        resp = conn.table("user_memberships").insert(payload).execute()
+        return resp.data[0] if resp.data else None
+    except Exception as e:
+        st.error(f"Failed to add membership: {e}")
+        return None
+
+def get_user_memberships(user_id: str):
+    """Return list of membership dicts for a user."""
+    try:
+        resp = conn.table("user_memberships").select("*").eq("user_id", user_id).execute()
+        return resp.data if resp.data else []
+    except Exception as e:
+        st.warning(f"Failed to fetch memberships: {e}")
+        return []
+
+# -------------------------
+#  --- Onboarding & Session helpers
+# -------------------------
+
+def onboard_new_user(user_id: str, org_name: str, initial_location_name: str = "Main Warehouse"):
+    """
+    Run this once after a fresh sign-up to create org, location and membership.
+    Sets st.session_state variables on success and returns True.
+    """
+    org = create_organization(owner_user_id=user_id, org_name=org_name)
+    if not org:
+        st.error("Could not create organization.")
+        return False
+
+    loc = create_location(org_id=org["id"], name=initial_location_name, loc_type="warehouse")
+    if not loc:
+        st.error("Could not create initial location.")
+        return False
+
+    mem = add_membership(user_id=user_id, org_id=org["id"], location_id=loc["id"], role="owner")
+    if not mem:
+        st.error("Could not add membership.")
+        return False
+
+    # set session state
+    st.session_state.user_id = user_id
+    st.session_state.org_id = org["id"]
+    st.session_state.location_id = loc["id"]
+    st.session_state.role = "owner"
+    st.session_state.memberships = [mem]
+    return True
+
+def after_login_set_session(user_id: str):
+    """
+    Call after login to resolve memberships and set session state.
+    If no memberships are present, session org_id/location_id remain None (so app can show setup wizard).
+    """
+    memberships = get_user_memberships(user_id)
+    st.session_state.user_id = user_id
+    st.session_state.memberships = memberships or []
+    if memberships:
+        # default to first membership; UI can allow switching later
+        m = memberships[0]
+        st.session_state.org_id = m.get("org_id")
+        st.session_state.location_id = m.get("location_id")
+        st.session_state.role = m.get("role", "member")
+    else:
+        st.session_state.org_id = None
+        st.session_state.location_id = None
+        st.session_state.role = None
+
+# -------------------------
+#  --- Location switcher UI
+# -------------------------
+def location_switcher_ui():
+    """
+    Shows a sidebar selectbox if the logged-in user has multiple memberships.
+    Updates st.session_state.org_id / location_id / role based on selection.
+    """
+    memberships = st.session_state.get("memberships", []) or []
+    if not memberships:
+        return
+
+    # Create a display label for each membership. If you want nicer labels, fetch location names from 'locations' table.
+    labels = []
+    for m in memberships:
+        org_id = m.get("org_id")[:8] if m.get("org_id") else "no-org"
+        loc_id = m.get("location_id")[:8] if m.get("location_id") else "no-loc"
+        role = m.get("role", "member")
+        labels.append(f"{org_id} · {loc_id} · {role}")
+
+    if len(labels) > 1:
+        pick = st.sidebar.selectbox("Select organization / location", labels, key="location_picker")
+        idx = labels.index(pick)
+        sel = memberships[idx]
+        st.session_state.org_id = sel.get("org_id")
+        st.session_state.location_id = sel.get("location_id")
+        st.session_state.role = sel.get("role", "member")
+
+# -------------------------
+#  --- Org-aware load/save
+# -------------------------
+# Replace your old load_from_sheet and save_to_sheet with these org-aware versions.
+
+def _current_org_id():
+    return st.session_state.get("org_id")
+
+def _current_location_id():
+    return st.session_state.get("location_id")
+
+@st.cache_data(ttl=60)
+def load_from_sheet(table_name, default_cols=None, allow_global_meta=False):
+    """
+    Org-aware loader.
+    - If st.session_state['org_id'] is set, applies .eq('org_id', ...)
+    - For product_metadata: if allow_global_meta=True, returns rows where org_id IS NULL OR equals current org
+    - For location-scoped tables (like persistent_inventory, activity_logs), filter by location_id if set.
+    """
+    org_id = _current_org_id()
+    loc_id = _current_location_id()
+
+    try:
+        q = conn.table(table_name).select("*")
+
+        # Special handling for product_metadata: include global rows if requested
+        if table_name == "product_metadata" and allow_global_meta:
+            resp = q.execute()
+            df = pd.DataFrame(resp.data)
+            if df.empty and default_cols:
+                return pd.DataFrame(columns=default_cols)
+            elif df.empty:
+                return pd.DataFrame()
+            df = clean_dataframe(df)
+            # keep global rows (org_id null) and org-specific rows
+            if org_id:
+                df = df[df["org_id"].isnull() | (df["org_id"].astype(str) == str(org_id))]
+            else:
+                df = df[df["org_id"].isnull()]
+            # ensure default cols
+            if default_cols:
+                for c in default_cols:
+                    if c not in df.columns:
+                        df[c] = None
+            return df
+
+        # Normal tables: apply filters server-side
+        if org_id:
+            q = q.eq("org_id", org_id)
+        # apply location filter for location-scoped tables
+        if loc_id and table_name in ("persistent_inventory", "activity_logs", "monthly_history", "orders_db", "rest_01_inventory"):
+            q = q.eq("location_id", loc_id)
+
+        resp = q.execute()
+        df = pd.DataFrame(resp.data)
         if df.empty and default_cols:
             return pd.DataFrame(columns=default_cols)
-            
+        elif df.empty:
+            return pd.DataFrame()
+        df = clean_dataframe(df)
+        if default_cols:
+            for col in default_cols:
+                if col not in df.columns:
+                    df[col] = None
         return df
+
     except Exception as e:
-        st.warning(f"Database issue for {worksheet_name}. Error: {str(e)}")
+        st.warning(f"Load error for {table_name}: {e}")
+        # return skeleton if defaults provided
         if default_cols:
             return pd.DataFrame(columns=default_cols)
         return pd.DataFrame()
 
-def load_from_sheet(worksheet_name, default_cols=None):
-    """Safely load data isolated to the current user"""
-    if st.session_state.user is None:
-        return pd.DataFrame(columns=default_cols) if default_cols else pd.DataFrame()
-    
-    current_user_id = st.session_state.user.id
-    return _cached_load_from_sheet(worksheet_name, current_user_id, default_cols)
-
-def save_to_sheet(df, worksheet_name):
-    """Save cleaned data to Supabase under the current user's ID"""
-    if st.session_state.user is None:
-        st.error("Authentication session expired.")
+def save_to_sheet(df: pd.DataFrame, table_name: str, pk: str = None):
+    """
+    Org-aware save. Ensures org_id and (optionally) location_id are written to every record.
+    pk: optional primary key column name to use for upsert on conflict (e.g., 'Product Name' or 'ReqID').
+    """
+    if df is None:
         return False
-        
-    if df is None or df.empty:
+    if isinstance(df, pd.DataFrame) and df.empty:
         return False
 
-    # Force the cleaning and injection of user_id
+    org_id = _current_org_id()
+    loc_id = _current_location_id()
+
     df = clean_dataframe(df)
-    current_user_id = st.session_state.user.id
-    df['user_id'] = current_user_id
-    
+
+    # Inject org_id to all rows if available (RLS requires this)
+    if org_id:
+        df["org_id"] = org_id
+
+    # Inject location_id for location-scoped tables
+    if loc_id and table_name in ("persistent_inventory", "activity_logs", "monthly_history", "orders_db", "rest_01_inventory"):
+        df["location_id"] = loc_id
+
+    # Convert NaN to None for JSON compatibility
+    df = df.where(pd.notnull(df), None)
+
+    records = df.to_dict(orient="records")
+
     try:
-        # CONVERT TO DICT: Supabase expects list of dicts
-        data_dict = df.to_dict(orient="records")
-        
-        # EXECUTE THE UPSERT
-        conn.table(worksheet_name).upsert(data_dict).execute()
-        
+        if pk:
+            # some clients support upsert(records, on_conflict=pk)
+            conn.table(table_name).upsert(records, on_conflict=pk).execute()
+        else:
+            conn.table(table_name).upsert(records).execute()
+
         st.cache_data.clear()
-        st.toast(f"✅ Successfully saved to {worksheet_name}!")
         return True
     except Exception as e:
-        st.error(f"❌ Database Save Error on '{worksheet_name}': {str(e)}")
-        # Provide a snippet of what we tried to send to help debug column names
-        with st.expander("Debug Info"):
-            st.write("Columns attempted:", list(df.columns))
-            st.write("Data snippet:", df.head(1).to_dict())
+        st.error(f"Database Save Error on '{table_name}': {e}")
         return False
 
 # --- PAGE CONFIG ---
