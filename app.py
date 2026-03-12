@@ -13,6 +13,105 @@ from org_helpers import get_user_memberships
 conn = st.connection("supabase", type=SupabaseConnection)
 
 
+def safe_rerun():
+    """
+    Try multiple ways to programmatically rerun the Streamlit app.
+    1) st.rerun()
+    2) st.experimental_rerun()
+    3) st.experimental_set_query_params(...) (causes a rerun)
+    4) st.stop() (last resort)
+    """
+    for candidate in ("rerun", "experimental_rerun"):
+        fn = getattr(st, candidate, None)
+        if callable(fn):
+            try:
+                fn()
+                return
+            except Exception:
+                # try next
+                pass
+
+    # Try to change query params (this causes a rerun in most builds)
+    try:
+        if callable(getattr(st, "experimental_set_query_params", None)):
+            st.experimental_set_query_params(_r=_uuid.uuid4().hex)
+            return
+    except Exception:
+        pass
+
+    # Last resort: stop execution (Streamlit will re-run when user interacts)
+    fn = getattr(st, "stop", None)
+    if callable(fn):
+        try:
+            fn()
+            return
+        except Exception:
+            pass
+
+    # If nothing worked, throw a clear error
+    raise RuntimeError("safe_rerun failed: cannot programmatically rerun or stop Streamlit.")
+
+def get_current_user_id():
+    """
+    Return the current logged-in user id (uuid string) if available.
+    Tries common places: st.session_state['user_id'], Supabase client auth.get_user(), auth.user(), etc.
+    Returns None if not found.
+    """
+    # 1) If your login flow sets st.session_state['user_id']
+    uid = st.session_state.get("user_id")
+    if uid:
+        return uid
+
+    # 2) Common supabase client patterns (try both get_user and user)
+    try:
+        auth = getattr(conn, "auth", None)
+        if auth is not None:
+            # supabase-py modern: auth.get_user()
+            get_user = getattr(auth, "get_user", None)
+            if callable(get_user):
+                try:
+                    resp = get_user()
+                    # resp may be dict or object; try common shapes
+                    if isinstance(resp, dict) and "user" in resp and resp["user"]:
+                        return resp["user"].get("id") or resp["user"].get("sub")
+                    # some clients return an object with 'data' attr
+                    if hasattr(resp, "data"):
+                        ud = resp.data.get("user") if isinstance(resp.data, dict) else None
+                        if ud:
+                            return ud.get("id")
+                except Exception:
+                    pass
+
+            # legacy: auth.user()
+            user_fn = getattr(auth, "user", None)
+            if callable(user_fn):
+                try:
+                    u = user_fn()
+                    if isinstance(u, dict):
+                        return u.get("id") or u.get("sub")
+                    if hasattr(u, "get"):
+                        return u.get("id")
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+    # 3) Some wrappers expose conn.get_session() or conn.session
+    try:
+        get_sess = getattr(conn, "get_session", None)
+        if callable(get_sess):
+            sess = get_sess()
+            if isinstance(sess, dict):
+                user = sess.get("user")
+                if user:
+                    return user.get("id") or user.get("sub")
+    except Exception:
+        pass
+
+    # Not found
+    return None
+
+
 def clean_dataframe(df):
     """Ensures unique columns, removes ghost columns, and formats for Supabase"""
     if df is None or df.empty:
@@ -308,64 +407,42 @@ def save_to_sheet(df: pd.DataFrame, table_name: str, pk: str = None):
 # Replace your existing logout helper + dialog with this robust version
 
 def logout_user():
-    """Sign out, clear session-state keys, clear cache and try to rerun the app safely."""
-    # Try to sign out from Supabase client (best-effort)
+    """
+    Best-effort sign-out + clear session-state keys relevant to auth + trigger safe_rerun().
+    - Clears common keys: user_id, org_id, location_id, memberships, role, etc.
+    """
+    # Attempt client sign-out (various wrappers differ)
     try:
         if hasattr(conn, "auth") and callable(getattr(conn.auth, "sign_out", None)):
             conn.auth.sign_out()
         elif callable(getattr(conn, "sign_out", None)):
             conn.sign_out()
     except Exception:
-        # Ignore sign-out errors
+        # ignore signout failures — proceed to clear session
         pass
 
-    # Keys to clear from session_state
+    # Keys to clear (extend if your app stores additional keys)
     keys_to_clear = [
-        "user_id",
-        "org_id",
-        "location_id",
-        "memberships",
-        "role",
-        "dash_cards",
-        "inventory",
-        "log_page",
+        "user_id", "org_id", "location_id", "memberships", "role",
+        "dash_cards", "inventory", "log_page", "bulk_upload_state"
     ]
     for k in keys_to_clear:
         if k in st.session_state:
             del st.session_state[k]
 
-    # Clear cache (best-effort)
+    # clear caches if available
     try:
         if hasattr(st, "cache_data"):
             st.cache_data.clear()
     except Exception:
         pass
 
-    # Try known rerun functions in order, using getattr to avoid AttributeError
-    for potential in ("rerun", "experimental_rerun"):
-        fn = getattr(st, potential, None)
-        if callable(fn):
-            try:
-                fn()
-                return  # if rerun succeeded, stop here
-            except Exception:
-                # If calling failed, try the next fallback
-                continue
+    # Force a rerun (so UI shows login/register)
+    safe_rerun()
 
-    # Last-resort: stop the script so Streamlit can re-run on next interaction
-    try:
-        if callable(getattr(st, "stop", None)):
-            st.stop()
-            return
-    except Exception:
-        pass
-
-    # If nothing worked, raise a controlled error so the run stops safely
-    raise RuntimeError("Logout cleared session but could not programmatically rerun or stop the app.")
-
+# Confirmation dialog (uses your @st.dialog pattern)
 @st.dialog("🔒 Confirm Logout")
 def _logout_confirm_dialog():
-    """Confirmation dialog displayed when user clicks 'Logout'."""
     st.subheader("Confirm Logout")
     st.write("Are you sure you want to log out? Your session will be cleared from this browser.")
     c1, c2 = st.columns([1, 1])
@@ -374,7 +451,7 @@ def _logout_confirm_dialog():
             logout_user()
     with c2:
         if st.button("Cancel", use_container_width=True, key="cancel_logout_btn"):
-            st.info("Logout cancelled")
+            st.info("Cancelled")
 
 
 # --- PAGE CONFIG ---
@@ -1788,17 +1865,21 @@ with hdr_mid:
             st.warning("Bulk upload modal not available.")
 
 with hdr_right:
-    # Refresh button
+    # Refresh button — clear cache then run safe_rerun
     if st.button("🔄 Refresh Data", use_container_width=True, key="refresh_all"):
-        st.cache_data.clear()
-        st.experimental_rerun()
+        try:
+            if hasattr(st, "cache_data"):
+                st.cache_data.clear()
+        except Exception:
+            pass
+        # trigger a robust rerun
+        safe_rerun()
 
-    # Small spacer (keeps layout similar to screenshot)
+    # optional small spacer for visual separation
     st.write("")
 
-    # Logout button triggers the confirmation dialog
+    # Logout button opens the confirm dialog
     if st.button("🔓 Logout", use_container_width=True, key="logout_btn"):
-        # Open the dialog defined above
         _logout_confirm_dialog()
 
 # ===================== SIDEBAR =====================
