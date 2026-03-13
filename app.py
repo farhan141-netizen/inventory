@@ -554,35 +554,36 @@ def _logout_confirm_dialog():
 # --- PAGE CONFIG ---
 st.set_page_config(page_title="Warehouse Pro Cloud v8.6", layout="wide", initial_sidebar_state="expanded")
 
-# --- GLASSY UI THEME (Attio/Linear-inspired) ---
+# --- MODERN LIGHT THEME (Geex/Linear-inspired) ---
 st.markdown(
     """
     <style>
     /* ===== Fonts ===== */
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@300;400;500&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500&display=swap');
 
     :root{
-        --bg: #0F1419;
-        --panel: rgba(26, 31, 46, 0.62);
-        --panel-2: rgba(26, 31, 46, 0.42);
-        --border: rgba(255,255,255,0.08);
-        --border-2: rgba(255,255,255,0.06);
-        --text: rgba(224,231,255,0.92);
-        --muted: rgba(136,146,176,0.95);
-        --muted2: rgba(136,146,176,0.7);
-        --accent: #00d9ff;
-        --accent2: #0095ff;
-        --warn: #ffaa00;
-        --danger: #ff6b6b;
-        --good: #2ee59d;
-        --shadow: 0 18px 55px rgba(0,0,0,0.45);
-        --radius: 14px;
+        --bg: #F8F9FC;
+        --panel: #FFFFFF;
+        --panel-2: #F1F5F9;
+        --border: #E2E8F0;
+        --border-2: rgba(0,0,0,0.06);
+        --text: #1E293B;
+        --muted: #64748B;
+        --muted2: #94A3B8;
+        --accent: #7C5CFC;
+        --accent2: #6366F1;
+        --warn: #F59E0B;
+        --danger: #EF4444;
+        --good: #10B981;
+        --shadow: 0 1px 3px rgba(0,0,0,0.04), 0 6px 24px rgba(0,0,0,0.06);
+        --shadow-hover: 0 4px 6px rgba(0,0,0,0.05), 0 10px 40px rgba(0,0,0,0.10);
+        --radius: 16px;
         --radius-sm: 10px;
-        --blur: 16px;
     }
 
     html, body, [class*="css"], [data-testid="stAppViewContainer"]{
         font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif !important;
+        color: var(--text) !important;
     }
     code, pre, .stMarkdown code {
         font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace !important;
@@ -590,7 +591,7 @@ st.markdown(
     }
 
     /* ===== Base layout ===== */
-    .block-container{ padding-top: 0.9rem; padding-bottom: 1.0rem; max-width: 1400px; }
+    .block-container{ padding-top: 1.2rem; padding-bottom: 1.5rem; max-width: 1400px; }
     .main { background: var(--bg); }
     [data-testid="stAppViewContainer"]{ background: var(--bg); }
     [data-testid="stHeader"]{ background: transparent; }
@@ -599,46 +600,44 @@ st.markdown(
     [data-testid="stSidebarCollapsedControl"]{ visibility: visible !important; display: flex !important; z-index: 999999 !important; }
 
     /* ===== Scrollbars ===== */
-    ::-webkit-scrollbar { width: 10px; height: 10px; }
-    ::-webkit-scrollbar-track { background: rgba(255,255,255,0.04); border-radius: 99px; }
-    ::-webkit-scrollbar-thumb { background: rgba(0,217,255,0.18); border-radius: 99px; }
-    ::-webkit-scrollbar-thumb:hover { background: rgba(0,217,255,0.28); }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #F1F5F9; border-radius: 99px; }
+    ::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 99px; }
+    ::-webkit-scrollbar-thumb:hover { background: #94A3B8; }
 
     /* ===== Floating header ===== */
     .wp-header{
-        background: linear-gradient(90deg, rgba(0,217,255,0.18) 0%, rgba(0,149,255,0.10) 100%);
-        border: 1px solid var(--border);
-        backdrop-filter: blur(var(--blur));
-        -webkit-backdrop-filter: blur(var(--blur));
+        background: linear-gradient(135deg, #7C5CFC 0%, #6366F1 100%);
+        border: none;
         border-radius: var(--radius);
-        padding: 14px 18px;
-        margin-bottom: 12px;
-        box-shadow: var(--shadow);
+        padding: 18px 24px;
+        margin-bottom: 20px;
+        box-shadow: 0 4px 20px rgba(124,92,252,0.25);
         display: flex;
         justify-content: space-between;
         align-items: center;
     }
     .wp-header .title{
-        font-size: 14px;
-        letter-spacing: 0.12em;
-        font-weight: 600;
-        color: rgba(224,231,255,0.9);
+        font-size: 15px;
+        letter-spacing: 0.06em;
+        font-weight: 700;
+        color: #ffffff;
         text-transform: uppercase;
     }
     .wp-header .subtitle{
         font-size: 12px;
         font-weight: 400;
-        color: var(--muted);
-        margin-top: 2px;
+        color: rgba(255,255,255,0.75);
+        margin-top: 3px;
     }
     .wp-pill{
         display: inline-flex;
         align-items: center;
         gap: 8px;
-        background: rgba(0,217,255,0.10);
-        border: 1px solid rgba(0,217,255,0.18);
-        color: var(--text);
-        padding: 8px 12px;
+        background: rgba(255,255,255,0.20);
+        border: 1px solid rgba(255,255,255,0.30);
+        color: #ffffff;
+        padding: 8px 14px;
         border-radius: 999px;
         font-size: 12px;
         font-weight: 500;
@@ -646,80 +645,67 @@ st.markdown(
 
     /* ===== Tabs ===== */
     .stTabs [data-baseweb="tab-list"]{
-        gap: 6px;
-        background: var(--panel);
-        backdrop-filter: blur(var(--blur));
-        -webkit-backdrop-filter: blur(var(--blur));
+        gap: 4px;
+        background: #FFFFFF;
         padding: 6px;
         border-radius: var(--radius);
         border: 1px solid var(--border);
-        box-shadow: 0 10px 25px rgba(0,0,0,0.25);
-        margin-bottom: 12px;
+        box-shadow: var(--shadow);
+        margin-bottom: 16px;
     }
     .stTabs [data-baseweb="tab"]{
-        padding: 6px 14px;
+        padding: 7px 16px;
         font-weight: 500;
         color: var(--muted);
-        border-radius: 12px;
+        border-radius: 10px;
         font-size: 13px;
         height: 40px;
         transition: all 160ms ease;
     }
     .stTabs [data-baseweb="tab"]:hover{
-        color: rgba(224,231,255,0.95);
-        background: rgba(255,255,255,0.04);
-        transform: translateY(-1px);
+        color: var(--text);
+        background: var(--panel-2);
     }
     .stTabs [aria-selected="true"]{
-        color: var(--accent);
-        background: rgba(0,217,255,0.10);
-        border: 1px solid rgba(0,217,255,0.22);
-        box-shadow: 0 8px 22px rgba(0,217,255,0.08);
+        color: var(--accent) !important;
+        background: rgba(124,92,252,0.08) !important;
+        border: 1px solid rgba(124,92,252,0.18) !important;
+        box-shadow: 0 2px 8px rgba(124,92,252,0.10) !important;
+        font-weight: 600 !important;
     }
 
     /* ===== Section titles ===== */
     .section-title{
-        color: var(--accent);
+        color: var(--text);
         font-size: 13px;
         font-weight: 600;
-        margin: 8px 0 8px;
+        margin: 10px 0 10px;
         display: block;
-        border-bottom: 1px solid rgba(0,217,255,0.18);
-        padding-bottom: 6px;
-        letter-spacing: 0.01em;
+        border-bottom: 2px solid rgba(124,92,252,0.15);
+        padding-bottom: 8px;
+        letter-spacing: 0.02em;
     }
 
-    /* ===== Glass cards ===== */
+    /* ===== Glass cards (now clean white cards) ===== */
     .glass-card{
         background: var(--panel);
         border: 1px solid var(--border);
         border-radius: var(--radius);
         box-shadow: var(--shadow);
-        backdrop-filter: blur(var(--blur));
-        -webkit-backdrop-filter: blur(var(--blur));
-        padding: 14px 14px 12px 14px;
+        padding: 20px 20px 18px 20px;
         position: relative;
         overflow: hidden;
+        transition: box-shadow 200ms ease, border-color 200ms ease;
     }
     .glass-card:hover{
-        border-color: rgba(0,217,255,0.20);
-        box-shadow: 0 18px 65px rgba(0,0,0,0.55);
-    }
-    .glass-card::before{
-        content:"";
-        position:absolute;
-        inset:-2px;
-        background: radial-gradient(600px 220px at 25% 0%,
-            rgba(0,217,255,0.10),
-            rgba(0,0,0,0) 60%);
-        opacity: 0.9;
-        pointer-events:none;
+        border-color: rgba(124,92,252,0.20);
+        box-shadow: var(--shadow-hover);
     }
     .card-title{
         font-size: 13px;
         font-weight: 600;
-        color: rgba(224,231,255,0.92);
-        margin: 0 0 10px 0;
+        color: var(--text);
+        margin: 0 0 12px 0;
         letter-spacing: 0.01em;
         display:flex;
         align-items:center;
@@ -730,49 +716,56 @@ st.markdown(
         font-size: 11px;
         color: var(--muted);
         font-weight: 400;
+        background: var(--panel-2);
+        padding: 2px 8px;
+        border-radius: 999px;
     }
 
     /* ===== KPI cards ===== */
-    .kpi-grid{ display:grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+    .kpi-grid{ display:grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
     .kpi{
-        background: rgba(255,255,255,0.03);
-        border: 1px solid var(--border-2);
-        border-radius: 14px;
-        padding: 12px 12px 10px;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 18px 18px 14px;
         position: relative;
         overflow:hidden;
-        min-height: 74px;
+        min-height: 84px;
+        border-left: 4px solid var(--accent);
+        box-shadow: var(--shadow);
+        transition: box-shadow 200ms ease;
     }
+    .kpi:hover{ box-shadow: var(--shadow-hover); }
     .kpi .label{
         font-size: 11px;
         color: var(--muted);
-        font-weight: 500;
-        letter-spacing: 0.01em;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
         display:flex;
         align-items:center;
         justify-content:space-between;
         gap: 10px;
     }
     .kpi .value{
-        margin-top: 8px;
-        font-size: 22px;
-        font-weight: 600;
+        margin-top: 10px;
+        font-size: 24px;
+        font-weight: 700;
         color: var(--text);
-        letter-spacing: 0.01em;
+        letter-spacing: -0.01em;
         font-family: "JetBrains Mono", ui-monospace, monospace !important;
     }
     .kpi .sub{
-        margin-top: 2px;
+        margin-top: 4px;
         font-size: 11px;
         color: var(--muted2);
         font-weight: 400;
     }
-    .kpi.good .value{ color: rgba(46,229,157,0.95); }
-    .kpi.bad .value{ color: rgba(255,107,107,0.95); }
-    .kpi.accent{
-        border-color: rgba(0,217,255,0.20);
-        background: rgba(0,217,255,0.06);
-    }
+    .kpi.good{ border-left-color: var(--good); }
+    .kpi.good .value{ color: var(--good); }
+    .kpi.bad{ border-left-color: var(--danger); }
+    .kpi.bad .value{ color: var(--danger); }
+    .kpi.accent{ border-left-color: var(--accent); background: rgba(124,92,252,0.03); }
 
     /* ===== Kebab (menu trigger) ===== */
     .kebab-wrap{ display:flex; align-items:center; gap:8px; }
@@ -784,123 +777,134 @@ st.markdown(
 
     /* ===== Requisition item box ===== */
     .req-box{
-        background: rgba(26, 47, 63, 0.65);
+        background: #FFFBEB;
         border-left: 3px solid var(--warn);
-        padding: 8px 10px;
+        padding: 10px 12px;
         margin: 6px 0;
         border-radius: 10px;
         font-size: 13px;
-        line-height: 1.35;
-        border: 1px solid rgba(255,255,255,0.06);
-        backdrop-filter: blur(var(--blur));
-        -webkit-backdrop-filter: blur(var(--blur));
+        line-height: 1.45;
+        border: 1px solid rgba(245,158,11,0.18);
+        color: var(--text);
     }
 
     /* ===== Activity list ===== */
     .log-container{
         max-height: 320px;
         overflow-y: auto;
-        padding-right: 6px;
+        padding-right: 4px;
         border-radius: var(--radius);
-        background: var(--panel-2);
-        border: 1px solid var(--border-2);
-        backdrop-filter: blur(var(--blur));
-        -webkit-backdrop-filter: blur(var(--blur));
+        background: var(--panel);
+        border: 1px solid var(--border);
     }
     .log-row{
         display:flex;
         justify-content:space-between;
         align-items:center;
-        background: rgba(26,31,46,0.62);
-        padding: 8px 10px;
-        border-radius: 12px;
-        margin: 6px;
+        background: #FFFFFF;
+        padding: 10px 12px;
+        border-radius: 10px;
+        margin: 5px;
         border-left: 3px solid var(--accent);
-        border: 1px solid rgba(255,255,255,0.06);
+        border: 1px solid var(--border);
         transition: all 150ms ease;
     }
-    .log-row:hover{ transform: translateY(-1px); border-color: rgba(0,217,255,0.18); }
-    .log-row-undone{ border-left: 3px solid var(--danger); opacity: 0.55; }
-    .log-info{ font-size: 12px; color: var(--text); line-height: 1.25; }
+    .log-row:hover{ transform: translateY(-1px); box-shadow: var(--shadow); border-color: rgba(124,92,252,0.20); }
+    .log-row-undone{ border-left: 3px solid var(--danger) !important; opacity: 0.60; }
+    .log-info{ font-size: 12px; color: var(--text); line-height: 1.35; }
     .log-time{ font-size: 11px; color: var(--muted); margin-left: 6px; }
 
     /* ===== Sidebar ===== */
     [data-testid="stSidebar"]{
-        background: rgba(12,16,22,0.85);
-        border-right: 1px solid rgba(255,255,255,0.06);
-        backdrop-filter: blur(var(--blur));
-        -webkit-backdrop-filter: blur(var(--blur));
+        background: #FFFFFF;
+        border-right: 1px solid var(--border);
     }
     .sidebar-title{
-        color: rgba(224,231,255,0.92);
-        font-weight: 600;
+        color: var(--text);
+        font-weight: 700;
         font-size: 13px;
         letter-spacing: 0.08em;
         text-transform: uppercase;
-        margin-bottom: 8px;
+        margin-bottom: 10px;
     }
 
     /* ===== Sidebar toggle button (always visible) ===== */
     [data-testid="stSidebarCollapsedControl"] button {
         visibility: visible !important;
-        color: #ffffff !important;
-        background: rgba(26, 31, 46, 0.85) !important;
-        border: 1px solid rgba(255,255,255,0.15) !important;
+        color: var(--text) !important;
+        background: #FFFFFF !important;
+        border: 1px solid var(--border) !important;
         border-radius: 8px !important;
+        box-shadow: var(--shadow) !important;
     }
     [data-testid="stSidebarCollapsedControl"] button:hover {
-        background: rgba(0,217,255,0.15) !important;
-        border-color: rgba(0,217,255,0.3) !important;
+        background: rgba(124,92,252,0.06) !important;
+        border-color: rgba(124,92,252,0.25) !important;
     }
     /* Also ensure the sidebar nav toggle and close button are visible */
     [data-testid="stSidebarNavToggle"],
     [data-testid="stSidebarNavToggle"] button,
     button[data-testid="stSidebarCollapseButton"] {
         visibility: visible !important;
-        color: #ffffff !important;
+        color: var(--text) !important;
     }
-    /* Force all toggle SVG icons white (fill/color/stroke needed for cross-browser SVG coloring) */
+    /* Force all toggle SVG icons to use theme color */
     [data-testid="stSidebarCollapsedControl"] svg,
     button[data-testid="stSidebarCollapseButton"] svg,
     [data-testid="stSidebarNavToggle"] svg {
-        fill: #ffffff !important;
-        color: #ffffff !important;
-        stroke: #ffffff !important;
+        fill: var(--text) !important;
+        color: var(--text) !important;
+        stroke: var(--text) !important;
     }
 
     /* ===== Buttons (global) ===== */
     .stButton>button, .stDownloadButton>button{
-        border-radius: 12px !important;
-        font-size: 12px !important;
-        padding: 6px 12px !important;
-        border: 1px solid rgba(255,255,255,0.10) !important;
-        background: rgba(255,255,255,0.04) !important;
-        color: rgba(224,231,255,0.92) !important;
+        border-radius: 10px !important;
+        font-size: 13px !important;
+        font-weight: 500 !important;
+        padding: 8px 16px !important;
+        border: 1px solid var(--border) !important;
+        background: #FFFFFF !important;
+        color: var(--text) !important;
         transition: all 150ms ease !important;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.05) !important;
     }
     .stButton>button:hover, .stDownloadButton>button:hover{
-        border-color: rgba(0,217,255,0.22) !important;
-        background: rgba(0,217,255,0.08) !important;
-        transform: translateY(-1px);
+        border-color: rgba(124,92,252,0.30) !important;
+        background: rgba(124,92,252,0.05) !important;
+        color: var(--accent) !important;
+        box-shadow: 0 2px 8px rgba(124,92,252,0.12) !important;
     }
-    .stButton>button:focus{ box-shadow: 0 0 0 3px rgba(0,217,255,0.12) !important; }
+    .stButton>button:focus{ box-shadow: 0 0 0 3px rgba(124,92,252,0.15) !important; }
 
     /* Primary buttons */
     .stButton>button[kind="primary"], .stButton>button[data-testid="baseButton-primary"]{
-        background: linear-gradient(90deg, rgba(0,217,255,0.25), rgba(0,149,255,0.18)) !important;
-        border-color: rgba(0,217,255,0.28) !important;
+        background: linear-gradient(135deg, #7C5CFC, #6366F1) !important;
+        border-color: transparent !important;
+        color: #ffffff !important;
+        box-shadow: 0 4px 14px rgba(124,92,252,0.30) !important;
+    }
+    .stButton>button[kind="primary"]:hover, .stButton>button[data-testid="baseButton-primary"]:hover{
+        background: linear-gradient(135deg, #6B4EE0, #5558D9) !important;
+        color: #ffffff !important;
+        box-shadow: 0 6px 20px rgba(124,92,252,0.40) !important;
     }
 
     /* Inputs */
     .stTextInput input, .stNumberInput input, .stSelectbox div[role="combobox"], .stDateInput input{
-        background: rgba(255,255,255,0.03) !important;
-        border: 1px solid rgba(255,255,255,0.10) !important;
-        border-radius: 12px !important;
-        color: rgba(224,231,255,0.92) !important;
-        font-size: 12px !important;
+        background: #FFFFFF !important;
+        border: 1px solid var(--border) !important;
+        border-radius: 10px !important;
+        color: var(--text) !important;
+        font-size: 13px !important;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.04) !important;
+    }
+    .stTextInput input:focus, .stNumberInput input:focus, .stDateInput input:focus{
+        border-color: var(--accent) !important;
+        box-shadow: 0 0 0 3px rgba(124,92,252,0.12) !important;
     }
     .stTextInput label, .stNumberInput label, .stSelectbox label, .stDateInput label{
-        font-size: 11px !important;
+        font-size: 12px !important;
         color: var(--muted) !important;
         font-weight: 500 !important;
     }
@@ -908,18 +912,19 @@ st.markdown(
     /* Dataframe / editor */
     [data-testid="stDataFrame"]{
         border-radius: var(--radius) !important;
-        border: 1px solid rgba(255,255,255,0.08) !important;
+        border: 1px solid var(--border) !important;
         overflow:hidden !important;
+        box-shadow: var(--shadow) !important;
     }
 
     /* Skeleton shimmer helper */
     .skeleton{
-        background: linear-gradient(90deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.07) 50%, rgba(255,255,255,0.04) 100%);
+        background: linear-gradient(90deg, #F1F5F9 0%, #E2E8F0 50%, #F1F5F9 100%);
         background-size: 200% 100%;
-        animation: shimmer 1.1s ease-in-out infinite;
-        border: 1px solid rgba(255,255,255,0.06);
-        border-radius: 12px;
-        height: 12px;
+        animation: shimmer 1.3s ease-in-out infinite;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        height: 14px;
         margin: 8px 0;
     }
     @keyframes shimmer{
@@ -931,69 +936,76 @@ st.markdown(
     .dash-kpi-row{
         display: flex;
         flex-direction: row;
-        gap: 10px;
+        gap: 14px;
         flex-wrap: nowrap;
     }
     .dash-kpi-box{
         flex: 1;
-        background: rgba(255,255,255,0.04);
-        border: 1px solid rgba(255,255,255,0.10);
-        border-radius: 14px;
-        padding: 14px 10px 12px;
+        background: #FFFFFF;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 18px 14px 16px;
         min-width: 0;
         text-align: center;
+        box-shadow: var(--shadow);
+        transition: box-shadow 200ms ease;
     }
+    .dash-kpi-box:hover{ box-shadow: var(--shadow-hover); }
     .dash-kpi-box .kpi-icon{
-        font-size: 18px;
-        margin-bottom: 4px;
+        font-size: 20px;
+        margin-bottom: 6px;
     }
     .dash-kpi-box .kpi-label{
         font-size: 11px;
         color: var(--muted);
-        font-weight: 500;
-        margin-bottom: 6px;
+        font-weight: 600;
+        margin-bottom: 8px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
     }
     .dash-kpi-box .kpi-value{
-        font-size: 18px;
+        font-size: 20px;
         font-weight: 700;
         color: var(--text);
         font-family: "JetBrains Mono", ui-monospace, monospace !important;
-        letter-spacing: 0.01em;
+        letter-spacing: -0.01em;
     }
     .dash-kpi-box .kpi-value.bad{ color: var(--danger); }
     .dash-kpi-box .kpi-value.good{ color: var(--good); }
     .dash-kpi-box .kpi-currency{
         font-size: 10px;
         color: var(--muted2);
-        margin-top: 2px;
+        margin-top: 4px;
+        font-weight: 400;
     }
 
     /* ===== White-background chart card ===== */
     .dash-card-white{
-        background: rgba(255,255,255,0.05);
-        border: 1px solid rgba(255,255,255,0.10);
+        background: #FFFFFF;
+        border: 1px solid var(--border);
         border-radius: var(--radius);
-        box-shadow: 0 8px 24px rgba(0,0,0,0.25);
-        padding: 14px 14px 12px 14px;
+        box-shadow: var(--shadow);
+        padding: 20px 20px 16px 20px;
         position: relative;
-        margin-bottom: 12px;
+        margin-bottom: 16px;
+        transition: box-shadow 200ms ease;
     }
+    .dash-card-white:hover{ box-shadow: var(--shadow-hover); }
 
-    /* ===== Streamlit bordered containers (replaces split div pairs) ===== */
+    /* ===== Streamlit bordered containers ===== */
     [data-testid="stVerticalBlockBorderWrapper"]{
         background: var(--panel) !important;
         border: 1px solid var(--border) !important;
         border-radius: var(--radius) !important;
         box-shadow: var(--shadow) !important;
-        backdrop-filter: blur(var(--blur));
-        -webkit-backdrop-filter: blur(var(--blur));
         position: relative;
         overflow: hidden;
-        margin-bottom: 12px;
+        margin-bottom: 14px;
+        transition: box-shadow 200ms ease, border-color 200ms ease;
     }
     [data-testid="stVerticalBlockBorderWrapper"]:hover{
-        border-color: rgba(0,217,255,0.20) !important;
-        box-shadow: 0 18px 65px rgba(0,0,0,0.55) !important;
+        border-color: rgba(124,92,252,0.20) !important;
+        box-shadow: var(--shadow-hover) !important;
     }
 
     /* ===== Dashboard title pill ===== */
@@ -1001,21 +1013,28 @@ st.markdown(
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        background: rgba(0,217,255,0.12);
-        border: 1px solid rgba(0,217,255,0.25);
-        color: var(--accent);
-        padding: 6px 20px;
+        background: linear-gradient(135deg, #7C5CFC, #6366F1);
+        border: none;
+        color: #ffffff;
+        padding: 8px 24px;
         border-radius: 999px;
         font-size: 14px;
         font-weight: 600;
         letter-spacing: 0.04em;
-        margin-bottom: 12px;
+        margin-bottom: 16px;
+        box-shadow: 0 4px 14px rgba(124,92,252,0.28);
     }
     .dash-note{
-        font-size: 10px;
+        font-size: 11px;
         color: var(--muted2);
         margin-top: 6px;
     }
+
+    /* ===== Alert / status messages ===== */
+    .stSuccess{ background: #ECFDF5 !important; color: #065F46 !important; border-left: 4px solid #10B981 !important; border-radius: 10px !important; }
+    .stError{ background: #FEF2F2 !important; color: #991B1B !important; border-left: 4px solid #EF4444 !important; border-radius: 10px !important; }
+    .stWarning{ background: #FFFBEB !important; color: #92400E !important; border-left: 4px solid #F59E0B !important; border-radius: 10px !important; }
+    .stInfo{ background: #EFF6FF !important; color: #1E40AF !important; border-left: 4px solid #6366F1 !important; border-radius: 10px !important; }
     </style>
     """,
     unsafe_allow_html=True,
@@ -1737,19 +1756,19 @@ def _make_bar_chart(df, x_col, y_col):
         import plotly.express as px  # type: ignore
 
         fig = px.bar(chart_df, x=x_col, y=y_col)
-        fig.update_traces(marker_color="rgba(0,217,255,0.65)", marker_line_color="rgba(0,217,255,0.0)")
+        fig.update_traces(marker_color="rgba(124,92,252,0.75)", marker_line_color="rgba(124,92,252,0.0)")
         fig.update_layout(
             paper_bgcolor="rgba(0,0,0,0)",
             plot_bgcolor="rgba(0,0,0,0)",
-            font=dict(color="rgba(224,231,255,0.92)", family="Inter", size=12),
+            font=dict(color="#64748B", family="Inter", size=12),
             xaxis=dict(
                 categoryorder="array",
                 categoryarray=chart_df[x_col].tolist(),
                 showgrid=False,
                 zeroline=False,
-                tickfont=dict(size=10, color="rgba(136,146,176,0.95)"),
+                tickfont=dict(size=10, color="#94A3B8"),
             ),
-            yaxis=dict(showgrid=False, zeroline=False, tickfont=dict(size=10, color="rgba(136,146,176,0.95)")),
+            yaxis=dict(showgrid=True, gridcolor="#F1F5F9", zeroline=False, tickfont=dict(size=10, color="#94A3B8")),
             margin=dict(l=10, r=10, t=10, b=10),
             height=360,
         )
@@ -1783,7 +1802,7 @@ def _make_pie_chart(df, label_col, value_col, top_n=None, show_legend=False, lab
 
     try:
         import plotly.express as px  # type: ignore
-        fig = px.pie(pie_df, names=label_col, values=value_col, hole=0.38)
+        fig = px.pie(pie_df, names=label_col, values=value_col, hole=0.38, color_discrete_sequence=_CHART_PALETTE)
         if label_mode == "Qty":
             fig.update_traces(
                 textposition="inside",
@@ -1806,7 +1825,7 @@ def _make_pie_chart(df, label_col, value_col, top_n=None, show_legend=False, lab
                 y=0.5,
                 xanchor="left",
                 x=1.05,
-                font=dict(size=12, color="rgba(136,146,176,0.95)"),
+                font=dict(size=12, color="#64748B"),
             )
             chart_height = _CHART_HEIGHT_FULLSCREEN
         else:
@@ -1814,7 +1833,7 @@ def _make_pie_chart(df, label_col, value_col, top_n=None, show_legend=False, lab
             chart_height = _CHART_HEIGHT_COMPACT
         fig.update_layout(
             paper_bgcolor="rgba(0,0,0,0)",
-            font=dict(color="rgba(224,231,255,0.92)", family="Inter", size=12),
+            font=dict(color="#64748B", family="Inter", size=12),
             margin=dict(l=0, r=0, t=30, b=0),
             height=chart_height,
             autosize=True,
@@ -1848,22 +1867,22 @@ def _make_horiz_bar_chart(df, label_col, value_col):
             text=chart_df[value_col].apply(lambda v: f"{v:.1f}"),
         )
         fig.update_traces(
-            marker_color="rgba(0,217,255,0.65)",
+            marker_color="rgba(124,92,252,0.75)",
             marker_line_color="rgba(0,0,0,0)",
             textposition="outside",
-            textfont=dict(size=11, color="rgba(224,231,255,0.92)"),
+            textfont=dict(size=11, color="#64748B"),
         )
         fig.update_layout(
             paper_bgcolor="rgba(0,0,0,0)",
             plot_bgcolor="rgba(0,0,0,0)",
-            font=dict(color="rgba(224,231,255,0.92)", family="Inter", size=12),
-            xaxis=dict(showgrid=False, zeroline=False, tickfont=dict(size=10, color="rgba(136,146,176,0.95)")),
+            font=dict(color="#64748B", family="Inter", size=12),
+            xaxis=dict(showgrid=True, gridcolor="#F1F5F9", zeroline=False, tickfont=dict(size=10, color="#94A3B8")),
             yaxis=dict(
                 categoryorder="array",
                 categoryarray=chart_df[label_col].tolist(),
                 showgrid=False,
                 zeroline=False,
-                tickfont=dict(size=10, color="rgba(136,146,176,0.95)"),
+                tickfont=dict(size=10, color="#94A3B8"),
             ),
             margin=dict(l=10, r=60, t=10, b=10),
             height=max(200, len(chart_df) * 38 + 30),
@@ -1876,6 +1895,9 @@ def _make_horiz_bar_chart(df, label_col, value_col):
 # --- Chart height constants ---
 _CHART_HEIGHT_COMPACT = 320
 _CHART_HEIGHT_FULLSCREEN = 500
+
+# --- Chart color palette (modern light theme) ---
+_CHART_PALETTE = ["#7C5CFC", "#10B981", "#F59E0B", "#EF4444", "#6366F1", "#06B6D4", "#F97316", "#8B5CF6", "#14B8A6", "#EC4899"]
 
 # --- Column abbreviations for compact table views ---
 _COL_ABBREV = {
@@ -3283,7 +3305,7 @@ for col_name in columns:
                         f"""
                         <div class="kpi" style="margin-bottom:10px;">
                             <div class="label">{title}
-                                <span style="color:rgba(136,146,176,0.9); font-size:11px;">#{cid}</span>
+                                <span style="color:#94A3B8; font-size:11px;">#{cid}</span>
                             </div>
                             <div class="sub">{note}</div>
                         </div>
