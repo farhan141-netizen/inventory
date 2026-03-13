@@ -575,8 +575,8 @@ st.markdown(
         --warn: #F59E0B;
         --danger: #EF4444;
         --good: #10B981;
-        --shadow: 0 1px 3px rgba(0,0,0,0.04), 0 6px 24px rgba(0,0,0,0.06);
-        --shadow-hover: 0 4px 6px rgba(0,0,0,0.05), 0 10px 40px rgba(0,0,0,0.10);
+        --shadow: 0 1px 3px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.08);
+        --shadow-hover: 0 2px 8px rgba(0,0,0,0.10), 0 8px 24px rgba(0,0,0,0.12);
         --radius: 16px;
         --radius-sm: 10px;
     }
@@ -592,8 +592,9 @@ st.markdown(
 
     /* ===== Base layout ===== */
     .block-container{ padding-top: 1.2rem; padding-bottom: 1.5rem; max-width: 1400px; }
-    .main { background: var(--bg); }
-    [data-testid="stAppViewContainer"]{ background: var(--bg); }
+    .main { background: var(--bg) !important; }
+    .stApp { background: var(--bg) !important; }
+    [data-testid="stAppViewContainer"]{ background: var(--bg) !important; }
     [data-testid="stHeader"]{ background: transparent; }
     [data-testid="stToolbar"]{ visibility: hidden; height: 0px; }
     footer{ visibility: hidden; }
@@ -998,14 +999,18 @@ st.markdown(
         border: 1px solid var(--border) !important;
         border-radius: var(--radius) !important;
         box-shadow: var(--shadow) !important;
+        padding: 20px !important;
+        margin-bottom: 16px !important;
         position: relative;
         overflow: hidden;
-        margin-bottom: 14px;
         transition: box-shadow 200ms ease, border-color 200ms ease;
     }
     [data-testid="stVerticalBlockBorderWrapper"]:hover{
-        border-color: rgba(124,92,252,0.20) !important;
+        border-color: rgba(124,92,252,0.30) !important;
         box-shadow: var(--shadow-hover) !important;
+    }
+    [data-testid="stVerticalBlockBorderWrapper"] > div {
+        padding: 0 !important;
     }
 
     /* ===== Dashboard title pill ===== */
