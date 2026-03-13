@@ -576,6 +576,90 @@ st.markdown("""
         border-color: rgba(249,115,22,0.20) !important;
         box-shadow: var(--shadow-hover) !important;
     }
+
+    /* ===== Fix: secondary buttons — prevent dark/black rendering ===== */
+    [data-testid="baseButton-secondary"],
+    button[kind="secondary"] {
+        background: #FFFFFF !important;
+        color: var(--text) !important;
+        border: 1px solid var(--border) !important;
+        border-radius: 10px !important;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.05) !important;
+    }
+    [data-testid="baseButton-secondary"]:hover,
+    button[kind="secondary"]:hover {
+        background: rgba(249,115,22,0.05) !important;
+        border-color: rgba(249,115,22,0.30) !important;
+        color: #F97316 !important;
+    }
+
+    /* ===== Fix: remove double/black border on input, select, date fields ===== */
+    [data-baseweb="input"],
+    [data-baseweb="base-input"],
+    [data-baseweb="select"] > div:first-child {
+        background: #FFFFFF !important;
+        border: 1px solid var(--border) !important;
+        border-radius: 10px !important;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.04) !important;
+    }
+    [data-baseweb="input"]:focus-within,
+    [data-baseweb="base-input"]:focus-within,
+    [data-baseweb="select"]:focus-within > div:first-child {
+        border-color: #F97316 !important;
+        box-shadow: 0 0 0 3px rgba(249,115,22,0.12) !important;
+    }
+    /* Remove inner outline added by Streamlit on top of baseweb border */
+    .stTextInput > div > div,
+    .stNumberInput > div > div,
+    .stSelectbox > div > div,
+    .stDateInput > div > div {
+        border: none !important;
+        box-shadow: none !important;
+        outline: none !important;
+    }
+    /* Ensure date input container has clean border */
+    [data-testid="stDateInput"] > div,
+    [data-testid="stDateInput"] > label + div {
+        border: none !important;
+        box-shadow: none !important;
+    }
+
+    /* ===== Fix: Popover (⋮) card-settings button — compact & inline ===== */
+    [data-testid="stPopover"] {
+        display: inline-flex !important;
+        width: auto !important;
+        vertical-align: middle !important;
+    }
+    [data-testid="stPopover"] > div > button,
+    [data-testid="stPopover"] button[data-testid="stBaseButton-secondary"] {
+        padding: 2px 6px !important;
+        min-height: 28px !important;
+        height: 28px !important;
+        width: 28px !important;
+        background: transparent !important;
+        border: 1px solid var(--border) !important;
+        border-radius: 6px !important;
+        color: var(--muted) !important;
+        font-size: 16px !important;
+        line-height: 1 !important;
+        box-shadow: none !important;
+    }
+    [data-testid="stPopover"] > div > button:hover,
+    [data-testid="stPopover"] button[data-testid="stBaseButton-secondary"]:hover {
+        background: var(--panel-2) !important;
+        border-color: #CBD5E1 !important;
+        color: var(--text) !important;
+    }
+
+    /* ===== Fix: DataFrame / data_editor header — light background ===== */
+    [data-testid="stDataFrame"] th,
+    [data-testid="stDataFrameResizable"] th,
+    [data-testid="stDataFrame"] [data-testid="glideDataEditorContainer"] .gdg-header,
+    .dvn-stack .dvn-scroller th {
+        background: #F1F5F9 !important;
+        color: var(--text) !important;
+        border-bottom: 1px solid var(--border) !important;
+    }
     </style>
     """, unsafe_allow_html=True)
 
