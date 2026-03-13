@@ -660,6 +660,44 @@ st.markdown("""
         color: var(--text) !important;
         border-bottom: 1px solid var(--border) !important;
     }
+
+    /* ===== Fix: Selectbox / dropdown selected value text ===== */
+    div[data-baseweb="select"] * {
+        color: var(--text) !important;
+    }
+    div[data-baseweb="select"] input::placeholder {
+        color: var(--muted2) !important;
+    }
+    /* Dropdown menu options */
+    div[data-baseweb="menu"] li,
+    div[data-baseweb="popover"] li,
+    [role="listbox"] li,
+    [role="option"] {
+        color: var(--text) !important;
+    }
+
+    /* ===== Fix: Radio button label text ===== */
+    [data-testid="stRadio"] label,
+    [data-testid="stRadio"] label span,
+    [data-testid="stRadio"] div[role="radiogroup"] label {
+        color: var(--text) !important;
+    }
+
+    /* ===== Fix: Widget label and form text ===== */
+    [data-testid="stWidgetLabel"] label,
+    [data-testid="stWidgetLabel"] p,
+    .stSelectbox label,
+    .stTextInput label,
+    .stNumberInput label,
+    .stDateInput label {
+        color: var(--text) !important;
+    }
+
+    /* ===== Fix: Input placeholder text ===== */
+    input::placeholder,
+    textarea::placeholder {
+        color: var(--muted2) !important;
+    }
     </style>
     """, unsafe_allow_html=True)
 
