@@ -562,11 +562,11 @@ st.markdown(
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500&display=swap');
 
     :root{
-        --bg: #F8F9FC;
+        --bg: #F1F5F9;
         --panel: #FFFFFF;
-        --panel-2: #F1F5F9;
-        --border: #E2E8F0;
-        --border-2: rgba(0,0,0,0.06);
+        --panel-2: #E8EDF4;
+        --border: #CBD5E1;
+        --border-2: rgba(0,0,0,0.08);
         --text: #1E293B;
         --muted: #64748B;
         --muted2: #94A3B8;
@@ -575,8 +575,8 @@ st.markdown(
         --warn: #F59E0B;
         --danger: #EF4444;
         --good: #10B981;
-        --shadow: 0 1px 3px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.08);
-        --shadow-hover: 0 2px 8px rgba(0,0,0,0.10), 0 8px 24px rgba(0,0,0,0.12);
+        --shadow: 0 2px 4px rgba(0,0,0,0.08), 0 8px 32px rgba(0,0,0,0.12);
+        --shadow-hover: 0 4px 12px rgba(0,0,0,0.12), 0 12px 40px rgba(0,0,0,0.18);
         --radius: 16px;
         --radius-sm: 10px;
     }
@@ -995,10 +995,10 @@ st.markdown(
 
     /* ===== Streamlit bordered containers ===== */
     [data-testid="stVerticalBlockBorderWrapper"]{
-        background: var(--panel) !important;
-        border: 1px solid var(--border) !important;
-        border-radius: var(--radius) !important;
-        box-shadow: var(--shadow) !important;
+        background: #FFFFFF !important;
+        border: 1.5px solid #CBD5E1 !important;
+        border-radius: 16px !important;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.08), 0 8px 32px rgba(0,0,0,0.12) !important;
         padding: 20px !important;
         margin-bottom: 16px !important;
         position: relative;
@@ -1006,8 +1006,8 @@ st.markdown(
         transition: box-shadow 200ms ease, border-color 200ms ease;
     }
     [data-testid="stVerticalBlockBorderWrapper"]:hover{
-        border-color: rgba(124,92,252,0.30) !important;
-        box-shadow: var(--shadow-hover) !important;
+        border-color: rgba(124,92,252,0.35) !important;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.12), 0 12px 40px rgba(0,0,0,0.18) !important;
     }
     [data-testid="stVerticalBlockBorderWrapper"] > div {
         padding: 0 !important;
