@@ -9,6 +9,15 @@ import numpy as np
 from typing import Optional
 from org_helpers import create_organization, create_location, add_membership
 from org_helpers import get_user_memberships
+from org_helpers import (
+    create_restaurant_with_invite,
+    get_org_restaurants,
+    get_invite_codes_for_location,
+    deactivate_restaurant,
+    reactivate_restaurant,
+    regenerate_invite_code,
+    get_location_members,
+)
 
 # --- 1. CLOUD CONNECTION ---
 conn = st.connection("supabase", type=SupabaseConnection)
@@ -2522,7 +2531,7 @@ with st.sidebar:
         st.cache_data.clear()
         st.rerun()
 
-tab_ops, tab_req, tab_sup, tab_dash = st.tabs(["📊 Operations", "🚚 Requisitions", "📞 Suppliers", "📊 Dashboard"])
+tab_ops, tab_req, tab_sup, tab_dash, tab_restaurants = st.tabs(["📊 Operations", "🚚 Requisitions", "📞 Suppliers", "📊 Dashboard", "🍴 Restaurants"])
 
 # ===================== OPERATIONS TAB =====================
 with tab_ops:
@@ -2734,17 +2743,19 @@ with tab_req:
                                 req_id = row["ReqID"]
                                 remaining_qty = req_qty - dispatch_qty
                                 followup_sent = row.get("FollowupSent", False)
+                                submitted_by_email = row.get("submitted_by_email", "") or ""
 
                                 stock_info = st.session_state.inventory[st.session_state.inventory["Product Name"] == item_name]
                                 available_qty = float(stock_info["Closing Stock"].values[0]) if not stock_info.empty else 0.0
 
                                 status_color = "🟡" if status == "Pending" else "🟠" if status == "Dispatched" else "🔵"
                                 followup_text = " ⚠️" if followup_sent else ""
+                                submitter_text = f" | 👤 {submitted_by_email}" if submitted_by_email else ""
 
                                 st.markdown(
                                     f"""
                                     <div class="req-box">
-                                        <b>{status_color} {item_name}</b> | Req:{req_qty} | Got:{dispatch_qty} | Rem:{remaining_qty} | Avail:{available_qty}{followup_text}
+                                        <b>{status_color} {item_name}</b> | Req:{req_qty} | Got:{dispatch_qty} | Rem:{remaining_qty} | Avail:{available_qty}{followup_text}{submitter_text}
                                     </div>
                                     """,
                                     unsafe_allow_html=True,
@@ -3464,3 +3475,125 @@ for col_name in columns:
                         )
                         st.balloons()
                         st.rerun()
+
+
+# ===================== RESTAURANTS TAB =====================
+with tab_restaurants:
+    st.markdown('<span class="section-title">🍴 Manage Restaurants</span>', unsafe_allow_html=True)
+
+    _mgr_org_id = st.session_state.get("org_id")
+    _mgr_user_id = st.session_state.get("user_id")
+
+    if not _mgr_org_id:
+        st.warning("No organization found. Please complete onboarding first.")
+        st.stop()
+
+    # ── Section 1: Add Restaurant ──────────────────────────────────────────────
+    with st.expander("➕ Add Restaurant", expanded=False):
+        r_name = st.text_input("🏪 Restaurant Name", placeholder="e.g., Restaurant 01 - Downtown", key="new_rest_name")
+        r_max_uses = st.number_input("👥 Max Manager Logins", min_value=1, max_value=20, value=5, key="new_rest_max_uses")
+        if st.button("✅ Create Restaurant", type="primary", key="create_rest_btn"):
+            if not r_name.strip():
+                st.error("Please enter a restaurant name.")
+            else:
+                _result = create_restaurant_with_invite(
+                    org_id=_mgr_org_id,
+                    restaurant_name=r_name.strip(),
+                    created_by=_mgr_user_id,
+                    max_uses=int(r_max_uses),
+                )
+                if _result:
+                    _inv_code = _result["invite_code"]["code"]
+                    st.success(f"✅ Restaurant **{r_name.strip()}** created!")
+                    st.info(f"📋 Invite Code: **{_inv_code}** — Share this with the restaurant manager(s)")
+                    st.cache_data.clear()
+                    st.rerun()
+                else:
+                    st.error("❌ Failed to create restaurant. Please try again.")
+
+    st.divider()
+
+    # ── Section 2: Restaurant List ─────────────────────────────────────────────
+    st.markdown('<span class="section-title">🏪 Your Restaurants</span>', unsafe_allow_html=True)
+
+    if st.button("🔄 Refresh List", key="refresh_rest_list"):
+        st.cache_data.clear()
+        st.rerun()
+
+    _restaurants = get_org_restaurants(_mgr_org_id)
+
+    if not _restaurants:
+        st.info("📭 No restaurants yet. Create one above!")
+    else:
+        for _rest in _restaurants:
+            _lid = _rest.get("id", "")
+            _lname = _rest.get("name", "Unknown")
+            _lactive = _rest.get("active", True)
+
+            _status_badge = "🟢 Active" if _lactive else "🔴 Inactive"
+            _border_color = "rgba(16,185,129,0.25)" if _lactive else "rgba(239,68,68,0.25)"
+
+            with st.container(border=True):
+                h_col, badge_col = st.columns([3, 1])
+                with h_col:
+                    st.markdown(f"**🏪 {_lname}**")
+                with badge_col:
+                    st.markdown(
+                        f'<span style="font-size:12px;font-weight:600;color:{"#10B981" if _lactive else "#EF4444"};">'
+                        f"{_status_badge}</span>",
+                        unsafe_allow_html=True,
+                    )
+
+                # Invite codes for this location
+                _codes = get_invite_codes_for_location(_lid)
+                _active_codes = [c for c in _codes if c.get("active")]
+                if _active_codes:
+                    _c = _active_codes[0]
+                    st.markdown(
+                        f"📋 **Invite Code:** `{_c['code']}` &nbsp;|&nbsp; "
+                        f"Uses: {_c['used_count']}/{_c['max_uses']}",
+                        unsafe_allow_html=True,
+                    )
+                else:
+                    st.caption("No active invite code.")
+
+                # Members count
+                _members = get_location_members(_lid)
+                st.caption(f"👥 {len(_members)} manager(s) linked")
+
+                # Action buttons
+                btn_c1, btn_c2, btn_c3 = st.columns(3)
+                with btn_c1:
+                    if st.button("🔄 Regenerate Code", key=f"regen_{_lid}", use_container_width=True):
+                        _new_code = regenerate_invite_code(
+                            org_id=_mgr_org_id,
+                            location_id=_lid,
+                            created_by=_mgr_user_id,
+                        )
+                        if _new_code:
+                            st.success(f"✅ New code: **{_new_code['code']}**")
+                            st.cache_data.clear()
+                            st.rerun()
+                        else:
+                            st.error("❌ Failed to regenerate code.")
+                with btn_c2:
+                    if _lactive:
+                        if st.button("🔒 Deactivate", key=f"deact_{_lid}", use_container_width=True):
+                            if deactivate_restaurant(_lid):
+                                st.warning(f"🔒 **{_lname}** deactivated.")
+                                st.cache_data.clear()
+                                st.rerun()
+                            else:
+                                st.error("❌ Failed to deactivate.")
+                    else:
+                        if st.button("🔓 Reactivate", key=f"react_{_lid}", use_container_width=True):
+                            if reactivate_restaurant(_lid):
+                                st.success(f"🔓 **{_lname}** reactivated.")
+                                st.cache_data.clear()
+                                st.rerun()
+                            else:
+                                st.error("❌ Failed to reactivate.")
+                with btn_c3:
+                    if _active_codes:
+                        _copy_code = _active_codes[0]["code"]
+                        st.code(_copy_code, language=None)
