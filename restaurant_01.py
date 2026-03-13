@@ -567,7 +567,7 @@ st.markdown("""
     }
     [data-testid="stVerticalBlockBorderWrapper"] {
         background: #FFFFFF !important;
-        border: 1.5px solid #CBD5E1 !important;
+        border: 1.5px solid rgba(249,115,22,0.15) !important;
         border-radius: 16px !important;
         box-shadow: 0 2px 4px rgba(0,0,0,0.08), 0 8px 32px rgba(0,0,0,0.12) !important;
         padding: 20px !important;
