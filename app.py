@@ -439,7 +439,7 @@ def save_to_sheet(df: pd.DataFrame, table_name: str, pk: str = None):
 
     # Inject user_id for tables that require it (activity_logs has NOT NULL user_id)
     user_id = st.session_state.get("user_id")
-    if user_id and table_name == "activity_logs":
+    if user_id and table_name in ("activity_logs", "product_metadata"):
         df["user_id"] = user_id
 
     # Convert NaN to None for JSON compatibility
