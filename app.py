@@ -192,6 +192,19 @@ def clean_dataframe(df):
             return None if s in ("", "nan") else v
         df["Contact"] = df["Contact"].apply(_blank_to_none)
 
+        # Cast numeric Contact values to int to avoid bigint parse errors (e.g., 8645.0 → 8645)
+        def _contact_to_int(v):
+            if v is None:
+                return None
+            try:
+                f = float(v)
+                if f == int(f):
+                    return int(f)
+                return v
+            except (ValueError, TypeError):
+                return v  # Keep strings like phone numbers as-is
+        df["Contact"] = df["Contact"].apply(_contact_to_int)
+
     # ✅ Coerce inventory quantity columns: empty strings / invalid text → 0
     # These columns map to float8 columns in persistent_inventory / monthly_history.
     _inventory_num_cols = [
@@ -415,6 +428,8 @@ _ON_CONFLICT_BY_TABLE = {
 # upsert payload so that Postgres can apply the column default.  Sending an
 # explicit null bypasses the default and causes a NOT NULL violation.
 _SERVER_UUID_PK_TABLES = ("persistent_inventory", "product_metadata")
+# UI-only columns that exist in local DataFrames/session state but not in the DB schema
+_PERSISTENT_INVENTORY_UI_ONLY_COLS = frozenset(["Physical Count"])
 
 
 def save_to_sheet(df: pd.DataFrame, table_name: str, pk: str = None):
@@ -457,6 +472,10 @@ def save_to_sheet(df: pd.DataFrame, table_name: str, pk: str = None):
          for k, v in rec.items()}
         for rec in records
     ]
+
+    # Strip UI-only columns that don't exist in the DB schema for persistent_inventory
+    if table_name == "persistent_inventory":
+        records = [{k: v for k, v in rec.items() if k not in _PERSISTENT_INVENTORY_UI_ONLY_COLS} for rec in records]
 
     # IMPORTANT: for server-generated uuid PK tables, always omit 'id' from the payload.
     # Conflict resolution is via a unique index (org_id, location_id, "Product Name"),
@@ -1261,7 +1280,7 @@ def manage_categories_modal():
                         "Contact": "",
                         "Email": "",
                         "Category": category_name,
-                        "Lead Time": "",
+                        "Lead Time": None,
                         "Price": 0,
                         "Currency": "",
                     }
@@ -1492,7 +1511,7 @@ def add_supplier_modal():
                     "UOM": "",
                     "Price": 0,
                     "Currency": "",
-                    "Lead Time": "",
+                    "Lead Time": None,
                 }
             ]
         )
