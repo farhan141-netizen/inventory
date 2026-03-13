@@ -996,9 +996,9 @@ st.markdown(
     /* ===== Streamlit bordered containers ===== */
     [data-testid="stVerticalBlockBorderWrapper"]{
         background: #FFFFFF !important;
-        border: 1.5px solid rgba(124,92,252,0.15) !important;
+        border: 1.5px solid rgba(124, 92, 252, 0.20) !important;
         border-radius: 16px !important;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.08), 0 8px 32px rgba(0,0,0,0.12) !important;
+        box-shadow: 0 1px 3px rgba(124, 92, 252, 0.08), 0 4px 16px rgba(124, 92, 252, 0.06) !important;
         padding: 20px !important;
         margin-bottom: 16px !important;
         position: relative;
@@ -1006,8 +1006,8 @@ st.markdown(
         transition: box-shadow 200ms ease, border-color 200ms ease;
     }
     [data-testid="stVerticalBlockBorderWrapper"]:hover{
-        border-color: rgba(124,92,252,0.35) !important;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.12), 0 12px 40px rgba(0,0,0,0.18) !important;
+        border-color: rgba(124, 92, 252, 0.40) !important;
+        box-shadow: 0 2px 8px rgba(124, 92, 252, 0.12), 0 8px 24px rgba(124, 92, 252, 0.10) !important;
     }
     [data-testid="stVerticalBlockBorderWrapper"] > div {
         padding: 0 !important;
