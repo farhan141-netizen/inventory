@@ -206,6 +206,9 @@ def recalculate_inventory(df):
     
     return df
 
+# --- Chart color palette (modern light theme) ---
+_R01_CHART_PALETTE = ["#7C5CFC", "#10B981", "#F59E0B", "#EF4444", "#6366F1", "#06B6D4", "#F97316", "#8B5CF6", "#14B8A6", "#EC4899"]
+
 # --- Dashboard card state helpers ---
 def _r01_init_card_state(card_id, default_sort="High → Low", default_topn=10):
     if "r01_dash_cards" not in st.session_state:
@@ -259,11 +262,11 @@ def _r01_make_pie(df, label_col, value_col):
         return
     try:
         fig = px.pie(df, names=label_col, values=value_col, hole=0.45,
-                     color_discrete_sequence=px.colors.sequential.Blues_r)
+                     color_discrete_sequence=_R01_CHART_PALETTE)
         fig.update_traces(textposition="inside", textinfo="percent+label")
         fig.update_layout(
             paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-            font=dict(color="rgba(224,231,255,0.85)", size=11),
+            font=dict(color="#64748B", size=11),
             margin=dict(l=0, r=0, t=20, b=0), height=260, showlegend=False,
         )
         st.plotly_chart(fig, use_container_width=True)
@@ -276,12 +279,13 @@ def _r01_make_bar(df, label_col, value_col):
         return
     try:
         fig = px.bar(df, x=label_col, y=value_col,
-                     color_discrete_sequence=["rgba(0,217,255,0.7)"])
+                     color_discrete_sequence=["rgba(124,92,252,0.75)"])
         fig.update_layout(
             paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-            font=dict(color="rgba(224,231,255,0.85)", size=11),
+            font=dict(color="#64748B", size=11),
             margin=dict(l=0, r=0, t=20, b=40), height=260,
-            xaxis=dict(tickangle=-35),
+            xaxis=dict(tickangle=-35, showgrid=False),
+            yaxis=dict(showgrid=True, gridcolor="#F1F5F9"),
         )
         st.plotly_chart(fig, use_container_width=True)
     except Exception:
@@ -307,28 +311,29 @@ def _r01_show_fullscreen_card(title: str, df: pd.DataFrame, label_col: str, valu
     try:
         if chart_type == "Bar Chart":
             fig = px.bar(df, x=label_col, y=value_col,
-                         color_discrete_sequence=["rgba(0,217,255,0.7)"])
+                         color_discrete_sequence=["rgba(124,92,252,0.75)"])
             fig.update_layout(
                 paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                font=dict(color="rgba(224,231,255,0.85)", size=12),
+                font=dict(color="#64748B", size=12),
                 margin=dict(l=0, r=0, t=20, b=60), height=500,
-                xaxis=dict(tickangle=-35),
+                xaxis=dict(tickangle=-35, showgrid=False),
+                yaxis=dict(showgrid=True, gridcolor="#F1F5F9"),
                 showlegend=False,
             )
         else:  # Pie Chart
             fig = px.pie(df, names=label_col, values=value_col, hole=0.38,
-                         color_discrete_sequence=px.colors.sequential.Blues_r)
+                         color_discrete_sequence=_R01_CHART_PALETTE)
             fig.update_traces(textposition="inside", textinfo="percent+label")
             fig.update_layout(
                 paper_bgcolor="rgba(0,0,0,0)",
-                font=dict(color="rgba(224,231,255,0.85)", size=12),
+                font=dict(color="#64748B", size=12),
                 margin=dict(l=0, r=0, t=30, b=0), height=500,
                 legend=dict(
                     visible=True,
                     orientation="v",
                     yanchor="middle", y=0.5,
                     xanchor="left", x=1.05,
-                    font=dict(size=12, color="rgba(136,146,176,0.95)"),
+                    font=dict(size=12, color="#64748B"),
                 ),
             )
         st.plotly_chart(fig, use_container_width=True)
@@ -339,52 +344,238 @@ def _r01_show_fullscreen_card(title: str, df: pd.DataFrame, label_col: str, valu
 # --- PAGE CONFIG ---
 st.set_page_config(page_title="Restaurant 01 Pro", layout="wide")
 
-# --- CUSTOM CSS - COMPACT & OPTIMIZED ---
+# --- MODERN LIGHT THEME (matching Warehouse Pro Cloud) ---
 st.markdown("""
     <style>
-    .main { background-color: #0e1117; }
-    .header { background: linear-gradient(90deg, #ff6b35 0%, #f7931e 100%); padding: 10px 15px; border-radius: 10px; color: white; margin-bottom: 10px; }
-    .header h1 { margin: 0; font-size: 1.4em; }
-    .header p { margin: 2px 0 0 0; font-size: 0.8em; }
-    
-    .stTabs [data-baseweb="tab-list"] { gap: 6px; }
-    .stTabs [data-baseweb="tab"] { height: 40px; background-color: #1e2130; border-radius: 5px 5px 0 0; padding: 6px 10px; color: white; font-weight: 600; font-size: 0.85em; }
-    .stTabs [aria-selected="true"] { background-color: #ff6b35 !important; color: white !important; }
-    
-    .section-title { color: #ff6b35; font-size: 0.95em; font-weight: 700; margin-bottom: 6px; margin-top: 2px; }
-    .stButton>button { border-radius: 4px; font-weight: 600; font-size: 0.8em; padding: 3px 6px; }
-    
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500&display=swap');
+
+    :root {
+        --bg: #F8F9FC;
+        --panel: #FFFFFF;
+        --panel-2: #F1F5F9;
+        --border: #E2E8F0;
+        --text: #1E293B;
+        --muted: #64748B;
+        --muted2: #94A3B8;
+        --accent: #7C5CFC;
+        --warn: #F59E0B;
+        --danger: #EF4444;
+        --good: #10B981;
+        --shadow: 0 1px 3px rgba(0,0,0,0.04), 0 6px 24px rgba(0,0,0,0.06);
+        --shadow-hover: 0 4px 6px rgba(0,0,0,0.05), 0 10px 40px rgba(0,0,0,0.10);
+        --radius: 16px;
+    }
+
+    html, body, [class*="css"], [data-testid="stAppViewContainer"] {
+        font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif !important;
+        color: var(--text) !important;
+    }
+
+    .main { background: var(--bg); }
+    [data-testid="stAppViewContainer"] { background: var(--bg); }
+    footer { visibility: hidden; }
+
+    .header {
+        background: linear-gradient(135deg, #F97316 0%, #F59E0B 100%);
+        padding: 18px 24px;
+        border-radius: var(--radius);
+        color: white;
+        margin-bottom: 16px;
+        box-shadow: 0 4px 20px rgba(249,115,22,0.25);
+    }
+    .header h1 { margin: 0; font-size: 1.4em; font-weight: 700; }
+    .header p { margin: 4px 0 0 0; font-size: 0.85em; opacity: 0.85; }
+
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 4px;
+        background: #FFFFFF;
+        padding: 6px;
+        border-radius: var(--radius);
+        border: 1px solid var(--border);
+        box-shadow: var(--shadow);
+    }
+    .stTabs [data-baseweb="tab"] {
+        height: 40px;
+        background: transparent;
+        border-radius: 10px;
+        padding: 6px 14px;
+        color: var(--muted);
+        font-weight: 500;
+        font-size: 13px;
+        transition: all 160ms ease;
+    }
+    .stTabs [aria-selected="true"] {
+        background: rgba(249,115,22,0.10) !important;
+        color: #F97316 !important;
+        border: 1px solid rgba(249,115,22,0.20) !important;
+        font-weight: 600 !important;
+    }
+
+    .section-title {
+        color: var(--text);
+        font-size: 13px;
+        font-weight: 600;
+        margin-bottom: 10px;
+        margin-top: 4px;
+        border-bottom: 2px solid rgba(249,115,22,0.18);
+        padding-bottom: 8px;
+        letter-spacing: 0.02em;
+    }
+
+    .stButton>button {
+        border-radius: 10px !important;
+        font-weight: 500 !important;
+        font-size: 13px !important;
+        padding: 7px 14px !important;
+        border: 1px solid var(--border) !important;
+        background: #FFFFFF !important;
+        color: var(--text) !important;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.05) !important;
+        transition: all 150ms ease !important;
+    }
+    .stButton>button:hover {
+        border-color: rgba(249,115,22,0.30) !important;
+        background: rgba(249,115,22,0.05) !important;
+        color: #F97316 !important;
+    }
+
     /* Cart Styles */
-    .cart-compact { background: #1e2130; padding: 8px; border-radius: 8px; border: 2px solid #ff6b35; }
-    .cart-item-row { display: flex; justify-content: space-between; align-items: center; background: #262730; padding: 4px 6px; margin-bottom: 3px; border-left: 3px solid #ff6b35; border-radius: 3px; font-size: 0.85em; }
+    .cart-compact {
+        background: #FFFFFF;
+        padding: 14px;
+        border-radius: var(--radius);
+        border: 2px solid rgba(249,115,22,0.25);
+        box-shadow: var(--shadow);
+    }
+    .cart-item-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background: #FFF7ED;
+        padding: 8px 10px;
+        margin-bottom: 6px;
+        border-left: 3px solid #F97316;
+        border-radius: 8px;
+        font-size: 13px;
+        color: var(--text);
+    }
     .cart-item-name { flex: 1; }
-    .cart-item-btn { margin-left: 4px; }
-    
+    .cart-item-btn { margin-left: 6px; }
+
     /* Status Colors */
-    .status-pending { border-left: 4px solid #ffaa00; background: #3a2f1a; }
-    .status-dispatched { border-left: 4px solid #00d9ff; background: #1a2f3f; }
-    .status-completed { border-left: 4px solid #00ff00; background: #1a3a1a; }
-    
-    .req-item { padding: 6px 8px; margin: 3px 0; border-radius: 4px; font-size: 0.85em; line-height: 1.3; display: flex; justify-content: space-between; align-items: center; }
+    .status-pending {
+        border-left: 4px solid var(--warn) !important;
+        background: #FFFBEB !important;
+        color: #92400E !important;
+    }
+    .status-dispatched {
+        border-left: 4px solid #06B6D4 !important;
+        background: #ECFEFF !important;
+        color: #164E63 !important;
+    }
+    .status-completed {
+        border-left: 4px solid var(--good) !important;
+        background: #ECFDF5 !important;
+        color: #065F46 !important;
+    }
+
+    .req-item {
+        padding: 8px 10px;
+        margin: 4px 0;
+        border-radius: 10px;
+        font-size: 13px;
+        line-height: 1.45;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border: 1px solid var(--border);
+        background: #FFFFFF;
+        color: var(--text);
+    }
     .req-item-content { flex: 1; }
     .req-item-buttons { display: flex; gap: 4px; margin-left: 8px; }
-    
-    hr { margin: 4px 0; opacity: 0.1; }
+
+    hr { margin: 8px 0; opacity: 0.15; border-color: var(--border); }
+
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #F1F5F9; border-radius: 99px; }
+    ::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 99px; }
+    ::-webkit-scrollbar-thumb:hover { background: #94A3B8; }
 
     /* Dashboard additions */
-    .r01-dash-kpi-row { display:flex; flex-direction:row; gap:10px; flex-wrap:nowrap; margin-bottom:14px; }
-    .r01-dash-kpi-box {
-        flex:1; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.10);
-        border-radius:14px; padding:14px 10px 12px; min-width:0; text-align:center;
+    .r01-dash-kpi-row {
+        display: flex;
+        flex-direction: row;
+        gap: 14px;
+        flex-wrap: nowrap;
+        margin-bottom: 16px;
     }
-    .r01-dash-kpi-box .kpi-icon { font-size:18px; margin-bottom:4px; }
-    .r01-dash-kpi-box .kpi-label { font-size:11px; color:#888cb0; font-weight:500; margin-bottom:6px; }
-    .r01-dash-kpi-box .kpi-value { font-size:18px; font-weight:700; color:#e0e7ff; font-family:monospace; }
-    .r01-dash-kpi-box .kpi-value.bad { color:#ff6b6b; }
-    .r01-dash-kpi-box .kpi-value.good { color:#2ee59d; }
-    .r01-card-title { font-size:13px; font-weight:600; color:rgba(224,231,255,0.92);
-        margin:0 0 8px 0; display:flex; align-items:center; justify-content:space-between; }
-    .r01-card-title .meta { font-size:11px; color:#888cb0; font-weight:400; }
+    .r01-dash-kpi-box {
+        flex: 1;
+        background: #FFFFFF;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 18px 14px 16px;
+        min-width: 0;
+        text-align: center;
+        box-shadow: var(--shadow);
+        transition: box-shadow 200ms ease;
+    }
+    .r01-dash-kpi-box:hover { box-shadow: var(--shadow-hover); }
+    .r01-dash-kpi-box .kpi-icon { font-size: 20px; margin-bottom: 6px; }
+    .r01-dash-kpi-box .kpi-label {
+        font-size: 11px;
+        color: var(--muted);
+        font-weight: 600;
+        margin-bottom: 8px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+    }
+    .r01-dash-kpi-box .kpi-value {
+        font-size: 20px;
+        font-weight: 700;
+        color: var(--text);
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+        letter-spacing: -0.01em;
+    }
+    .r01-dash-kpi-box .kpi-value.bad { color: var(--danger); }
+    .r01-dash-kpi-box .kpi-value.good { color: var(--good); }
+    .r01-card-title {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text);
+        margin: 0 0 10px 0;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+    .r01-card-title .meta {
+        font-size: 11px;
+        color: var(--muted);
+        font-weight: 400;
+        background: var(--panel-2);
+        padding: 2px 8px;
+        border-radius: 999px;
+    }
+
+    [data-testid="stDataFrame"] {
+        border-radius: var(--radius) !important;
+        border: 1px solid var(--border) !important;
+        overflow: hidden !important;
+        box-shadow: var(--shadow) !important;
+    }
+    [data-testid="stVerticalBlockBorderWrapper"] {
+        background: var(--panel) !important;
+        border: 1px solid var(--border) !important;
+        border-radius: var(--radius) !important;
+        box-shadow: var(--shadow) !important;
+        margin-bottom: 14px;
+        transition: box-shadow 200ms ease, border-color 200ms ease;
+    }
+    [data-testid="stVerticalBlockBorderWrapper"]:hover {
+        border-color: rgba(249,115,22,0.20) !important;
+        box-shadow: var(--shadow-hover) !important;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -1143,13 +1334,14 @@ with tab_dash:
                 try:
                     fig_trend = px.line(
                         trend_df, x="Date", y="Total Qty", markers=True,
-                        color_discrete_sequence=["rgba(0,217,255,0.85)"],
+                        color_discrete_sequence=["rgba(124,92,252,0.85)"],
                     )
                     fig_trend.update_layout(
                         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                        font=dict(color="rgba(224,231,255,0.85)", size=11),
+                        font=dict(color="#64748B", size=11),
                         margin=dict(l=0, r=0, t=20, b=40), height=260,
-                        xaxis=dict(tickangle=-35),
+                        xaxis=dict(tickangle=-35, showgrid=False),
+                        yaxis=dict(showgrid=True, gridcolor="#F1F5F9"),
                     )
                     st.plotly_chart(fig_trend, use_container_width=True)
                 except Exception:
