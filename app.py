@@ -1425,7 +1425,7 @@ def add_item_modal():
         st.session_state.inventory = pd.concat([st.session_state.inventory, new_row_df], ignore_index=True)
         # Upsert only the new product row so existing rows with valid ids are untouched
         # and so that no id=null payload reaches persistent_inventory.
-        save_to_sheet(new_row_df, "persistent_inventory")
+        inv_ok = save_to_sheet(new_row_df, "persistent_inventory")
 
         supplier_meta = pd.DataFrame(
             [
@@ -1443,11 +1443,17 @@ def add_item_modal():
             ]
         )
         # Upsert only the new metadata row (conflict on org_id,"Product Name" handles updates)
-        save_to_sheet(supplier_meta, "product_metadata")
+        meta_ok = save_to_sheet(supplier_meta, "product_metadata")
 
-        st.success(f"✅ Product '{name}' created with supplier '{supplier}' at {currency} {price}!")
-        st.balloons()
-        st.rerun()
+        if inv_ok and meta_ok:
+            st.success(f"✅ Product '{name}' created with supplier '{supplier}' at {currency} {price}!")
+            st.balloons()
+            st.rerun()
+        elif inv_ok and not meta_ok:
+            st.warning(f"⚠️ Product '{name}' added to inventory but supplier metadata failed to save. Please update supplier info in the Supplier Directory.")
+            st.rerun()
+        elif not inv_ok:
+            st.error("❌ Failed to save product to inventory.")
 
 @st.dialog("➕ Add New Supplier")
 def add_supplier_modal():
