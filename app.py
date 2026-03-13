@@ -4,6 +4,7 @@ import pandas as pd
 import datetime
 import uuid
 import io
+import math
 import numpy as np
 from typing import Optional
 from org_helpers import create_organization, create_location, add_membership
@@ -445,6 +446,13 @@ def save_to_sheet(df: pd.DataFrame, table_name: str, pk: str = None):
     df = df.where(pd.notnull(df), None)
 
     records = df.to_dict(orient="records")
+    # Sanitize any remaining float NaN/Inf values (e.g. from float64 columns where
+    # df.where(notnull, None) coerces None back to NaN) so they serialise as JSON null.
+    records = [
+        {k: (None if isinstance(v, float) and not math.isfinite(v) else v)
+         for k, v in rec.items()}
+        for rec in records
+    ]
 
     # IMPORTANT: for server-generated uuid PK tables, always omit 'id' from the payload.
     # Conflict resolution is via a unique index (org_id, location_id, "Product Name"),
