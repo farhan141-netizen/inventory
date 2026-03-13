@@ -124,7 +124,11 @@ def clean_dataframe(df):
     
     # Drop unnamed/duplicate columns
     df = df.loc[:, ~df.columns.str.contains("^Unnamed", na=False)]
-    df = df.dropna(axis=1, how="all")
+    # Only drop all-None columns if there are multiple rows.
+    # For single-row DataFrames (e.g., adding a new product/category/supplier),
+    # dropping all-None columns removes optional fields that the DB expects.
+    if len(df) > 1:
+        df = df.dropna(axis=1, how="all")
     df = df.loc[:, ~df.columns.duplicated()]
     
     # Fix Column Casing & Whitespace: 
@@ -410,7 +414,7 @@ _ON_CONFLICT_BY_TABLE = {
 # When saving to these tables, null/blank id values must be omitted from the
 # upsert payload so that Postgres can apply the column default.  Sending an
 # explicit null bypasses the default and causes a NOT NULL violation.
-_SERVER_UUID_PK_TABLES = ("persistent_inventory",)
+_SERVER_UUID_PK_TABLES = ("persistent_inventory", "product_metadata")
 
 
 def save_to_sheet(df: pd.DataFrame, table_name: str, pk: str = None):
