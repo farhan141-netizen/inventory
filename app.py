@@ -3029,195 +3029,188 @@ with tab_dash:
         stock_inhand_qty = float(inv_join["Closing Stock"].sum()) if not inv_join.empty else 0.0
         stock_inhand_value = float(inv_join["Stock Value"].sum()) if not inv_join.empty else 0.0
 
-        # --- Dashboard layout: left (2×2 donut grid) + right (KPI + supplier bar) ---
-        left_col, right_col = st.columns([1.0, 1.2], gap="large")
+        # --- Dashboard layout: flat 3-column grid ---
+        col1, col2, col3 = st.columns([1, 1, 1.2])
 
-        # ===== Left: 2×2 grid for Top Purchased/Selling (Qty/Value) =====
-        with left_col:
-            inner_l, inner_r = st.columns(2, gap="small")
+        # ===== Col1: Top Purchased (QTY) + Top Purchased (Value) =====
+        with col1:
+            # --- Top Purchased Product (QTY) ---
+            with st.container(border=True):
+                st.markdown('<div class="card-title">Top Purchased (QTY) <span class="meta">receipts</span></div>', unsafe_allow_html=True)
+                s = _card_controls("card_purchased_qty", allow_view_mode=False, allow_chart_type=True)
+                asc = (s["sort"] == "Low → High")
+                topn = int(s["topn"])
+                chart_type = s.get("chart_type", "Pie Chart")
+                label_mode = s.get("label_mode", "%")
 
-            # --- Top-left: Top Purchased Product (QTY) ---
-            with inner_l:
-                with st.container(border=True):
-                    st.markdown('<div class="card-title">Top Purchased (QTY) <span class="meta">receipts</span></div>', unsafe_allow_html=True)
-                    s = _card_controls("card_purchased_qty", allow_view_mode=False, allow_chart_type=True)
-                    asc = (s["sort"] == "Low → High")
-                    topn = int(s["topn"])
-                    chart_type = s.get("chart_type", "Pie Chart")
-                    label_mode = s.get("label_mode", "%")
+                purchased_qty = pd.DataFrame(columns=["Item", "Received Qty"])
+                if not logs_filtered.empty:
+                    purchased_qty = (
+                        logs_filtered.groupby("Item", as_index=False)["Qty"]
+                        .sum()
+                        .rename(columns={"Qty": "Received Qty"})
+                        .sort_values("Received Qty", ascending=asc)
+                        .head(topn)
+                    )
 
-                    purchased_qty = pd.DataFrame(columns=["Item", "Received Qty"])
-                    if not logs_filtered.empty:
-                        purchased_qty = (
-                            logs_filtered.groupby("Item", as_index=False)["Qty"]
-                            .sum()
-                            .rename(columns={"Qty": "Received Qty"})
-                            .sort_values("Received Qty", ascending=asc)
-                            .head(topn)
-                        )
+                if label_mode == "Amount":
+                    purchased_qty = _add_amount_col(purchased_qty, "Item", "Received Qty", meta_df)
+                    _display_col = "Amount"
+                else:
+                    _display_col = "Received Qty"
 
-                    if label_mode == "Amount":
-                        purchased_qty = _add_amount_col(purchased_qty, "Item", "Received Qty", meta_df)
-                        _display_col = "Amount"
-                    else:
-                        _display_col = "Received Qty"
+                if chart_type == "Table":
+                    st.dataframe(_abbreviate_cols(purchased_qty[["Item", _display_col]]), use_container_width=True, hide_index=True, height=260)
+                elif chart_type == "Bar Chart":
+                    _make_bar_chart(purchased_qty, "Item", _display_col)
+                else:
+                    _make_pie_chart(purchased_qty, "Item", _display_col, top_n=topn, label_mode=label_mode)
+                if st.button("⛶ Expand", key="expand_card_purchased_qty", use_container_width=True):
+                    _show_fullscreen_card("Top Purchased (QTY)", purchased_qty[["Item", _display_col]], "Item", _display_col, chart_type, topn, label_mode=label_mode)
 
-                    if chart_type == "Table":
-                        st.dataframe(_abbreviate_cols(purchased_qty[["Item", _display_col]]), use_container_width=True, hide_index=True, height=260)
-                    elif chart_type == "Bar Chart":
-                        _make_bar_chart(purchased_qty, "Item", _display_col)
-                    else:
-                        _make_pie_chart(purchased_qty, "Item", _display_col, top_n=topn, label_mode=label_mode)
-                    if st.button("⛶ Expand", key="expand_card_purchased_qty", use_container_width=True):
-                        _show_fullscreen_card("Top Purchased (QTY)", purchased_qty[["Item", _display_col]], "Item", _display_col, chart_type, topn, label_mode=label_mode)
+            # --- Top Purchased Product (Value) ---
+            with st.container(border=True):
+                st.markdown('<div class="card-title">Top Purchased (Value) <span class="meta">Qty × Price</span></div>', unsafe_allow_html=True)
+                s = _card_controls("card_purchased_val", allow_view_mode=False, allow_chart_type=True)
+                asc = (s["sort"] == "Low → High")
+                topn = int(s["topn"])
+                chart_type = s.get("chart_type", "Pie Chart")
+                label_mode = s.get("label_mode", "%")
 
-            # --- Top-right: Top Selling Product (QTY) ---
-            with inner_r:
-                with st.container(border=True):
-                    st.markdown('<div class="card-title">Top Selling (QTY) <span class="meta">dispatch</span></div>', unsafe_allow_html=True)
-                    s = _card_controls("card_selling_qty", allow_view_mode=False, allow_chart_type=True)
-                    asc = (s["sort"] == "Low → High")
-                    topn = int(s["topn"])
-                    chart_type = s.get("chart_type", "Pie Chart")
-                    label_mode = s.get("label_mode", "%")
+                purchased_val = pd.DataFrame(columns=["Item", "Purchase Value"])
+                if not logs_filtered.empty and meta_df is not None and not meta_df.empty:
+                    tmp = pd.merge(
+                        logs_filtered.rename(columns={"Item": "Product Name"})[["Product Name", "Qty"]],
+                        meta_df[["Product Name", "Price"]],
+                        on="Product Name",
+                        how="left",
+                    )
+                    tmp["Qty"] = pd.to_numeric(tmp["Qty"], errors="coerce").fillna(0.0)
+                    tmp["Price"] = pd.to_numeric(tmp["Price"], errors="coerce").fillna(0.0)
+                    tmp["Purchase Value"] = tmp["Qty"] * tmp["Price"]
+                    purchased_val = (
+                        tmp.groupby("Product Name", as_index=False)["Purchase Value"]
+                        .sum()
+                        .rename(columns={"Product Name": "Item"})
+                        .sort_values("Purchase Value", ascending=asc)
+                        .head(topn)
+                    )
 
-                    selling_qty = pd.DataFrame(columns=["Item", "Dispatched Qty"])
-                    if not req_filtered.empty:
-                        disp_only = req_filtered[req_filtered["Status"].isin(["Dispatched", "Completed"])]
-                        selling_qty = (
-                            disp_only.groupby("Item", as_index=False)["DispatchQty"]
-                            .sum()
-                            .rename(columns={"DispatchQty": "Dispatched Qty"})
-                            .sort_values("Dispatched Qty", ascending=asc)
-                            .head(topn)
-                        )
+                if label_mode == "Qty" and not logs_filtered.empty:
+                    _pv_display = (
+                        logs_filtered.groupby("Item", as_index=False)["Qty"]
+                        .sum()
+                        .rename(columns={"Qty": "Received Qty"})
+                        .sort_values("Received Qty", ascending=asc)
+                        .head(topn)
+                    )
+                    _display_col_pv = "Received Qty"
+                else:
+                    _pv_display = purchased_val
+                    _display_col_pv = "Purchase Value"
 
-                    if label_mode == "Amount":
-                        selling_qty = _add_amount_col(selling_qty, "Item", "Dispatched Qty", meta_df)
-                        _display_col = "Amount"
-                    else:
-                        _display_col = "Dispatched Qty"
+                if chart_type == "Table":
+                    st.dataframe(_abbreviate_cols(_pv_display[["Item", _display_col_pv]]), use_container_width=True, hide_index=True, height=260)
+                elif chart_type == "Bar Chart":
+                    _make_bar_chart(_pv_display, "Item", _display_col_pv)
+                else:
+                    _make_pie_chart(_pv_display, "Item", _display_col_pv, top_n=topn, label_mode=label_mode)
+                if st.button("⛶ Expand", key="expand_card_purchased_val", use_container_width=True):
+                    _show_fullscreen_card("Top Purchased (Value)", _pv_display[["Item", _display_col_pv]], "Item", _display_col_pv, chart_type, topn, label_mode=label_mode)
 
-                    if chart_type == "Table":
-                        st.dataframe(_abbreviate_cols(selling_qty[["Item", _display_col]]), use_container_width=True, hide_index=True, height=260)
-                    elif chart_type == "Bar Chart":
-                        _make_bar_chart(selling_qty, "Item", _display_col)
-                    else:
-                        _make_pie_chart(selling_qty, "Item", _display_col, top_n=topn, label_mode=label_mode)
-                    if st.button("⛶ Expand", key="expand_card_selling_qty", use_container_width=True):
-                        _show_fullscreen_card("Top Selling (QTY)", selling_qty[["Item", _display_col]], "Item", _display_col, chart_type, topn, label_mode=label_mode)
+        # ===== Col2: Top Selling (QTY) + Top Selling (Value) =====
+        with col2:
+            # --- Top Selling Product (QTY) ---
+            with st.container(border=True):
+                st.markdown('<div class="card-title">Top Selling (QTY) <span class="meta">dispatch</span></div>', unsafe_allow_html=True)
+                s = _card_controls("card_selling_qty", allow_view_mode=False, allow_chart_type=True)
+                asc = (s["sort"] == "Low → High")
+                topn = int(s["topn"])
+                chart_type = s.get("chart_type", "Pie Chart")
+                label_mode = s.get("label_mode", "%")
 
-            # --- Bottom row ---
-            inner_bl, inner_br = st.columns(2, gap="small")
+                selling_qty = pd.DataFrame(columns=["Item", "Dispatched Qty"])
+                if not req_filtered.empty:
+                    disp_only = req_filtered[req_filtered["Status"].isin(["Dispatched", "Completed"])]
+                    selling_qty = (
+                        disp_only.groupby("Item", as_index=False)["DispatchQty"]
+                        .sum()
+                        .rename(columns={"DispatchQty": "Dispatched Qty"})
+                        .sort_values("Dispatched Qty", ascending=asc)
+                        .head(topn)
+                    )
 
-            # --- Bottom-left: Top Purchased Product (Value) ---
-            with inner_bl:
-                with st.container(border=True):
-                    st.markdown('<div class="card-title">Top Purchased (Value) <span class="meta">Qty × Price</span></div>', unsafe_allow_html=True)
-                    s = _card_controls("card_purchased_val", allow_view_mode=False, allow_chart_type=True)
-                    asc = (s["sort"] == "Low → High")
-                    topn = int(s["topn"])
-                    chart_type = s.get("chart_type", "Pie Chart")
-                    label_mode = s.get("label_mode", "%")
+                if label_mode == "Amount":
+                    selling_qty = _add_amount_col(selling_qty, "Item", "Dispatched Qty", meta_df)
+                    _display_col = "Amount"
+                else:
+                    _display_col = "Dispatched Qty"
 
-                    purchased_val = pd.DataFrame(columns=["Item", "Purchase Value"])
-                    if not logs_filtered.empty and meta_df is not None and not meta_df.empty:
-                        tmp = pd.merge(
-                            logs_filtered.rename(columns={"Item": "Product Name"})[["Product Name", "Qty"]],
-                            meta_df[["Product Name", "Price"]],
-                            on="Product Name",
-                            how="left",
-                        )
-                        tmp["Qty"] = pd.to_numeric(tmp["Qty"], errors="coerce").fillna(0.0)
-                        tmp["Price"] = pd.to_numeric(tmp["Price"], errors="coerce").fillna(0.0)
-                        tmp["Purchase Value"] = tmp["Qty"] * tmp["Price"]
-                        purchased_val = (
-                            tmp.groupby("Product Name", as_index=False)["Purchase Value"]
-                            .sum()
-                            .rename(columns={"Product Name": "Item"})
-                            .sort_values("Purchase Value", ascending=asc)
-                            .head(topn)
-                        )
+                if chart_type == "Table":
+                    st.dataframe(_abbreviate_cols(selling_qty[["Item", _display_col]]), use_container_width=True, hide_index=True, height=260)
+                elif chart_type == "Bar Chart":
+                    _make_bar_chart(selling_qty, "Item", _display_col)
+                else:
+                    _make_pie_chart(selling_qty, "Item", _display_col, top_n=topn, label_mode=label_mode)
+                if st.button("⛶ Expand", key="expand_card_selling_qty", use_container_width=True):
+                    _show_fullscreen_card("Top Selling (QTY)", selling_qty[["Item", _display_col]], "Item", _display_col, chart_type, topn, label_mode=label_mode)
 
-                    if label_mode == "Qty" and not logs_filtered.empty:
-                        _pv_display = (
-                            logs_filtered.groupby("Item", as_index=False)["Qty"]
-                            .sum()
-                            .rename(columns={"Qty": "Received Qty"})
-                            .sort_values("Received Qty", ascending=asc)
-                            .head(topn)
-                        )
-                        _display_col_pv = "Received Qty"
-                    else:
-                        _pv_display = purchased_val
-                        _display_col_pv = "Purchase Value"
+            # --- Top Selling Product (Value) ---
+            with st.container(border=True):
+                st.markdown('<div class="card-title">Top Selling (Value) <span class="meta">DispatchQty × Price</span></div>', unsafe_allow_html=True)
+                s = _card_controls("card_selling_val", allow_view_mode=False, allow_chart_type=True)
+                asc = (s["sort"] == "Low → High")
+                topn = int(s["topn"])
+                chart_type = s.get("chart_type", "Pie Chart")
+                label_mode = s.get("label_mode", "%")
 
-                    if chart_type == "Table":
-                        st.dataframe(_abbreviate_cols(_pv_display[["Item", _display_col_pv]]), use_container_width=True, hide_index=True, height=260)
-                    elif chart_type == "Bar Chart":
-                        _make_bar_chart(_pv_display, "Item", _display_col_pv)
-                    else:
-                        _make_pie_chart(_pv_display, "Item", _display_col_pv, top_n=topn, label_mode=label_mode)
-                    if st.button("⛶ Expand", key="expand_card_purchased_val", use_container_width=True):
-                        _show_fullscreen_card("Top Purchased (Value)", _pv_display[["Item", _display_col_pv]], "Item", _display_col_pv, chart_type, topn, label_mode=label_mode)
+                selling_val = pd.DataFrame(columns=["Item", "Sales Value"])
+                if not req_filtered.empty and meta_df is not None and not meta_df.empty:
+                    disp_only = req_filtered[req_filtered["Status"].isin(["Dispatched", "Completed"])][["Item", "DispatchQty"]].copy()
+                    disp_only["DispatchQty"] = pd.to_numeric(disp_only["DispatchQty"], errors="coerce").fillna(0.0)
 
-            # --- Bottom-right: Top Selling Product (Value) ---
-            with inner_br:
-                with st.container(border=True):
-                    st.markdown('<div class="card-title">Top Selling (Value) <span class="meta">DispatchQty × Price</span></div>', unsafe_allow_html=True)
-                    s = _card_controls("card_selling_val", allow_view_mode=False, allow_chart_type=True)
-                    asc = (s["sort"] == "Low → High")
-                    topn = int(s["topn"])
-                    chart_type = s.get("chart_type", "Pie Chart")
-                    label_mode = s.get("label_mode", "%")
+                    tmp = pd.merge(
+                        disp_only.rename(columns={"Item": "Product Name"}),
+                        meta_df[["Product Name", "Price"]],
+                        on="Product Name",
+                        how="left",
+                    )
+                    tmp["Price"] = pd.to_numeric(tmp["Price"], errors="coerce").fillna(0.0)
+                    tmp["Sales Value"] = tmp["DispatchQty"] * tmp["Price"]
+                    selling_val = (
+                        tmp.groupby("Product Name", as_index=False)["Sales Value"]
+                        .sum()
+                        .rename(columns={"Product Name": "Item"})
+                        .sort_values("Sales Value", ascending=asc)
+                        .head(topn)
+                    )
 
-                    selling_val = pd.DataFrame(columns=["Item", "Sales Value"])
-                    if not req_filtered.empty and meta_df is not None and not meta_df.empty:
-                        disp_only = req_filtered[req_filtered["Status"].isin(["Dispatched", "Completed"])][["Item", "DispatchQty"]].copy()
-                        disp_only["DispatchQty"] = pd.to_numeric(disp_only["DispatchQty"], errors="coerce").fillna(0.0)
+                if label_mode == "Qty" and not req_filtered.empty:
+                    disp_only_qty = req_filtered[req_filtered["Status"].isin(["Dispatched", "Completed"])][["Item", "DispatchQty"]].copy()
+                    _sv_display = (
+                        disp_only_qty.groupby("Item", as_index=False)["DispatchQty"]
+                        .sum()
+                        .rename(columns={"DispatchQty": "Dispatched Qty"})
+                        .sort_values("Dispatched Qty", ascending=asc)
+                        .head(topn)
+                    )
+                    _display_col_sv = "Dispatched Qty"
+                else:
+                    _sv_display = selling_val
+                    _display_col_sv = "Sales Value"
 
-                        tmp = pd.merge(
-                            disp_only.rename(columns={"Item": "Product Name"}),
-                            meta_df[["Product Name", "Price"]],
-                            on="Product Name",
-                            how="left",
-                        )
-                        tmp["Price"] = pd.to_numeric(tmp["Price"], errors="coerce").fillna(0.0)
-                        tmp["Sales Value"] = tmp["DispatchQty"] * tmp["Price"]
-                        selling_val = (
-                            tmp.groupby("Product Name", as_index=False)["Sales Value"]
-                            .sum()
-                            .rename(columns={"Product Name": "Item"})
-                            .sort_values("Sales Value", ascending=asc)
-                            .head(topn)
-                        )
+                if chart_type == "Table":
+                    st.dataframe(_abbreviate_cols(_sv_display[["Item", _display_col_sv]]), use_container_width=True, hide_index=True, height=260)
+                elif chart_type == "Bar Chart":
+                    _make_bar_chart(_sv_display, "Item", _display_col_sv)
+                else:
+                    _make_pie_chart(_sv_display, "Item", _display_col_sv, top_n=topn, label_mode=label_mode)
+                if st.button("⛶ Expand", key="expand_card_selling_val", use_container_width=True):
+                    _show_fullscreen_card("Top Selling (Value)", _sv_display[["Item", _display_col_sv]], "Item", _display_col_sv, chart_type, topn, label_mode=label_mode)
 
-                    if label_mode == "Qty" and not req_filtered.empty:
-                        disp_only_qty = req_filtered[req_filtered["Status"].isin(["Dispatched", "Completed"])][["Item", "DispatchQty"]].copy()
-                        _sv_display = (
-                            disp_only_qty.groupby("Item", as_index=False)["DispatchQty"]
-                            .sum()
-                            .rename(columns={"DispatchQty": "Dispatched Qty"})
-                            .sort_values("Dispatched Qty", ascending=asc)
-                            .head(topn)
-                        )
-                        _display_col_sv = "Dispatched Qty"
-                    else:
-                        _sv_display = selling_val
-                        _display_col_sv = "Sales Value"
-
-                    if chart_type == "Table":
-                        st.dataframe(_abbreviate_cols(_sv_display[["Item", _display_col_sv]]), use_container_width=True, hide_index=True, height=260)
-                    elif chart_type == "Bar Chart":
-                        _make_bar_chart(_sv_display, "Item", _display_col_sv)
-                    else:
-                        _make_pie_chart(_sv_display, "Item", _display_col_sv, top_n=topn, label_mode=label_mode)
-                    if st.button("⛶ Expand", key="expand_card_selling_val", use_container_width=True):
-                        _show_fullscreen_card("Top Selling (Value)", _sv_display[["Item", _display_col_sv]], "Item", _display_col_sv, chart_type, topn, label_mode=label_mode)
-
-        # ===== Right: Summary KPI (horizontal row) + Total Purchase From Supplier (horiz bar) =====
-        with right_col:
-            # --- Compute KPI values (need purchased_val / selling_val from left col) ---
+        # ===== Col3: Summary KPI + Total Purchase From Supplier =====
+        with col3:
+            # --- Compute KPI values ---
             purchase_total_val = float(purchased_val["Purchase Value"].sum()) if not purchased_val.empty else 0.0
             if purchase_total_val == 0.0 and meta_df is not None:
                 purchase_total_val = float(_sum_purchase_from_logs(logs_filtered, meta_df)["Purchase Amount"].sum())
