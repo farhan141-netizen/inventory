@@ -1228,8 +1228,8 @@ st.markdown("""
     /* Kill padding on the popover body's own wrapper divs */
     html [data-testid="stPopoverBody"] > div,
     html [data-testid="stPopoverBody"] > div > div {
-        padding: 0 !important;
-        margin: 0 !important;
+        padding: 5 !important;
+        margin: 5 !important;
     }
 
     /* --- Kill ALL spacing inside popover — wildcard approach --- */
