@@ -837,90 +837,117 @@ st.markdown("""
     [data-testid="stPopover"] [data-testid="stPopoverBody"],
     div[data-baseweb="popover"] [data-testid="stPopoverBody"] {
         background: #FFFFFF !important;
-        border: 1px solid var(--border) !important;
-        border-radius: 14px !important;
-        box-shadow: 0 12px 40px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06) !important;
+        border: 1px solid #E2E8F0 !important;
+        border-radius: 12px !important;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.10), 0 1px 4px rgba(0,0,0,0.05) !important;
         color: var(--text) !important;
-        padding: 18px 20px 14px !important;
-        min-width: 230px !important;
-        max-width: 270px !important;
+        padding: 14px 16px 12px !important;
+        min-width: 210px !important;
+        max-width: 250px !important;
     }
 
-    /* ===== Popover interior — polished card settings ===== */
-    /* Header caption */
+    /* ===== Popover interior — compact card settings ===== */
+
+    /* Kill ALL vertical spacing/gaps inside popover */
+    [data-testid="stPopoverBody"] [data-testid="stVerticalBlock"] {
+        gap: 0 !important;
+    }
+    [data-testid="stPopoverBody"] [data-testid="stVerticalBlock"] > div,
+    [data-testid="stPopoverBody"] [data-testid="stVerticalBlockBorderWrapper"],
+    [data-testid="stPopoverBody"] .stElementContainer,
+    [data-testid="stPopoverBody"] .element-container {
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+
+    /* Header caption — small, orange accent */
+    [data-testid="stPopoverBody"] [data-testid="stCaptionContainer"] {
+        margin-bottom: 10px !important;
+        padding-bottom: 8px !important;
+        border-bottom: 1.5px solid #F1F5F9 !important;
+    }
     [data-testid="stPopoverBody"] [data-testid="stCaptionContainer"] p {
         font-size: 11px !important;
         font-weight: 700 !important;
         text-transform: uppercase !important;
-        letter-spacing: 0.08em !important;
-        color: #94A3B8 !important;
-        padding-bottom: 8px !important;
-        margin-bottom: 4px !important;
-        border-bottom: 1px solid #E2E8F0 !important;
+        letter-spacing: 0.06em !important;
+        color: #F97316 !important;
+        margin: 0 !important;
+        padding: 0 !important;
     }
 
-    /* Selectbox labels inside popover — clean, readable */
+    /* Selectbox wrapper — tight spacing */
+    [data-testid="stPopoverBody"] .stSelectbox {
+        margin-bottom: 10px !important;
+    }
+
+    /* Selectbox labels — clean readable */
+    [data-testid="stPopoverBody"] .stSelectbox label,
     [data-testid="stPopoverBody"] .stSelectbox label p,
     [data-testid="stPopoverBody"] [data-testid="stWidgetLabel"] label p {
-        font-size: 12px !important;
+        font-size: 11.5px !important;
         font-weight: 600 !important;
-        color: #334155 !important;
+        color: #475569 !important;
         text-transform: none !important;
         letter-spacing: normal !important;
-        margin-bottom: 3px !important;
+        margin-bottom: 2px !important;
+        padding: 0 !important;
     }
 
-    /* Selectbox controls */
+    /* Selectbox input controls — subtle, compact */
     [data-testid="stPopoverBody"] div[data-baseweb="select"] > div {
-        min-height: 34px !important;
-        border-radius: 8px !important;
+        min-height: 32px !important;
+        max-height: 32px !important;
+        border-radius: 7px !important;
         font-size: 13px !important;
-        border: 1.5px solid #E2E8F0 !important;
+        border: 1px solid #E2E8F0 !important;
         background: #F8FAFC !important;
-        transition: border-color 150ms ease, box-shadow 150ms ease !important;
+        transition: border-color 120ms ease !important;
+        box-shadow: none !important;
+        padding-top: 0 !important;
+        padding-bottom: 0 !important;
     }
     [data-testid="stPopoverBody"] div[data-baseweb="select"] > div:hover {
         border-color: #CBD5E1 !important;
     }
-    /* Override global orange focus ring — keep it subtle inside settings panel */
+    /* Subtle focus — no thick orange ring */
     [data-testid="stPopoverBody"] [data-baseweb="select"]:focus-within > div:first-child,
     [data-testid="stPopoverBody"] div[data-baseweb="select"] > div:focus-within {
         border-color: #F97316 !important;
-        box-shadow: 0 0 0 2px rgba(249,115,22,0.08) !important;
+        box-shadow: none !important;
+    }
+    /* Selectbox value text */
+    [data-testid="stPopoverBody"] div[data-baseweb="select"] span,
+    [data-testid="stPopoverBody"] div[data-baseweb="select"] div[data-baseweb="tag"] {
+        font-size: 13px !important;
+        line-height: 32px !important;
     }
 
-    /* Reduce vertical gaps inside popover */
-    [data-testid="stPopoverBody"] [data-testid="stVerticalBlock"] > div {
-        margin-bottom: 0 !important;
-        padding-top: 0 !important;
-        padding-bottom: 0 !important;
+    /* Refresh button — full-width orange */
+    [data-testid="stPopoverBody"] .stButton {
+        margin-top: 6px !important;
     }
-    [data-testid="stPopoverBody"] .stSelectbox {
-        margin-bottom: 4px !important;
-    }
-
-    /* Refresh / action button inside popover */
+    [data-testid="stPopoverBody"] .stButton button,
     [data-testid="stPopoverBody"] button[data-testid="stBaseButton-secondary"] {
         width: 100% !important;
-        margin-top: 12px !important;
-        padding: 7px 14px !important;
-        min-height: 34px !important;
-        height: 34px !important;
-        border-radius: 8px !important;
+        display: block !important;
+        padding: 6px 14px !important;
+        min-height: 32px !important;
+        height: 32px !important;
+        border-radius: 7px !important;
         font-size: 12px !important;
         font-weight: 600 !important;
         background: linear-gradient(135deg, #F97316, #F59E0B) !important;
         color: #FFFFFF !important;
         border: none !important;
-        box-shadow: 0 2px 6px rgba(249,115,22,0.22) !important;
-        transition: all 150ms ease !important;
-        letter-spacing: 0.03em !important;
-        text-transform: none !important;
+        box-shadow: 0 1px 3px rgba(249,115,22,0.20) !important;
+        transition: all 120ms ease !important;
+        letter-spacing: 0.02em !important;
     }
+    [data-testid="stPopoverBody"] .stButton button:hover,
     [data-testid="stPopoverBody"] button[data-testid="stBaseButton-secondary"]:hover {
         background: linear-gradient(135deg, #EA580C, #D97706) !important;
-        box-shadow: 0 4px 12px rgba(249,115,22,0.32) !important;
-        transform: translateY(-1px) !important;
+        box-shadow: 0 3px 8px rgba(249,115,22,0.28) !important;
     }
 
     /* ===== Cards / containers ===== */
@@ -961,7 +988,7 @@ st.markdown("""
         border-radius: 0 !important;
         box-shadow: none !important;
         padding: 0 !important;
-        margin-bottom: 0 !important;
+        margin: 0 !important;
         transform: none !important;
     }
     [data-testid="stPopoverBody"] [data-testid="stVerticalBlockBorderWrapper"]:hover,
