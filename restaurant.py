@@ -1216,7 +1216,7 @@ st.markdown("""
     html div[data-baseweb="popover"] [data-testid="stPopoverBody"],
     [data-testid="stPopover"] [data-testid="stPopoverBody"] {
         background: #FFFFFF !important;
-        border: 1px solid #E2E8F0 !important;
+        border: 5px solid #E2E8F0 !important;
         border-radius: 12px !important;
         box-shadow: 0 10px 30px rgba(0,0,0,0.12), 0 1px 4px rgba(0,0,0,0.06) !important;
         padding: 1px 1px 1px !important;
