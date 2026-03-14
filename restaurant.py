@@ -844,7 +844,7 @@ st.markdown("""
         border-radius: 14px !important;
         box-shadow: 0 12px 40px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06) !important;
         color: var(--text) !important;
-        padding: 18px 20px 14px !important;
+        padding: 1px 1px 1px !important;
         min-width: 230px !important;
         max-width: 270px !important;
     }
