@@ -955,7 +955,13 @@ st.markdown("""
     
     hr { margin: 8px 0; opacity: 0.15; border-color: var(--border); }
 
-    /* ===== Top toolbar — hide dark bar, keep sidebar button ===== */
+    /* ===== Top header — clean light bar, hide only the toolbar content ===== */
+    header[data-testid="stHeader"] {
+        background: var(--bg) !important;
+        border-bottom: none !important;
+        box-shadow: none !important;
+    }
+    /* Hide the toolbar icons (share, star, pen, github) but NOT the sidebar button */
     [data-testid="stToolbar"] {
         display: none !important;
     }
@@ -963,26 +969,20 @@ st.markdown("""
     #stDecoration {
         display: none !important;
     }
-    header[data-testid="stHeader"] {
-        background: transparent !important;
-        height: 3rem !important;
-        min-height: 3rem !important;
-    }
-
-    /* Keep sidebar collapse/expand button visible */
-    [data-testid="stSidebarCollapsedControl"],
-    [data-testid="stSidebarContent"] ~ [data-testid="stSidebarCollapsedControl"],
-    button[data-testid="baseButton-headerNoPadding"],
-    [data-testid="collapsedControl"] {
+    /* Sidebar toggle button — always visible, styled cleanly */
+    [data-testid="stSidebarCollapsedControl"] {
         display: flex !important;
         visibility: visible !important;
         opacity: 1 !important;
-        color: var(--text) !important;
-        background: #FFFFFF !important;
-        border: 1px solid var(--border) !important;
-        border-radius: 8px !important;
-        box-shadow: var(--shadow) !important;
         z-index: 999999 !important;
+    }
+    [data-testid="stSidebarCollapsedControl"] button,
+    [data-testid="stSidebarCollapsedControl"] svg {
+        color: var(--text) !important;
+        fill: var(--text) !important;
+        background: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
     }
 
     /* ===== Expander headers — white background, dark text ===== */
