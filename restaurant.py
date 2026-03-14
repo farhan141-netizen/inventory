@@ -917,9 +917,14 @@ st.markdown("""
         border-radius: 14px !important;
         box-shadow: 0 12px 40px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06) !important;
         color: var(--text) !important;
-        padding: 23px 25px 19px !important;
+        padding: 18px 20px 14px !important;
         min-width: 230px !important;
         max-width: 270px !important;
+    }
+    /* Inner content padding inside white card settings panel */
+    [data-testid="stPopoverBody"] > [data-testid="stVerticalBlock"],
+    [data-testid="stPopoverBody"] > div > [data-testid="stVerticalBlock"] {
+        padding: 5px !important;
     }
 
     /* Popover header caption */
