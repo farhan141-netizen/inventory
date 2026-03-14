@@ -1206,6 +1206,138 @@ st.markdown("""
         background: transparent !important;
     }
 
+    /* ============================================================
+       FINAL OVERRIDES — Popover card settings
+       Position: LAST in stylesheet = wins all specificity ties
+       ============================================================ */
+
+    /* --- Panel: force light bg in both light & dark themes --- */
+    html [data-testid="stPopoverBody"],
+    html div[data-baseweb="popover"] [data-testid="stPopoverBody"],
+    [data-testid="stPopover"] [data-testid="stPopoverBody"] {
+        background: #FFFFFF !important;
+        border: 1px solid #E2E8F0 !important;
+        border-radius: 12px !important;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.12), 0 1px 4px rgba(0,0,0,0.06) !important;
+        padding: 16px !important;
+        min-width: 220px !important;
+        max-width: 260px !important;
+        color: #1E293B !important;
+    }
+
+    /* --- Kill ALL spacing inside popover — wildcard approach --- */
+    html [data-testid="stPopoverBody"] * {
+        color: #1E293B !important;
+    }
+    html [data-testid="stPopoverBody"] [data-testid="stVerticalBlock"] {
+        gap: 0 !important;
+    }
+    html [data-testid="stPopoverBody"] [data-testid="stVerticalBlock"] > div,
+    html [data-testid="stPopoverBody"] [data-testid="stVerticalBlock"] > div > div,
+    html [data-testid="stPopoverBody"] [data-testid="stVerticalBlock"] > div > div > div {
+        padding-top: 0 !important;
+        padding-bottom: 0 !important;
+        margin-top: 0 !important;
+        margin-bottom: 0 !important;
+    }
+
+    /* --- Header caption --- */
+    html [data-testid="stPopoverBody"] [data-testid="stCaptionContainer"] {
+        margin-bottom: 10px !important;
+        padding-bottom: 8px !important;
+        border-bottom: 1.5px solid #E2E8F0 !important;
+    }
+    html [data-testid="stPopoverBody"] [data-testid="stCaptionContainer"] p {
+        font-size: 11px !important;
+        font-weight: 700 !important;
+        text-transform: uppercase !important;
+        letter-spacing: 0.08em !important;
+        color: #F97316 !important;
+    }
+
+    /* --- Selectbox spacing --- */
+    html [data-testid="stPopoverBody"] .stSelectbox {
+        margin-bottom: 12px !important;
+    }
+
+    /* --- Labels --- */
+    html [data-testid="stPopoverBody"] .stSelectbox label p,
+    html [data-testid="stPopoverBody"] [data-testid="stWidgetLabel"] p {
+        font-size: 11px !important;
+        font-weight: 700 !important;
+        color: #475569 !important;
+        text-transform: uppercase !important;
+        letter-spacing: 0.06em !important;
+        margin-bottom: 4px !important;
+    }
+
+    /* --- Selectbox input --- */
+    html [data-testid="stPopoverBody"] [data-baseweb="select"] > div:first-child {
+        min-height: 36px !important;
+        max-height: 36px !important;
+        border-radius: 8px !important;
+        border: 1px solid #E2E8F0 !important;
+        background: #F8FAFC !important;
+        box-shadow: none !important;
+    }
+    html [data-testid="stPopoverBody"] [data-baseweb="select"] > div:first-child:hover {
+        border-color: #CBD5E1 !important;
+    }
+    /* --- KILL the 3px focus glow --- */
+    html [data-testid="stPopoverBody"] [data-baseweb="select"]:focus-within > div:first-child {
+        border-color: #F97316 !important;
+        box-shadow: none !important;
+        outline: none !important;
+    }
+
+    /* --- Refresh button: full-width orange --- */
+    html [data-testid="stPopoverBody"] .stButton {
+        width: 100% !important;
+        margin-top: 8px !important;
+    }
+    html [data-testid="stPopoverBody"] .stButton > button {
+        width: 100% !important;
+        padding: 8px 16px !important;
+        min-height: 36px !important;
+        height: 36px !important;
+        border-radius: 8px !important;
+        font-size: 13px !important;
+        font-weight: 600 !important;
+        background: linear-gradient(135deg, #F97316, #F59E0B) !important;
+        color: #FFFFFF !important;
+        border: none !important;
+        box-shadow: 0 2px 4px rgba(249,115,22,0.18) !important;
+    }
+    html [data-testid="stPopoverBody"] .stButton > button:hover {
+        background: linear-gradient(135deg, #EA580C, #D97706) !important;
+        box-shadow: 0 3px 8px rgba(249,115,22,0.28) !important;
+    }
+    /* Make button text white (override wildcard) */
+    html [data-testid="stPopoverBody"] .stButton > button,
+    html [data-testid="stPopoverBody"] .stButton > button * {
+        color: #FFFFFF !important;
+    }
+
+    /* --- Strip card container styles from popover internals --- */
+    html [data-testid="stPopoverBody"] [data-testid="stVerticalBlockBorderWrapper"] {
+        background: transparent !important;
+        border: none !important;
+        border-radius: 0 !important;
+        box-shadow: none !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        transform: none !important;
+    }
+    html [data-testid="stPopoverBody"] [data-testid="stVerticalBlockBorderWrapper"]:hover {
+        border: none !important;
+        box-shadow: none !important;
+        transform: none !important;
+    }
+    html [data-testid="stPopoverBody"] [data-testid="stVerticalBlockBorderWrapper"]::before {
+        display: none !important;
+        content: none !important;
+    }
+
     </style>
     """, unsafe_allow_html=True)
 
