@@ -952,8 +952,79 @@ st.markdown("""
         font-size: 11px; color: var(--muted) !important; font-weight: 400;
         background: var(--panel-2); padding: 2px 8px; border-radius: 999px;
     }
-
+    
     hr { margin: 8px 0; opacity: 0.15; border-color: var(--border); }
+
+    /* ===== Top toolbar — hide dark bar ===== */
+    [data-testid="stToolbar"],
+    [data-testid="stDecoration"],
+    #stDecoration {
+        display: none !important;
+        visibility: hidden !important;
+        height: 0 !important;
+    }
+    header[data-testid="stHeader"] {
+        background: transparent !important;
+        height: 0 !important;
+    }
+
+    /* ===== Expander headers — white background, dark text ===== */
+    [data-testid="stExpander"] {
+        background: #FFFFFF !important;
+        border: 1px solid var(--border) !important;
+        border-radius: 12px !important;
+        margin-bottom: 8px !important;
+    }
+    [data-testid="stExpander"] summary,
+    [data-testid="stExpander"] summary p,
+    [data-testid="stExpander"] summary span,
+    [data-testid="stExpander"] > div:first-child {
+        background: #FFFFFF !important;
+        color: var(--text) !important;
+        border-radius: 12px !important;
+    }
+    [data-testid="stExpander"] summary:hover {
+        background: rgba(249,115,22,0.05) !important;
+    }
+    [data-testid="stExpanderDetails"] {
+        background: #FFFFFF !important;
+        border-top: 1px solid var(--border) !important;
+    }
+
+    /* ===== Dialog / Modal (Expanded View) — white background ===== */
+    [data-testid="stModal"],
+    [data-testid="stDialog"],
+    div[role="dialog"] {
+        background: #FFFFFF !important;
+        border-radius: 16px !important;
+        border: 1px solid var(--border) !important;
+        box-shadow: var(--shadow-hover) !important;
+    }
+    div[role="dialog"] > div,
+    [data-testid="stModal"] > div,
+    [data-testid="stDialog"] > div {
+        background: #FFFFFF !important;
+        color: var(--text) !important;
+    }
+    div[role="dialog"] h1,
+    div[role="dialog"] h2,
+    div[role="dialog"] h3,
+    div[role="dialog"] p,
+    div[role="dialog"] span,
+    div[role="dialog"] label {
+        color: var(--text) !important;
+    }
+    /* Dialog overlay backdrop */
+    [data-testid="stModalOverlay"],
+    div[data-baseweb="modal"] > div:first-child {
+        background: rgba(15, 23, 42, 0.5) !important;
+    }
+    /* Dialog close button */
+    div[role="dialog"] button[aria-label="Close"] {
+        color: var(--muted) !important;
+        background: transparent !important;
+    }
+
     </style>
     """, unsafe_allow_html=True)
 
