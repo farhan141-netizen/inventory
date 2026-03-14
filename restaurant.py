@@ -841,7 +841,7 @@ st.markdown("""
         border-radius: 12px !important;
         box-shadow: 0 10px 30px rgba(0,0,0,0.10), 0 1px 4px rgba(0,0,0,0.05) !important;
         color: var(--text) !important;
-        padding: 16px !important;
+        padding: 12px 16px 10px !important;
         min-width: 220px !important;
         max-width: 260px !important;
     }
@@ -1219,10 +1219,17 @@ st.markdown("""
         border: 1px solid #E2E8F0 !important;
         border-radius: 12px !important;
         box-shadow: 0 10px 30px rgba(0,0,0,0.12), 0 1px 4px rgba(0,0,0,0.06) !important;
-        padding: 16px !important;
+        padding: 12px 16px 10px !important;
         min-width: 220px !important;
         max-width: 260px !important;
         color: #1E293B !important;
+        overflow: hidden !important;
+    }
+    /* Kill padding on the popover body's own wrapper divs */
+    html [data-testid="stPopoverBody"] > div,
+    html [data-testid="stPopoverBody"] > div > div {
+        padding: 0 !important;
+        margin: 0 !important;
     }
 
     /* --- Kill ALL spacing inside popover — wildcard approach --- */
@@ -1231,6 +1238,8 @@ st.markdown("""
     }
     html [data-testid="stPopoverBody"] [data-testid="stVerticalBlock"] {
         gap: 0 !important;
+        padding: 0 !important;
+        margin: 0 !important;
     }
     html [data-testid="stPopoverBody"] [data-testid="stVerticalBlock"] > div,
     html [data-testid="stPopoverBody"] [data-testid="stVerticalBlock"] > div > div,
@@ -1243,8 +1252,8 @@ st.markdown("""
 
     /* --- Header caption --- */
     html [data-testid="stPopoverBody"] [data-testid="stCaptionContainer"] {
-        margin-bottom: 10px !important;
-        padding-bottom: 8px !important;
+        margin-bottom: 8px !important;
+        padding-bottom: 6px !important;
         border-bottom: 1.5px solid #E2E8F0 !important;
     }
     html [data-testid="stPopoverBody"] [data-testid="stCaptionContainer"] p {
@@ -1257,7 +1266,7 @@ st.markdown("""
 
     /* --- Selectbox spacing --- */
     html [data-testid="stPopoverBody"] .stSelectbox {
-        margin-bottom: 12px !important;
+        margin-bottom: 8px !important;
     }
 
     /* --- Labels --- */
@@ -1268,7 +1277,7 @@ st.markdown("""
         color: #475569 !important;
         text-transform: uppercase !important;
         letter-spacing: 0.06em !important;
-        margin-bottom: 4px !important;
+        margin-bottom: 2px !important;
     }
 
     /* --- Selectbox input --- */
@@ -1293,7 +1302,9 @@ st.markdown("""
     /* --- Refresh button: full-width orange --- */
     html [data-testid="stPopoverBody"] .stButton {
         width: 100% !important;
-        margin-top: 8px !important;
+        margin-top: 4px !important;
+        margin-bottom: 0 !important;
+        padding: 0 !important;
     }
     html [data-testid="stPopoverBody"] .stButton > button {
         width: 100% !important;
