@@ -955,34 +955,46 @@ st.markdown("""
     
     hr { margin: 8px 0; opacity: 0.15; border-color: var(--border); }
 
-    /* ===== Top header — clean light bar, hide only the toolbar content ===== */
+    /* ===== Top header — light theme, all buttons visible ===== */
     header[data-testid="stHeader"] {
         background: var(--bg) !important;
-        border-bottom: none !important;
+        border-bottom: 1px solid var(--border) !important;
         box-shadow: none !important;
-    }
-    /* Hide the toolbar icons (share, star, pen, github) but NOT the sidebar button */
-    [data-testid="stToolbar"] {
-        display: none !important;
     }
     [data-testid="stDecoration"],
     #stDecoration {
         display: none !important;
     }
-    /* Sidebar toggle button — always visible, styled cleanly */
+    /* Style toolbar buttons to match light theme */
+    [data-testid="stToolbar"] {
+        background: var(--bg) !important;
+    }
+    [data-testid="stToolbar"] button,
+    [data-testid="stToolbar"] a,
+    header[data-testid="stHeader"] button,
+    header[data-testid="stHeader"] a {
+        color: var(--muted) !important;
+        background: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
+    }
+    [data-testid="stToolbar"] button:hover,
+    header[data-testid="stHeader"] button:hover {
+        color: #F97316 !important;
+        background: rgba(249,115,22,0.08) !important;
+        border-radius: 6px !important;
+    }
+    /* Sidebar toggle — always visible */
     [data-testid="stSidebarCollapsedControl"] {
         display: flex !important;
         visibility: visible !important;
         opacity: 1 !important;
         z-index: 999999 !important;
     }
-    [data-testid="stSidebarCollapsedControl"] button,
+    [data-testid="stSidebarCollapsedControl"] button svg,
     [data-testid="stSidebarCollapsedControl"] svg {
         color: var(--text) !important;
         fill: var(--text) !important;
-        background: transparent !important;
-        border: none !important;
-        box-shadow: none !important;
     }
 
     /* ===== Expander headers — white background, dark text ===== */
