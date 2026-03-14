@@ -394,7 +394,7 @@ def _r01_render_card(df, label_col, value_col, chart_type):
 
 
 def _r01_card_settings(card_key: str, default_sort="High → Low", default_count=10, default_chart="Pie Chart"):
-    """Render a ⋮ popover with card settings. Returns (sort_ascending: bool, item_count: int, chart_type: str)."""
+    """Render a ⋮ popover with card settings (matches app.py pattern). Returns (sort_ascending, item_count, chart_type)."""
     sort_key = f"r01_cs_sort_{card_key}"
     count_key = f"r01_cs_count_{card_key}"
     chart_key = f"r01_cs_chart_{card_key}"
@@ -407,35 +407,40 @@ def _r01_card_settings(card_key: str, default_sort="High → Low", default_count
     if chart_key not in st.session_state:
         st.session_state[chart_key] = default_chart
 
-    with st.popover("⋮"):
-        st.markdown('<div class="card-settings-header">⚙ CARD SETTINGS</div>', unsafe_allow_html=True)
-
-        st.markdown('<div class="card-settings-label">SORT ORDER</div>', unsafe_allow_html=True)
-        sort_val = st.selectbox(
-            "Sort Order", ["High → Low", "Low → High"],
-            index=["High → Low", "Low → High"].index(st.session_state[sort_key]),
-            key=f"_sel_sort_{card_key}", label_visibility="collapsed",
+    with st.popover("⋮", use_container_width=False):
+        st.caption("⚙  CARD SETTINGS")
+        st.session_state[sort_key] = st.selectbox(
+            "Sort order",
+            options=["High → Low", "Low → High"],
+            index=0 if st.session_state[sort_key] == "High → Low" else 1,
+            key=f"_sel_sort_{card_key}",
         )
-        st.session_state[sort_key] = sort_val
-
-        st.markdown('<div class="card-settings-label">ITEM COUNT</div>', unsafe_allow_html=True)
-        count_val = st.selectbox(
-            "Item Count", [5, 10, 15, 20],
-            index=[5, 10, 15, 20].index(st.session_state[count_key]),
-            key=f"_sel_count_{card_key}", label_visibility="collapsed",
+        st.session_state[count_key] = st.selectbox(
+            "Item count",
+            options=[5, 10, 15, 20],
+            index=[5, 10, 15, 20].index(st.session_state[count_key]) if st.session_state[count_key] in [5, 10, 15, 20] else 1,
+            key=f"_sel_count_{card_key}",
         )
-        st.session_state[count_key] = count_val
-
-        st.markdown('<div class="card-settings-label">CHART TYPE</div>', unsafe_allow_html=True)
-        chart_val = st.selectbox(
-            "Chart Type", ["Pie Chart", "Bar Chart", "Table"],
-            index=["Pie Chart", "Bar Chart", "Table"].index(st.session_state[chart_key]),
-            key=f"_sel_chart_{card_key}", label_visibility="collapsed",
+        _chart_opts = ["Pie Chart", "Bar Chart", "Table"]
+        _chart_idx = _chart_opts.index(st.session_state[chart_key]) if st.session_state[chart_key] in _chart_opts else 0
+        st.session_state[chart_key] = st.selectbox(
+            "Chart type",
+            options=_chart_opts,
+            index=_chart_idx,
+            key=f"_sel_chart_{card_key}",
         )
-        st.session_state[chart_key] = chart_val
 
-    ascending = (st.session_state[sort_key] == "Low → High")
-    return ascending, st.session_state[count_key], st.session_state[chart_key]
+    # Read back from widget keys
+    sort_val = st.session_state.get(f"_sel_sort_{card_key}", st.session_state[sort_key])
+    count_val = st.session_state.get(f"_sel_count_{card_key}", st.session_state[count_key])
+    chart_val = st.session_state.get(f"_sel_chart_{card_key}", st.session_state[chart_key])
+
+    st.session_state[sort_key] = sort_val
+    st.session_state[count_key] = count_val
+    st.session_state[chart_key] = chart_val
+
+    ascending = (sort_val == "Low → High")
+    return ascending, count_val, chart_val
 
 @st.dialog("📊 Expanded View", width="large")
 def _r01_show_fullscreen_card(title: str, df: pd.DataFrame, label_col: str, value_col: str, chart_type: str):
@@ -825,57 +830,11 @@ st.markdown("""
         box-shadow: 0 8px 16px rgba(0,0,0,0.08), 0 20px 60px rgba(0,0,0,0.14) !important;
         transform: translateY(-2px) !important;
     }
-
-    /* !! CRITICAL: Reset any NESTED border wrappers inside a card !! */
-    /* Streamlit wraps inner columns in their own stVerticalBlockBorderWrapper —
-       strip ALL card styling from these so only the outermost card is visible */
-    [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stVerticalBlockBorderWrapper"] {
-        background: transparent !important;
-        border: none !important;
-        border-radius: 0 !important;
-        box-shadow: none !important;
-        padding: 0 !important;
-        margin: 0 !important;
-        transform: none !important;
-    }
-    [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stVerticalBlockBorderWrapper"]:hover {
-        border: none !important;
-        box-shadow: none !important;
-        transform: none !important;
-    }
-    [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stVerticalBlockBorderWrapper"]::before {
-        display: none !important;
-    }
-    [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stVerticalBlockBorderWrapper"] > div {
-        padding: 0 !important;
-    }
-
-    /* Card inner padding — only on outermost wrapper's direct child */
     [data-testid="stVerticalBlockBorderWrapper"] > div {
         padding: 0.6rem 0.8rem !important;
     }
     [data-testid="stVerticalBlockBorderWrapper"] > div > [data-testid="stVerticalBlock"] {
         gap: 0.4rem !important;
-    }
-    /* Inner columns (title + settings button row) — zero overhead */
-    [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stHorizontalBlock"] {
-        gap: 0 !important;
-        padding: 0 !important;
-    }
-    [data-testid="stVerticalBlockBorderWrapper"] [data-testid="column"] {
-        padding: 0 !important;
-    }
-    [data-testid="stVerticalBlockBorderWrapper"] [data-testid="column"] > div {
-        padding: 0 !important;
-    }
-    [data-testid="stVerticalBlockBorderWrapper"] [data-testid="column"] > div > [data-testid="stVerticalBlock"] {
-        gap: 0 !important;
-        padding: 0 !important;
-    }
-    /* Element containers inside card columns — zero margin/padding */
-    [data-testid="stVerticalBlockBorderWrapper"] [data-testid="column"] [data-testid="stElementContainer"] {
-        padding: 0 !important;
-        margin: 0 !important;
     }
 
     /* Orange top accent line on each dashboard card */
@@ -888,6 +847,97 @@ st.markdown("""
         height: 3px;
         background: linear-gradient(90deg, #F97316, #F59E0B);
         border-radius: 16px 16px 0 0;
+    }
+
+    /* ===== Popover (⋮) card-settings button — compact & inline ===== */
+    [data-testid="stPopover"] {
+        display: inline-flex !important;
+        width: auto !important;
+        vertical-align: middle !important;
+    }
+    [data-testid="stPopover"] > div > button,
+    [data-testid="stPopover"] button[data-testid="stBaseButton-secondary"] {
+        padding: 2px 6px !important;
+        min-height: 28px !important;
+        height: 28px !important;
+        width: 28px !important;
+        background: transparent !important;
+        border: 1px solid var(--border) !important;
+        border-radius: 6px !important;
+        color: var(--muted) !important;
+        font-size: 16px !important;
+        line-height: 1 !important;
+        box-shadow: none !important;
+        transition: all 150ms ease !important;
+    }
+    [data-testid="stPopover"] > div > button:hover,
+    [data-testid="stPopover"] button[data-testid="stBaseButton-secondary"]:hover {
+        background: rgba(249,115,22,0.06) !important;
+        border-color: #F97316 !important;
+        color: #F97316 !important;
+    }
+
+    /* Popover content panel */
+    [data-testid="stPopover"] [data-testid="stPopoverBody"],
+    div[data-baseweb="popover"] [data-testid="stPopoverBody"] {
+        background: #FFFFFF !important;
+        border: 1px solid var(--border) !important;
+        border-radius: 14px !important;
+        box-shadow: 0 12px 40px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06) !important;
+        color: var(--text) !important;
+        padding: 18px 20px 14px !important;
+        min-width: 230px !important;
+        max-width: 270px !important;
+    }
+
+    /* Popover header caption */
+    [data-testid="stPopoverBody"] [data-testid="stCaptionContainer"] p {
+        font-size: 10px !important;
+        font-weight: 700 !important;
+        text-transform: uppercase !important;
+        letter-spacing: 0.10em !important;
+        color: var(--muted) !important;
+        padding-bottom: 10px !important;
+        margin-bottom: 6px !important;
+        border-bottom: 1px solid var(--border) !important;
+    }
+
+    /* Compact selectbox labels inside popover */
+    [data-testid="stPopoverBody"] .stSelectbox label p,
+    [data-testid="stPopoverBody"] [data-testid="stWidgetLabel"] label p {
+        font-size: 11px !important;
+        font-weight: 600 !important;
+        color: #64748B !important;
+        text-transform: uppercase !important;
+        letter-spacing: 0.05em !important;
+        margin-bottom: 2px !important;
+    }
+
+    /* Selectbox controls inside popover */
+    [data-testid="stPopoverBody"] div[data-baseweb="select"] > div {
+        min-height: 34px !important;
+        border-radius: 8px !important;
+        font-size: 13px !important;
+        border: 1.5px solid var(--border) !important;
+        background: var(--panel-2, #F8FAFC) !important;
+        transition: border-color 150ms ease, box-shadow 150ms ease !important;
+    }
+    [data-testid="stPopoverBody"] div[data-baseweb="select"] > div:hover {
+        border-color: rgba(249,115,22,0.50) !important;
+    }
+    [data-testid="stPopoverBody"] div[data-baseweb="select"] > div:focus-within {
+        border-color: #F97316 !important;
+        box-shadow: 0 0 0 3px rgba(249,115,22,0.10) !important;
+    }
+
+    /* Reduce vertical gaps inside popover */
+    [data-testid="stPopoverBody"] [data-testid="stVerticalBlock"] > div {
+        margin-bottom: 0 !important;
+        padding-top: 0 !important;
+        padding-bottom: 0 !important;
+    }
+    [data-testid="stPopoverBody"] .stSelectbox {
+        margin-bottom: 4px !important;
     }
 
     /* ===== DataFrames ===== */
@@ -1093,52 +1143,6 @@ st.markdown("""
     }
 
 
-    /* ===== Card Settings Popover ===== */
-    .card-settings-header {
-        font-size: 11px;
-        font-weight: 600;
-        color: var(--muted) !important;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        margin-bottom: 12px;
-        padding-bottom: 8px;
-        border-bottom: 1px solid var(--border);
-    }
-    .card-settings-label {
-        font-size: 11px;
-        font-weight: 600;
-        color: var(--muted) !important;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-        margin-bottom: 4px;
-        margin-top: 10px;
-    }
-    /* Popover trigger (⋮) — compact, transparent */
-    [data-testid="stPopoverButton"] > button {
-        background: transparent !important;
-        border: 1px solid transparent !important;
-        color: var(--muted) !important;
-        font-size: 18px !important;
-        font-weight: 700 !important;
-        padding: 0px 4px !important;
-        min-height: 24px !important;
-        height: 24px !important;
-        border-radius: 6px !important;
-        box-shadow: none !important;
-        line-height: 1 !important;
-        width: auto !important;
-        min-width: 0 !important;
-    }
-    [data-testid="stPopoverButton"] > button:hover {
-        background: rgba(249,115,22,0.08) !important;
-        border-color: rgba(249,115,22,0.25) !important;
-        color: #F97316 !important;
-    }
-    /* Right-align the ⋮ button in its column */
-    [data-testid="stVerticalBlockBorderWrapper"] [data-testid="column"]:last-child [data-testid="stPopoverButton"] {
-        display: flex;
-        justify-content: flex-end;
-    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -1901,11 +1905,8 @@ with tab_dash:
 
     with row1_l:
         with st.container(border=True):
-            _hdr1_l, _hdr1_r = st.columns([14, 1], gap="small")
-            with _hdr1_l:
-                st.markdown('<div class="r01-card-title">🛒 Most Requested Items <span class="meta">by qty</span></div>', unsafe_allow_html=True)
-            with _hdr1_r:
-                asc1, topn1, chart1 = _r01_card_settings("most_req")
+            st.markdown('<div class="r01-card-title">🛒 Most Requested Items <span class="meta">by qty</span></div>', unsafe_allow_html=True)
+            asc1, topn1, chart1 = _r01_card_settings("most_req")
             most_req = pd.DataFrame(columns=["Item", "Requested Qty"])
             if not req_filtered.empty and "Item" in req_filtered.columns and "Qty" in req_filtered.columns:
                 most_req = (
@@ -1921,11 +1922,8 @@ with tab_dash:
 
     with row1_r:
         with st.container(border=True):
-            _hdr2_l, _hdr2_r = st.columns([14, 1], gap="small")
-            with _hdr2_l:
-                st.markdown('<div class="r01-card-title">📦 Most Received Items <span class="meta">dispatched qty</span></div>', unsafe_allow_html=True)
-            with _hdr2_r:
-                asc2, topn2, chart2 = _r01_card_settings("most_recv")
+            st.markdown('<div class="r01-card-title">📦 Most Received Items <span class="meta">dispatched qty</span></div>', unsafe_allow_html=True)
+            asc2, topn2, chart2 = _r01_card_settings("most_recv")
             most_recv = pd.DataFrame(columns=["Item", "Received Qty"])
             if not req_filtered.empty and "DispatchQty" in req_filtered.columns:
                 disp = req_filtered[req_filtered["Status"].isin(["Dispatched", "Completed"])]
@@ -1946,11 +1944,8 @@ with tab_dash:
 
     with row2_l:
         with st.container(border=True):
-            _hdr3_l, _hdr3_r = st.columns([14, 1], gap="small")
-            with _hdr3_l:
-                st.markdown('<div class="r01-card-title">📊 Current Stock Balance <span class="meta">closing stock</span></div>', unsafe_allow_html=True)
-            with _hdr3_r:
-                asc3, topn3, chart3 = _r01_card_settings("stock_bal")
+            st.markdown('<div class="r01-card-title">📊 Current Stock Balance <span class="meta">closing stock</span></div>', unsafe_allow_html=True)
+            asc3, topn3, chart3 = _r01_card_settings("stock_bal")
             stock_bal = pd.DataFrame(columns=["Product Name", "Closing Stock"])
             if not inv_dash.empty and "Closing Stock" in inv_dash.columns:
                 stock_bal = (
@@ -1966,11 +1961,8 @@ with tab_dash:
 
     with row2_r:
         with st.container(border=True):
-            _hdr4_l, _hdr4_r = st.columns([14, 1], gap="small")
-            with _hdr4_l:
-                st.markdown('<div class="r01-card-title">⚠️ Low / Zero Stock Items <span class="meta">needs reorder</span></div>', unsafe_allow_html=True)
-            with _hdr4_r:
-                _asc4, topn4, chart4 = _r01_card_settings("low_stock", default_sort="Low → High")
+            st.markdown('<div class="r01-card-title">⚠️ Low / Zero Stock Items <span class="meta">needs reorder</span></div>', unsafe_allow_html=True)
+            _asc4, topn4, chart4 = _r01_card_settings("low_stock", default_sort="Low → High")
             low_stock = pd.DataFrame(columns=["Product Name", "Closing Stock"])
             if not inv_dash.empty and "Closing Stock" in inv_dash.columns:
                 low_stock = (
@@ -1994,11 +1986,8 @@ with tab_dash:
 
     with row3_l:
         with st.container(border=True):
-            _hdr5_l, _hdr5_r = st.columns([14, 1], gap="small")
-            with _hdr5_l:
-                st.markdown('<div class="r01-card-title">🔵 Requisition Status Breakdown <span class="meta">by count</span></div>', unsafe_allow_html=True)
-            with _hdr5_r:
-                asc5, topn5, chart5 = _r01_card_settings("req_status")
+            st.markdown('<div class="r01-card-title">🔵 Requisition Status Breakdown <span class="meta">by count</span></div>', unsafe_allow_html=True)
+            asc5, topn5, chart5 = _r01_card_settings("req_status")
             status_breakdown = pd.DataFrame(columns=["Status", "Count"])
             if not req_filtered.empty and "Status" in req_filtered.columns:
                 status_breakdown = (
@@ -2014,11 +2003,8 @@ with tab_dash:
 
     with row3_r:
         with st.container(border=True):
-            _hdr6_l, _hdr6_r = st.columns([14, 1], gap="small")
-            with _hdr6_l:
-                st.markdown('<div class="r01-card-title">⏳ Top Pending Items <span class="meta">unfulfilled qty</span></div>', unsafe_allow_html=True)
-            with _hdr6_r:
-                asc6, topn6, chart6 = _r01_card_settings("pending_items")
+            st.markdown('<div class="r01-card-title">⏳ Top Pending Items <span class="meta">unfulfilled qty</span></div>', unsafe_allow_html=True)
+            asc6, topn6, chart6 = _r01_card_settings("pending_items")
             pending_items = pd.DataFrame(columns=["Item", "Pending Qty"])
             if not req_filtered.empty and "Status" in req_filtered.columns:
                 pend_df = req_filtered[req_filtered["Status"] == "Pending"].copy()
@@ -2039,11 +2025,8 @@ with tab_dash:
 
     with row4_l:
         with st.container(border=True):
-            _hdr7_l, _hdr7_r = st.columns([14, 1], gap="small")
-            with _hdr7_l:
-                st.markdown('<div class="r01-card-title">📅 Daily Requisition Trend <span class="meta">requests over time</span></div>', unsafe_allow_html=True)
-            with _hdr7_r:
-                _asc7, _topn7, chart7 = _r01_card_settings("trend", default_chart="Bar Chart")
+            st.markdown('<div class="r01-card-title">📅 Daily Requisition Trend <span class="meta">requests over time</span></div>', unsafe_allow_html=True)
+            _asc7, _topn7, chart7 = _r01_card_settings("trend", default_chart="Bar Chart")
             trend_df = pd.DataFrame(columns=["Date", "Total Qty"])
             if not req_filtered.empty and "RequestedDate" in req_filtered.columns and "Qty" in req_filtered.columns:
                 _trend_src = req_filtered.copy()
@@ -2085,11 +2068,8 @@ with tab_dash:
 
     with row4_r:
         with st.container(border=True):
-            _hdr8_l, _hdr8_r = st.columns([14, 1], gap="small")
-            with _hdr8_l:
-                st.markdown('<div class="r01-card-title">🗂️ Stock by Category <span class="meta">closing stock</span></div>', unsafe_allow_html=True)
-            with _hdr8_r:
-                asc8, topn8, chart8 = _r01_card_settings("cat_stock")
+            st.markdown('<div class="r01-card-title">🗂️ Stock by Category <span class="meta">closing stock</span></div>', unsafe_allow_html=True)
+            asc8, topn8, chart8 = _r01_card_settings("cat_stock")
             cat_stock = pd.DataFrame(columns=["Category", "Total Stock"])
             if not inv_dash.empty and "Category" in inv_dash.columns and "Closing Stock" in inv_dash.columns:
                 cat_stock = (
