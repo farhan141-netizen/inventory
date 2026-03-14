@@ -825,7 +825,32 @@ st.markdown("""
         box-shadow: 0 8px 16px rgba(0,0,0,0.08), 0 20px 60px rgba(0,0,0,0.14) !important;
         transform: translateY(-2px) !important;
     }
-    /* Strip padding from EVERY wrapper level inside bordered cards */
+
+    /* !! CRITICAL: Reset any NESTED border wrappers inside a card !! */
+    /* Streamlit wraps inner columns in their own stVerticalBlockBorderWrapper —
+       strip ALL card styling from these so only the outermost card is visible */
+    [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stVerticalBlockBorderWrapper"] {
+        background: transparent !important;
+        border: none !important;
+        border-radius: 0 !important;
+        box-shadow: none !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        transform: none !important;
+    }
+    [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stVerticalBlockBorderWrapper"]:hover {
+        border: none !important;
+        box-shadow: none !important;
+        transform: none !important;
+    }
+    [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stVerticalBlockBorderWrapper"]::before {
+        display: none !important;
+    }
+    [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stVerticalBlockBorderWrapper"] > div {
+        padding: 0 !important;
+    }
+
+    /* Card inner padding — only on outermost wrapper's direct child */
     [data-testid="stVerticalBlockBorderWrapper"] > div {
         padding: 0.6rem 0.8rem !important;
     }
