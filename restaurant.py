@@ -814,17 +814,44 @@ st.markdown("""
         border: 1.5px solid rgba(249,115,22,0.18) !important;
         border-radius: 16px !important;
         box-shadow: 0 4px 6px rgba(0,0,0,0.04), 0 10px 40px rgba(0,0,0,0.10) !important;
-        padding: 1px !important;
+        padding: 0 !important;
         margin-bottom: 1px !important;
         transition: box-shadow 200ms ease, border-color 200ms ease, transform 150ms ease;
         position: relative;
+        overflow: visible;
     }
     [data-testid="stVerticalBlockBorderWrapper"]:hover {
         border-color: rgba(249,115,22,0.40) !important;
         box-shadow: 0 8px 16px rgba(0,0,0,0.08), 0 20px 60px rgba(0,0,0,0.14) !important;
         transform: translateY(-2px) !important;
     }
-    [data-testid="stVerticalBlockBorderWrapper"] > div { padding: 0 !important; }
+    /* Strip padding from EVERY wrapper level inside bordered cards */
+    [data-testid="stVerticalBlockBorderWrapper"] > div {
+        padding: 0.6rem 0.8rem !important;
+    }
+    [data-testid="stVerticalBlockBorderWrapper"] > div > [data-testid="stVerticalBlock"] {
+        gap: 0.4rem !important;
+    }
+    /* Inner columns (title + settings button row) — zero overhead */
+    [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stHorizontalBlock"] {
+        gap: 0 !important;
+        padding: 0 !important;
+    }
+    [data-testid="stVerticalBlockBorderWrapper"] [data-testid="column"] {
+        padding: 0 !important;
+    }
+    [data-testid="stVerticalBlockBorderWrapper"] [data-testid="column"] > div {
+        padding: 0 !important;
+    }
+    [data-testid="stVerticalBlockBorderWrapper"] [data-testid="column"] > div > [data-testid="stVerticalBlock"] {
+        gap: 0 !important;
+        padding: 0 !important;
+    }
+    /* Element containers inside card columns — zero margin/padding */
+    [data-testid="stVerticalBlockBorderWrapper"] [data-testid="column"] [data-testid="stElementContainer"] {
+        padding: 0 !important;
+        margin: 0 !important;
+    }
 
     /* Orange top accent line on each dashboard card */
     [data-testid="stVerticalBlockBorderWrapper"]::before {
@@ -1041,7 +1068,7 @@ st.markdown("""
     }
 
 
-    /* ===== Card Settings Popover — absolute top-right of card ===== */
+    /* ===== Card Settings Popover ===== */
     .card-settings-header {
         font-size: 11px;
         font-weight: 600;
@@ -1061,39 +1088,31 @@ st.markdown("""
         margin-bottom: 4px;
         margin-top: 10px;
     }
-    /* Pin popover trigger to top-right of its bordered card */
-    [data-testid="stVerticalBlockBorderWrapper"] {
-        position: relative;
-    }
-    [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stPopoverButton"] {
-        position: absolute !important;
-        top: 10px;
-        right: 10px;
-        z-index: 10;
-    }
+    /* Popover trigger (⋮) — compact, transparent */
     [data-testid="stPopoverButton"] > button {
         background: transparent !important;
         border: 1px solid transparent !important;
         color: var(--muted) !important;
         font-size: 18px !important;
         font-weight: 700 !important;
-        padding: 2px 6px !important;
-        min-height: 28px !important;
-        border-radius: 8px !important;
+        padding: 0px 4px !important;
+        min-height: 24px !important;
+        height: 24px !important;
+        border-radius: 6px !important;
         box-shadow: none !important;
         line-height: 1 !important;
+        width: auto !important;
+        min-width: 0 !important;
     }
     [data-testid="stPopoverButton"] > button:hover {
         background: rgba(249,115,22,0.08) !important;
         border-color: rgba(249,115,22,0.25) !important;
         color: #F97316 !important;
     }
-    /* Strip cumulative padding from nested elements inside dashboard cards */
-    [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stHorizontalBlock"] {
-        gap: 0.5rem !important;
-    }
-    [data-testid="stVerticalBlockBorderWrapper"] [data-testid="column"] > div {
-        padding: 0 !important;
+    /* Right-align the ⋮ button in its column */
+    [data-testid="stVerticalBlockBorderWrapper"] [data-testid="column"]:last-child [data-testid="stPopoverButton"] {
+        display: flex;
+        justify-content: flex-end;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -1274,13 +1293,11 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # --- REFRESH BUTTON ---
-col_refresh, col_empty = st.columns([1, 5])
-with col_refresh:
-    if st.button("🔄 Refresh Data", use_container_width=True, key="refresh_all"):
-        for key in ["inventory"]:
-            if key in st.session_state:
-                del st.session_state[key]
-        st.rerun()
+if st.button("🔄 Refresh Data", key="refresh_all"):
+    for key in ["inventory"]:
+        if key in st.session_state:
+            del st.session_state[key]
+    st.rerun()
 # --- TABS ---
 tab_inv, tab_req, tab_pending, tab_received, tab_history, tab_dash = st.tabs(["📋 Inventory Count", "🛒 Send Requisition", "🚚 Pending Orders", "📦 Received Items", "📊 History", "📊 Dashboard"])
 
@@ -1859,8 +1876,11 @@ with tab_dash:
 
     with row1_l:
         with st.container(border=True):
-            st.markdown('<div class="r01-card-title">🛒 Most Requested Items <span class="meta">by qty</span></div>', unsafe_allow_html=True)
-            asc1, topn1, chart1 = _r01_card_settings("most_req")
+            _hdr1_l, _hdr1_r = st.columns([14, 1], gap="small")
+            with _hdr1_l:
+                st.markdown('<div class="r01-card-title">🛒 Most Requested Items <span class="meta">by qty</span></div>', unsafe_allow_html=True)
+            with _hdr1_r:
+                asc1, topn1, chart1 = _r01_card_settings("most_req")
             most_req = pd.DataFrame(columns=["Item", "Requested Qty"])
             if not req_filtered.empty and "Item" in req_filtered.columns and "Qty" in req_filtered.columns:
                 most_req = (
@@ -1876,8 +1896,11 @@ with tab_dash:
 
     with row1_r:
         with st.container(border=True):
-            st.markdown('<div class="r01-card-title">📦 Most Received Items <span class="meta">dispatched qty</span></div>', unsafe_allow_html=True)
-            asc2, topn2, chart2 = _r01_card_settings("most_recv")
+            _hdr2_l, _hdr2_r = st.columns([14, 1], gap="small")
+            with _hdr2_l:
+                st.markdown('<div class="r01-card-title">📦 Most Received Items <span class="meta">dispatched qty</span></div>', unsafe_allow_html=True)
+            with _hdr2_r:
+                asc2, topn2, chart2 = _r01_card_settings("most_recv")
             most_recv = pd.DataFrame(columns=["Item", "Received Qty"])
             if not req_filtered.empty and "DispatchQty" in req_filtered.columns:
                 disp = req_filtered[req_filtered["Status"].isin(["Dispatched", "Completed"])]
@@ -1898,8 +1921,11 @@ with tab_dash:
 
     with row2_l:
         with st.container(border=True):
-            st.markdown('<div class="r01-card-title">📊 Current Stock Balance <span class="meta">closing stock</span></div>', unsafe_allow_html=True)
-            asc3, topn3, chart3 = _r01_card_settings("stock_bal")
+            _hdr3_l, _hdr3_r = st.columns([14, 1], gap="small")
+            with _hdr3_l:
+                st.markdown('<div class="r01-card-title">📊 Current Stock Balance <span class="meta">closing stock</span></div>', unsafe_allow_html=True)
+            with _hdr3_r:
+                asc3, topn3, chart3 = _r01_card_settings("stock_bal")
             stock_bal = pd.DataFrame(columns=["Product Name", "Closing Stock"])
             if not inv_dash.empty and "Closing Stock" in inv_dash.columns:
                 stock_bal = (
@@ -1915,8 +1941,11 @@ with tab_dash:
 
     with row2_r:
         with st.container(border=True):
-            st.markdown('<div class="r01-card-title">⚠️ Low / Zero Stock Items <span class="meta">needs reorder</span></div>', unsafe_allow_html=True)
-            _asc4, topn4, chart4 = _r01_card_settings("low_stock", default_sort="Low → High")
+            _hdr4_l, _hdr4_r = st.columns([14, 1], gap="small")
+            with _hdr4_l:
+                st.markdown('<div class="r01-card-title">⚠️ Low / Zero Stock Items <span class="meta">needs reorder</span></div>', unsafe_allow_html=True)
+            with _hdr4_r:
+                _asc4, topn4, chart4 = _r01_card_settings("low_stock", default_sort="Low → High")
             low_stock = pd.DataFrame(columns=["Product Name", "Closing Stock"])
             if not inv_dash.empty and "Closing Stock" in inv_dash.columns:
                 low_stock = (
@@ -1940,8 +1969,11 @@ with tab_dash:
 
     with row3_l:
         with st.container(border=True):
-            st.markdown('<div class="r01-card-title">🔵 Requisition Status Breakdown <span class="meta">by count</span></div>', unsafe_allow_html=True)
-            asc5, topn5, chart5 = _r01_card_settings("req_status")
+            _hdr5_l, _hdr5_r = st.columns([14, 1], gap="small")
+            with _hdr5_l:
+                st.markdown('<div class="r01-card-title">🔵 Requisition Status Breakdown <span class="meta">by count</span></div>', unsafe_allow_html=True)
+            with _hdr5_r:
+                asc5, topn5, chart5 = _r01_card_settings("req_status")
             status_breakdown = pd.DataFrame(columns=["Status", "Count"])
             if not req_filtered.empty and "Status" in req_filtered.columns:
                 status_breakdown = (
@@ -1957,8 +1989,11 @@ with tab_dash:
 
     with row3_r:
         with st.container(border=True):
-            st.markdown('<div class="r01-card-title">⏳ Top Pending Items <span class="meta">unfulfilled qty</span></div>', unsafe_allow_html=True)
-            asc6, topn6, chart6 = _r01_card_settings("pending_items")
+            _hdr6_l, _hdr6_r = st.columns([14, 1], gap="small")
+            with _hdr6_l:
+                st.markdown('<div class="r01-card-title">⏳ Top Pending Items <span class="meta">unfulfilled qty</span></div>', unsafe_allow_html=True)
+            with _hdr6_r:
+                asc6, topn6, chart6 = _r01_card_settings("pending_items")
             pending_items = pd.DataFrame(columns=["Item", "Pending Qty"])
             if not req_filtered.empty and "Status" in req_filtered.columns:
                 pend_df = req_filtered[req_filtered["Status"] == "Pending"].copy()
@@ -1979,8 +2014,11 @@ with tab_dash:
 
     with row4_l:
         with st.container(border=True):
-            st.markdown('<div class="r01-card-title">📅 Daily Requisition Trend <span class="meta">requests over time</span></div>', unsafe_allow_html=True)
-            _asc7, _topn7, chart7 = _r01_card_settings("trend", default_chart="Bar Chart")
+            _hdr7_l, _hdr7_r = st.columns([14, 1], gap="small")
+            with _hdr7_l:
+                st.markdown('<div class="r01-card-title">📅 Daily Requisition Trend <span class="meta">requests over time</span></div>', unsafe_allow_html=True)
+            with _hdr7_r:
+                _asc7, _topn7, chart7 = _r01_card_settings("trend", default_chart="Bar Chart")
             trend_df = pd.DataFrame(columns=["Date", "Total Qty"])
             if not req_filtered.empty and "RequestedDate" in req_filtered.columns and "Qty" in req_filtered.columns:
                 _trend_src = req_filtered.copy()
@@ -2022,8 +2060,11 @@ with tab_dash:
 
     with row4_r:
         with st.container(border=True):
-            st.markdown('<div class="r01-card-title">🗂️ Stock by Category <span class="meta">closing stock</span></div>', unsafe_allow_html=True)
-            asc8, topn8, chart8 = _r01_card_settings("cat_stock")
+            _hdr8_l, _hdr8_r = st.columns([14, 1], gap="small")
+            with _hdr8_l:
+                st.markdown('<div class="r01-card-title">🗂️ Stock by Category <span class="meta">closing stock</span></div>', unsafe_allow_html=True)
+            with _hdr8_r:
+                asc8, topn8, chart8 = _r01_card_settings("cat_stock")
             cat_stock = pd.DataFrame(columns=["Category", "Total Stock"])
             if not inv_dash.empty and "Category" in inv_dash.columns and "Closing Stock" in inv_dash.columns:
                 cat_stock = (
