@@ -841,10 +841,10 @@ st.markdown("""
     div[data-baseweb="popover"] [data-testid="stPopoverBody"] {
         background: #FFFFFF !important;
         border: 1px solid var(--border) !important;
-        border-radius: 1px !important;
+        border-radius: 14px !important;
         box-shadow: 0 12px 40px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06) !important;
         color: var(--text) !important;
-        padding: 1px 1px 1px !important;
+        padding: 18px 20px 14px !important;
         min-width: 230px !important;
         max-width: 270px !important;
     }
@@ -883,11 +883,11 @@ st.markdown("""
         transition: border-color 150ms ease, box-shadow 150ms ease !important;
     }
     [data-testid="stPopoverBody"] div[data-baseweb="select"] > div:hover {
-        border-color: rgba(249,115,22,0.50) !important;
+        border-color: rgba(124,92,252,0.50) !important;
     }
     [data-testid="stPopoverBody"] div[data-baseweb="select"] > div:focus-within {
         border-color: var(--accent) !important;
-        box-shadow: 0 0 0 3px rgba(249,115,22,0.10) !important;
+        box-shadow: 0 0 0 3px rgba(124,92,252,0.10) !important;
     }
 
     /* Reduce vertical gaps inside popover */
@@ -910,41 +910,18 @@ st.markdown("""
         border-radius: 8px !important;
         font-size: 12px !important;
         font-weight: 600 !important;
-        background: linear-gradient(135deg, #F97316, #F59E0B) !important;
+        background: linear-gradient(135deg, #7C5CFC, #6366F1) !important;
         color: #FFFFFF !important;
         border: none !important;
-        box-shadow: 0 2px 6px rgba(249,115,22,0.22) !important;
+        box-shadow: 0 2px 6px rgba(124,92,252,0.22) !important;
         transition: all 150ms ease !important;
         letter-spacing: 0.03em !important;
         text-transform: none !important;
     }
     [data-testid="stPopoverBody"] button[data-testid="stBaseButton-secondary"]:hover {
-        background: linear-gradient(135deg, #EA580C, #D97706) !important;
-        box-shadow: 0 4px 12px rgba(249,115,22,0.32) !important;
+        background: linear-gradient(135deg, #6D4AE8, #5558E6) !important;
+        box-shadow: 0 4px 12px rgba(124,92,252,0.32) !important;
         transform: translateY(-1px) !important;
-    }
-
-    /* Strip card styling from containers inside popovers */
-    [data-testid="stPopoverBody"] [data-testid="stVerticalBlockBorderWrapper"],
-    div[data-baseweb="popover"] [data-testid="stVerticalBlockBorderWrapper"] {
-        background: transparent !important;
-        border: none !important;
-        border-radius: 0 !important;
-        box-shadow: none !important;
-        padding: 0 !important;
-        margin: 0 !important;
-        transform: none !important;
-    }
-    [data-testid="stPopoverBody"] [data-testid="stVerticalBlockBorderWrapper"]:hover,
-    div[data-baseweb="popover"] [data-testid="stVerticalBlockBorderWrapper"]:hover {
-        border: none !important;
-        box-shadow: none !important;
-        transform: none !important;
-    }
-    [data-testid="stPopoverBody"] [data-testid="stVerticalBlockBorderWrapper"]::before,
-    div[data-baseweb="popover"] [data-testid="stVerticalBlockBorderWrapper"]::before {
-        display: none !important;
-        content: none !important;
     }
 
     /* ===== Cards / containers ===== */
