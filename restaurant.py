@@ -363,7 +363,7 @@ def _r01_card_controls(card_id: str):
     """Kebab ⋮ popover for per-card settings."""
     _r01_init_card_state(card_id)
     state = st.session_state.r01_dash_cards[card_id]
-    with st.popover("⋮", use_container_width=True):
+    with st.popover("⋮", use_container_width=False):
         st.caption("⚙  CARD SETTINGS")
         state["sort"] = st.selectbox(
             "Sort order",
@@ -844,7 +844,7 @@ st.markdown("""
         border-radius: 14px !important;
         box-shadow: 0 12px 40px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06) !important;
         color: var(--text) !important;
-        padding: 18px 20px 14px !important;
+        padding: 1px 1px 1px !important;
         min-width: 230px !important;
         max-width: 270px !important;
     }
@@ -857,8 +857,8 @@ st.markdown("""
         text-transform: uppercase !important;
         letter-spacing: 0.10em !important;
         color: var(--muted) !important;
-        padding-bottom: 10px !important;
-        margin-bottom: 6px !important;
+        padding-bottom: 0px !important;
+        margin-bottom: 0px !important;
         border-bottom: 1px solid var(--border) !important;
     }
 
