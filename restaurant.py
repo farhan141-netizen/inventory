@@ -360,38 +360,37 @@ def _r01_init_card_state(card_id, default_sort="High → Low", default_topn=10):
         }
 
 def _r01_card_controls(card_id: str):
-    """Kebab ⋮ popover for per-card settings."""
+    """Refined Kebab ⋮ popover to match app.py layout and padding."""
     _r01_init_card_state(card_id)
     state = st.session_state.r01_dash_cards[card_id]
+    
+    # Use a tight column layout for the header actions
     with st.popover("⋮", use_container_width=False):
-        st.caption("⚙  CARD SETTINGS")
+        st.markdown("### ⚙ Card Settings")
         state["sort"] = st.selectbox(
-            "Sort order",
-            options=["High → Low", "Low → High"],
-            index=0 if state["sort"] == "High → Low" else 1,
-            key=f"{card_id}_sort",
+            "Sort order", 
+            options=["High → Low", "Low → High"], 
+            index=0 if state["sort"] == "High → Low" else 1, 
+            key=f"{card_id}_sort"
         )
         state["topn"] = st.selectbox(
-            "Item count",
-            options=[3, 5, 10, 25, 50, 100],
-            index=[3, 5, 10, 25, 50, 100].index(state["topn"]) if state["topn"] in [3, 5, 10, 25, 50, 100] else 2,
-            key=f"{card_id}_topn",
+            "Item count", 
+            options=[3, 5, 10, 25, 50, 100], 
+            index=[3, 5, 10, 25, 50, 100].index(state["topn"]), 
+            key=f"{card_id}_topn"
         )
-        _chart_opts = ["Pie Chart", "Bar Chart", "Table"]
         state["chart_type"] = st.selectbox(
-            "Chart type",
-            options=_chart_opts,
-            index=_chart_opts.index(state["chart_type"]) if state["chart_type"] in _chart_opts else 0,
-            key=f"{card_id}_chart_type",
+            "Chart type", 
+            options=["Pie Chart", "Bar Chart", "Table"], 
+            index=["Pie Chart", "Bar Chart", "Table"].index(state["chart_type"]), 
+            key=f"{card_id}_chart_type"
         )
-        if st.button("🔄  Refresh", key=f"{card_id}_refresh"):
-            for k in ["inventory"]:
-                if k in st.session_state:
-                    del st.session_state[k]
+        if st.button("🔄 Refresh", key=f"{card_id}_refresh", use_container_width=True):
+            if "inventory" in st.session_state:
+                del st.session_state["inventory"]
             st.rerun()
-    state["sort"] = st.session_state.get(f"{card_id}_sort", state["sort"])
-    state["topn"] = st.session_state.get(f"{card_id}_topn", state["topn"])
-    state["chart_type"] = st.session_state.get(f"{card_id}_chart_type", state["chart_type"])
+
+    # Apply changes back to state
     st.session_state.r01_dash_cards[card_id] = state
     return state
 
