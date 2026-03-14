@@ -183,13 +183,19 @@ def _clean_for_supabase(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 # Map: table_name → primary key column
+# Map: table_name → primary key column
 _TABLE_PK = {
     "rest_01_inventory":        "Product Name",
     "restaurant_requisitions":  "ReqID",
 }
 
-# Location-scoped tables in restaurant_01
-_LOCATION_SCOPED_TABLES = {"rest_01_inventory", "restaurant_requisitions"}
+# Tables that have org_id column
+_ORG_SCOPED_TABLES = {"restaurant_requisitions"}
+
+# Tables that have location_id column (and what that column is named)
+_LOCATION_COL = {
+    "restaurant_requisitions": "to_location_id",
+}
 
 def load_from_sheet(table_name, default_cols=None):
     """Load from Supabase table with org/location filtering."""
@@ -199,10 +205,13 @@ def load_from_sheet(table_name, default_cols=None):
 
         q = conn.table(table_name).select("*")
 
-        if org_id:
+        # Only filter by org_id if this table has that column
+        if org_id and table_name in _ORG_SCOPED_TABLES:
             q = q.eq("org_id", org_id)
-        if location_id and table_name in _LOCATION_SCOPED_TABLES:
-            q = q.eq("location_id", location_id)
+
+        # Filter by location using the correct column name for each table
+        if location_id and table_name in _LOCATION_COL:
+            q = q.eq(_LOCATION_COL[table_name], location_id)
 
         response = q.execute()
         data = response.data
@@ -225,16 +234,16 @@ def save_to_sheet(df, table_name):
 
         df = df.copy()
         df = _clean_for_supabase(df)
-
-        # Inject org_id for multi-tenant isolation
+        
+        # Inject org_id only for tables that have that column
         org_id = st.session_state.get("org_id")
-        if org_id:
+        if org_id and table_name in _ORG_SCOPED_TABLES:
             df["org_id"] = org_id
 
-        # Inject location_id for location-scoped tables
+        # Inject location using the correct column name for each table
         location_id = st.session_state.get("location_id")
-        if location_id and table_name in _LOCATION_SCOPED_TABLES:
-            df["location_id"] = location_id
+        if location_id and table_name in _LOCATION_COL:
+            df[_LOCATION_COL[table_name]] = location_id
 
         # Replace NaN with None for JSON serialisation
         df = df.where(pd.notnull(df), None)
