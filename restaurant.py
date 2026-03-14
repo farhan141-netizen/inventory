@@ -567,6 +567,7 @@ def _show_rest_login_page():
 st.set_page_config(page_title="Restaurant Pro", layout="wide")
 
 # --- MODERN LIGHT THEME (matching Warehouse Pro Cloud) ---
+# --- THEME ---
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500&display=swap');
@@ -579,7 +580,7 @@ st.markdown("""
         --text: #1E293B;
         --muted: #64748B;
         --muted2: #94A3B8;
-        --accent: #7C5CFC;
+        --accent: #F97316;
         --warn: #F59E0B;
         --danger: #EF4444;
         --good: #10B981;
@@ -588,16 +589,19 @@ st.markdown("""
         --radius: 16px;
     }
 
+    /* ===== Base ===== */
     html, body, [class*="css"], [data-testid="stAppViewContainer"] {
         font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif !important;
         color: var(--text) !important;
+        background: var(--bg) !important;
     }
-
     .main { background: var(--bg) !important; }
     .stApp { background: var(--bg) !important; }
     [data-testid="stAppViewContainer"] { background: var(--bg) !important; }
+    [data-testid="stSidebar"] { background: #FFFFFF !important; }
     footer { visibility: hidden; }
 
+    /* ===== Header ===== */
     .header {
         background: linear-gradient(135deg, #F97316 0%, #F59E0B 100%);
         padding: 18px 24px;
@@ -606,9 +610,10 @@ st.markdown("""
         margin-bottom: 16px;
         box-shadow: 0 4px 20px rgba(249,115,22,0.25);
     }
-    .header h1 { margin: 0; font-size: 1.4em; font-weight: 700; }
-    .header p { margin: 4px 0 0 0; font-size: 0.85em; opacity: 0.85; }
+    .header h1 { margin: 0; font-size: 1.4em; font-weight: 700; color: white !important; }
+    .header p  { margin: 4px 0 0 0; font-size: 0.85em; opacity: 0.85; color: white !important; }
 
+    /* ===== Tabs ===== */
     .stTabs [data-baseweb="tab-list"] {
         gap: 4px;
         background: #FFFFFF;
@@ -622,7 +627,7 @@ st.markdown("""
         background: transparent;
         border-radius: 10px;
         padding: 6px 14px;
-        color: var(--muted);
+        color: var(--muted) !important;
         font-weight: 500;
         font-size: 13px;
         transition: all 160ms ease;
@@ -634,8 +639,9 @@ st.markdown("""
         font-weight: 600 !important;
     }
 
+    /* ===== Section title ===== */
     .section-title {
-        color: var(--text);
+        color: var(--text) !important;
         font-size: 13px;
         font-weight: 600;
         margin-bottom: 10px;
@@ -643,9 +649,16 @@ st.markdown("""
         border-bottom: 2px solid rgba(249,115,22,0.18);
         padding-bottom: 8px;
         letter-spacing: 0.02em;
+        display: block;
     }
 
-    .stButton>button {
+    /* ===== ALL text visible ===== */
+    p, span, label, div, li, td, th, h1, h2, h3, h4, h5, h6 {
+        color: var(--text) !important;
+    }
+
+    /* ===== Buttons ===== */
+    .stButton > button {
         border-radius: 10px !important;
         font-weight: 500 !important;
         font-size: 13px !important;
@@ -656,13 +669,214 @@ st.markdown("""
         box-shadow: 0 1px 2px rgba(0,0,0,0.05) !important;
         transition: all 150ms ease !important;
     }
-    .stButton>button:hover {
-        border-color: rgba(249,115,22,0.30) !important;
+    .stButton > button:hover {
+        border-color: rgba(249,115,22,0.40) !important;
+        background: rgba(249,115,22,0.06) !important;
+        color: #F97316 !important;
+    }
+    /* Primary button — orange fill */
+    .stButton > button[kind="primary"],
+    [data-testid="baseButton-primary"] {
+        background: linear-gradient(135deg, #F97316, #F59E0B) !important;
+        color: #FFFFFF !important;
+        border: none !important;
+        font-weight: 600 !important;
+    }
+    .stButton > button[kind="primary"]:hover,
+    [data-testid="baseButton-primary"]:hover {
+        background: linear-gradient(135deg, #EA6C0E, #E8920A) !important;
+        color: #FFFFFF !important;
+        box-shadow: 0 4px 12px rgba(249,115,22,0.35) !important;
+    }
+    /* Secondary buttons */
+    [data-testid="baseButton-secondary"],
+    button[kind="secondary"] {
+        background: #FFFFFF !important;
+        color: var(--text) !important;
+        border: 1px solid var(--border) !important;
+        border-radius: 10px !important;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.05) !important;
+    }
+    [data-testid="baseButton-secondary"]:hover,
+    button[kind="secondary"]:hover {
         background: rgba(249,115,22,0.05) !important;
+        border-color: rgba(249,115,22,0.30) !important;
         color: #F97316 !important;
     }
 
-    /* Cart Styles */
+    /* ===== Inputs — white bg, dark text, visible border ===== */
+    [data-baseweb="input"],
+    [data-baseweb="base-input"],
+    [data-baseweb="textarea"] {
+        background: #FFFFFF !important;
+        border: 1px solid var(--border) !important;
+        border-radius: 10px !important;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.04) !important;
+        color: var(--text) !important;
+    }
+    [data-baseweb="input"] input,
+    [data-baseweb="base-input"] input,
+    input[type="text"],
+    input[type="email"],
+    input[type="password"],
+    input[type="number"],
+    textarea {
+        background: #FFFFFF !important;
+        color: var(--text) !important;
+        caret-color: #F97316 !important;
+    }
+    [data-baseweb="input"]:focus-within,
+    [data-baseweb="base-input"]:focus-within {
+        border-color: #F97316 !important;
+        box-shadow: 0 0 0 3px rgba(249,115,22,0.12) !important;
+    }
+    input::placeholder,
+    textarea::placeholder {
+        color: var(--muted2) !important;
+        opacity: 1 !important;
+    }
+    .stTextInput > div > div,
+    .stNumberInput > div > div,
+    .stDateInput > div > div {
+        border: none !important;
+        box-shadow: none !important;
+        outline: none !important;
+    }
+    [data-testid="stDateInput"] > div,
+    [data-testid="stDateInput"] > label + div {
+        border: none !important;
+        box-shadow: none !important;
+    }
+
+    /* ===== Selectbox / Dropdown ===== */
+    [data-baseweb="select"] > div:first-child {
+        background: #FFFFFF !important;
+        border: 1px solid var(--border) !important;
+        border-radius: 10px !important;
+        color: var(--text) !important;
+    }
+    [data-baseweb="select"]:focus-within > div:first-child {
+        border-color: #F97316 !important;
+        box-shadow: 0 0 0 3px rgba(249,115,22,0.12) !important;
+    }
+    div[data-baseweb="select"] * { color: var(--text) !important; }
+    div[data-baseweb="select"] input::placeholder { color: var(--muted2) !important; }
+    /* Dropdown menu */
+    div[data-baseweb="menu"],
+    div[data-baseweb="popover"] > div,
+    [role="listbox"] {
+        background: #FFFFFF !important;
+        border: 1px solid var(--border) !important;
+        border-radius: 12px !important;
+        box-shadow: var(--shadow-hover) !important;
+    }
+    div[data-baseweb="menu"] li,
+    div[data-baseweb="popover"] li,
+    [role="listbox"] li,
+    [role="option"] {
+        background: #FFFFFF !important;
+        color: var(--text) !important;
+    }
+    [role="option"]:hover,
+    div[data-baseweb="menu"] li:hover {
+        background: rgba(249,115,22,0.08) !important;
+        color: #F97316 !important;
+    }
+
+    /* ===== Radio buttons ===== */
+    [data-testid="stRadio"] label,
+    [data-testid="stRadio"] label span,
+    [data-testid="stRadio"] div[role="radiogroup"] label {
+        color: var(--text) !important;
+    }
+    [data-testid="stRadio"] [role="radiogroup"] {
+        background: #FFFFFF !important;
+        border-radius: 10px !important;
+        padding: 4px !important;
+        border: 1px solid var(--border) !important;
+    }
+
+    /* ===== Widget labels ===== */
+    [data-testid="stWidgetLabel"] label,
+    [data-testid="stWidgetLabel"] p,
+    .stSelectbox label,
+    .stTextInput label,
+    .stNumberInput label,
+    .stDateInput label,
+    .stMultiSelect label {
+        color: var(--text) !important;
+        font-weight: 500 !important;
+    }
+
+    /* ===== Popover (⋮ card settings) ===== */
+    [data-testid="stPopover"] {
+        display: inline-flex !important;
+        width: auto !important;
+        vertical-align: middle !important;
+    }
+    [data-testid="stPopover"] > div > button {
+        padding: 2px 6px !important;
+        min-height: 28px !important;
+        height: 28px !important;
+        width: 28px !important;
+        background: transparent !important;
+        border: 1px solid var(--border) !important;
+        border-radius: 6px !important;
+        color: var(--muted) !important;
+        font-size: 16px !important;
+        box-shadow: none !important;
+    }
+    /* Popover content panel */
+    [data-testid="stPopover"] [data-testid="stPopoverBody"],
+    div[data-baseweb="popover"] [data-testid="stPopoverBody"] {
+        background: #FFFFFF !important;
+        border: 1px solid var(--border) !important;
+        border-radius: 12px !important;
+        box-shadow: var(--shadow-hover) !important;
+        color: var(--text) !important;
+    }
+
+    /* ===== Cards / containers ===== */
+    [data-testid="stVerticalBlockBorderWrapper"] {
+        background: #FFFFFF !important;
+        border: 1.5px solid rgba(249,115,22,0.15) !important;
+        border-radius: 16px !important;
+        box-shadow: var(--shadow) !important;
+        padding: 20px !important;
+        margin-bottom: 16px !important;
+        transition: box-shadow 200ms ease, border-color 200ms ease;
+    }
+    [data-testid="stVerticalBlockBorderWrapper"]:hover {
+        border-color: rgba(249,115,22,0.35) !important;
+        box-shadow: var(--shadow-hover) !important;
+    }
+    [data-testid="stVerticalBlockBorderWrapper"] > div { padding: 0 !important; }
+
+    /* ===== DataFrames ===== */
+    [data-testid="stDataFrame"] {
+        border-radius: var(--radius) !important;
+        border: 1px solid var(--border) !important;
+        overflow: hidden !important;
+        box-shadow: var(--shadow) !important;
+    }
+    [data-testid="stDataFrame"] th,
+    [data-testid="stDataFrameResizable"] th {
+        background: #F1F5F9 !important;
+        color: var(--text) !important;
+        border-bottom: 1px solid var(--border) !important;
+    }
+
+    /* ===== Alerts ===== */
+    [data-testid="stAlert"] {
+        border-radius: 10px !important;
+        color: var(--text) !important;
+    }
+    .stSuccess { background: #ECFDF5 !important; color: #065F46 !important; border-left: 4px solid #10B981 !important; border-radius: 10px !important; }
+    .stError   { background: #FEF2F2 !important; color: #991B1B !important; border-left: 4px solid #EF4444 !important; border-radius: 10px !important; }
+    .stWarning { background: #FFFBEB !important; color: #92400E !important; border-left: 4px solid #F59E0B !important; border-radius: 10px !important; }
+    .stInfo    { background: #EFF6FF !important; color: #1E40AF !important; border-left: 4px solid #6366F1 !important; border-radius: 10px !important; }
+
+    /* ===== Cart ===== */
     .cart-compact {
         background: #FFFFFF;
         padding: 14px;
@@ -680,27 +894,14 @@ st.markdown("""
         border-left: 3px solid #F97316;
         border-radius: 8px;
         font-size: 13px;
-        color: var(--text);
+        color: var(--text) !important;
     }
     .cart-item-name { flex: 1; }
-    .cart-item-btn { margin-left: 6px; }
 
-    /* Status Colors */
-    .status-pending {
-        border-left: 4px solid var(--warn) !important;
-        background: #FFFBEB !important;
-        color: #92400E !important;
-    }
-    .status-dispatched {
-        border-left: 4px solid #06B6D4 !important;
-        background: #ECFEFF !important;
-        color: #164E63 !important;
-    }
-    .status-completed {
-        border-left: 4px solid var(--good) !important;
-        background: #ECFDF5 !important;
-        color: #065F46 !important;
-    }
+    /* ===== Status colors ===== */
+    .status-pending    { border-left: 4px solid var(--warn) !important;  background: #FFFBEB !important; color: #92400E !important; }
+    .status-dispatched { border-left: 4px solid #06B6D4 !important;      background: #ECFEFF !important; color: #164E63 !important; }
+    .status-completed  { border-left: 4px solid var(--good) !important;  background: #ECFDF5 !important; color: #065F46 !important; }
 
     .req-item {
         padding: 8px 10px;
@@ -713,26 +914,18 @@ st.markdown("""
         align-items: center;
         border: 1px solid var(--border);
         background: #FFFFFF;
-        color: var(--text);
+        color: var(--text) !important;
     }
     .req-item-content { flex: 1; }
-    .req-item-buttons { display: flex; gap: 4px; margin-left: 8px; }
 
-    hr { margin: 8px 0; opacity: 0.15; border-color: var(--border); }
-
+    /* ===== Scrollbars ===== */
     ::-webkit-scrollbar { width: 6px; height: 6px; }
     ::-webkit-scrollbar-track { background: #F1F5F9; border-radius: 99px; }
     ::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 99px; }
     ::-webkit-scrollbar-thumb:hover { background: #94A3B8; }
 
-    /* Dashboard additions */
-    .r01-dash-kpi-row {
-        display: flex;
-        flex-direction: row;
-        gap: 14px;
-        flex-wrap: nowrap;
-        margin-bottom: 16px;
-    }
+    /* ===== Dashboard KPI boxes ===== */
+    .r01-dash-kpi-row { display: flex; flex-direction: row; gap: 14px; flex-wrap: nowrap; margin-bottom: 16px; }
     .r01-dash-kpi-box {
         flex: 1;
         background: #FFFFFF;
@@ -745,188 +938,22 @@ st.markdown("""
         transition: box-shadow 200ms ease;
     }
     .r01-dash-kpi-box:hover { box-shadow: var(--shadow-hover); }
-    .r01-dash-kpi-box .kpi-icon { font-size: 20px; margin-bottom: 6px; }
-    .r01-dash-kpi-box .kpi-label {
-        font-size: 11px;
-        color: var(--muted);
-        font-weight: 600;
-        margin-bottom: 8px;
-        text-transform: uppercase;
-        letter-spacing: 0.06em;
-    }
-    .r01-dash-kpi-box .kpi-value {
-        font-size: 20px;
-        font-weight: 700;
-        color: var(--text);
-        font-family: "JetBrains Mono", ui-monospace, monospace;
-        letter-spacing: -0.01em;
-    }
-    .r01-dash-kpi-box .kpi-value.bad { color: var(--danger); }
-    .r01-dash-kpi-box .kpi-value.good { color: var(--good); }
+    .r01-dash-kpi-box .kpi-icon  { font-size: 20px; margin-bottom: 6px; }
+    .r01-dash-kpi-box .kpi-label { font-size: 11px; color: var(--muted) !important; font-weight: 600; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.06em; }
+    .r01-dash-kpi-box .kpi-value { font-size: 20px; font-weight: 700; color: var(--text) !important; font-family: "JetBrains Mono", ui-monospace, monospace; }
+    .r01-dash-kpi-box .kpi-value.bad  { color: var(--danger) !important; }
+    .r01-dash-kpi-box .kpi-value.good { color: var(--good)   !important; }
+
     .r01-card-title {
-        font-size: 13px;
-        font-weight: 600;
-        color: var(--text);
-        margin: 0 0 10px 0;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
+        font-size: 13px; font-weight: 600; color: var(--text) !important;
+        margin: 0 0 10px 0; display: flex; align-items: center; justify-content: space-between;
     }
     .r01-card-title .meta {
-        font-size: 11px;
-        color: var(--muted);
-        font-weight: 400;
-        background: var(--panel-2);
-        padding: 2px 8px;
-        border-radius: 999px;
+        font-size: 11px; color: var(--muted) !important; font-weight: 400;
+        background: var(--panel-2); padding: 2px 8px; border-radius: 999px;
     }
 
-    [data-testid="stDataFrame"] {
-        border-radius: var(--radius) !important;
-        border: 1px solid var(--border) !important;
-        overflow: hidden !important;
-        box-shadow: var(--shadow) !important;
-    }
-    [data-testid="stVerticalBlockBorderWrapper"] {
-        background: #FFFFFF !important;
-        border: 1.5px solid rgba(249,115,22,0.15) !important;
-        border-radius: 16px !important;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.08), 0 8px 32px rgba(0,0,0,0.12) !important;
-        padding: 20px !important;
-        margin-bottom: 16px !important;
-        position: relative;
-        overflow: hidden;
-        transition: box-shadow 200ms ease, border-color 200ms ease;
-    }
-    [data-testid="stVerticalBlockBorderWrapper"]:hover {
-        border-color: rgba(249,115,22,0.35) !important;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.12), 0 12px 40px rgba(0,0,0,0.18) !important;
-    }
-    [data-testid="stVerticalBlockBorderWrapper"] > div {
-        padding: 0 !important;
-    }
-
-    /* ===== Fix: secondary buttons — prevent dark/black rendering ===== */
-    [data-testid="baseButton-secondary"],
-    button[kind="secondary"] {
-        background: #FFFFFF !important;
-        color: var(--text) !important;
-        border: 1px solid var(--border) !important;
-        border-radius: 10px !important;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.05) !important;
-    }
-    [data-testid="baseButton-secondary"]:hover,
-    button[kind="secondary"]:hover {
-        background: rgba(249,115,22,0.05) !important;
-        border-color: rgba(249,115,22,0.30) !important;
-        color: #F97316 !important;
-    }
-
-    /* ===== Fix: remove double/black border on input, select, date fields ===== */
-    [data-baseweb="input"],
-    [data-baseweb="base-input"],
-    [data-baseweb="select"] > div:first-child {
-        background: #FFFFFF !important;
-        border: 1px solid var(--border) !important;
-        border-radius: 10px !important;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.04) !important;
-    }
-    [data-baseweb="input"]:focus-within,
-    [data-baseweb="base-input"]:focus-within,
-    [data-baseweb="select"]:focus-within > div:first-child {
-        border-color: #F97316 !important;
-        box-shadow: 0 0 0 3px rgba(249,115,22,0.12) !important;
-    }
-    /* Remove inner outline added by Streamlit on top of baseweb border */
-    .stTextInput > div > div,
-    .stNumberInput > div > div,
-    .stSelectbox > div > div,
-    .stDateInput > div > div {
-        border: none !important;
-        box-shadow: none !important;
-        outline: none !important;
-    }
-    /* Ensure date input container has clean border */
-    [data-testid="stDateInput"] > div,
-    [data-testid="stDateInput"] > label + div {
-        border: none !important;
-        box-shadow: none !important;
-    }
-
-    /* ===== Fix: Popover (⋮) card-settings button — compact & inline ===== */
-    [data-testid="stPopover"] {
-        display: inline-flex !important;
-        width: auto !important;
-        vertical-align: middle !important;
-    }
-    [data-testid="stPopover"] > div > button,
-    [data-testid="stPopover"] button[data-testid="stBaseButton-secondary"] {
-        padding: 2px 6px !important;
-        min-height: 28px !important;
-        height: 28px !important;
-        width: 28px !important;
-        background: transparent !important;
-        border: 1px solid var(--border) !important;
-        border-radius: 6px !important;
-        color: var(--muted) !important;
-        font-size: 16px !important;
-        line-height: 1 !important;
-        box-shadow: none !important;
-    }
-    [data-testid="stPopover"] > div > button:hover,
-    [data-testid="stPopover"] button[data-testid="stBaseButton-secondary"]:hover {
-        background: var(--panel-2) !important;
-        border-color: #CBD5E1 !important;
-        color: var(--text) !important;
-    }
-
-    /* ===== Fix: DataFrame / data_editor header — light background ===== */
-    [data-testid="stDataFrame"] th,
-    [data-testid="stDataFrameResizable"] th,
-    [data-testid="stDataFrame"] [data-testid="glideDataEditorContainer"] .gdg-header,
-    .dvn-stack .dvn-scroller th {
-        background: #F1F5F9 !important;
-        color: var(--text) !important;
-        border-bottom: 1px solid var(--border) !important;
-    }
-
-    /* ===== Fix: Selectbox / dropdown selected value text ===== */
-    div[data-baseweb="select"] * {
-        color: var(--text) !important;
-    }
-    div[data-baseweb="select"] input::placeholder {
-        color: var(--muted2) !important;
-    }
-    /* Dropdown menu options */
-    div[data-baseweb="menu"] li,
-    div[data-baseweb="popover"] li,
-    [role="listbox"] li,
-    [role="option"] {
-        color: var(--text) !important;
-    }
-
-    /* ===== Fix: Radio button label text ===== */
-    [data-testid="stRadio"] label,
-    [data-testid="stRadio"] label span,
-    [data-testid="stRadio"] div[role="radiogroup"] label {
-        color: var(--text) !important;
-    }
-
-    /* ===== Fix: Widget label and form text ===== */
-    [data-testid="stWidgetLabel"] label,
-    [data-testid="stWidgetLabel"] p,
-    .stSelectbox label,
-    .stTextInput label,
-    .stNumberInput label,
-    .stDateInput label {
-        color: var(--text) !important;
-    }
-
-    /* ===== Fix: Input placeholder text ===== */
-    input::placeholder,
-    textarea::placeholder {
-        color: var(--muted2) !important;
-    }
+    hr { margin: 8px 0; opacity: 0.15; border-color: var(--border); }
     </style>
     """, unsafe_allow_html=True)
 
