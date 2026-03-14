@@ -364,7 +364,7 @@ def _r01_card_controls(card_id: str):
     _r01_init_card_state(card_id)
     state = st.session_state.r01_dash_cards[card_id]
     with st.popover("⋮", use_container_width=False):
-        st.caption("⚙  Card Settings")
+        st.caption("⚙  CARD SETTINGS")
         state["sort"] = st.selectbox(
             "Sort order",
             options=["High → Low", "Low → High"],
@@ -808,7 +808,7 @@ st.markdown("""
         font-weight: 500 !important;
     }
 
-    /* ===== Popover (⋮) card-settings button — compact & inline ===== */
+    /* ===== Fix: Popover (⋮) card-settings button — compact & inline ===== */
     [data-testid="stPopover"] {
         display: inline-flex !important;
         width: auto !important;
@@ -832,22 +832,21 @@ st.markdown("""
     [data-testid="stPopover"] > div > button:hover,
     [data-testid="stPopover"] button[data-testid="stBaseButton-secondary"]:hover {
         background: var(--panel-2) !important;
-        border-color: #F97316 !important;
-        color: #F97316 !important;
+        border-color: var(--accent) !important;
+        color: var(--accent) !important;
     }
 
     /* Popover content panel — outer shell */
     [data-testid="stPopover"] [data-testid="stPopoverBody"],
     div[data-baseweb="popover"] [data-testid="stPopoverBody"] {
         background: #FFFFFF !important;
-        border: 2px solid #E2E8F0 !important;
-        border-radius: 12px !important;
+        border: 1px solid var(--border) !important;
+        border-radius: 14px !important;
         box-shadow: 0 12px 40px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06) !important;
         color: var(--text) !important;
-        padding: 1px !important;
+        padding: 18px 20px 14px !important;
         min-width: 230px !important;
         max-width: 270px !important;
-        overflow: hidden !important;
     }
 
     /* ===== Popover interior — polished card settings ===== */
@@ -857,7 +856,7 @@ st.markdown("""
         font-weight: 700 !important;
         text-transform: uppercase !important;
         letter-spacing: 0.10em !important;
-        color: #F97316 !important;
+        color: var(--muted) !important;
         padding-bottom: 10px !important;
         margin-bottom: 6px !important;
         border-bottom: 1px solid var(--border) !important;
@@ -887,7 +886,7 @@ st.markdown("""
         border-color: rgba(249,115,22,0.50) !important;
     }
     [data-testid="stPopoverBody"] div[data-baseweb="select"] > div:focus-within {
-        border-color: #F97316 !important;
+        border-color: var(--accent) !important;
         box-shadow: 0 0 0 3px rgba(249,115,22,0.10) !important;
     }
 
