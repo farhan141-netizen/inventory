@@ -1219,7 +1219,7 @@ st.markdown("""
         border: 1px solid #E2E8F0 !important;
         border-radius: 12px !important;
         box-shadow: 0 10px 30px rgba(0,0,0,0.12), 0 1px 4px rgba(0,0,0,0.06) !important;
-        padding: 12px 16px 10px !important;
+        padding: 1px 1px 1px !important;
         min-width: 220px !important;
         max-width: 260px !important;
         color: #1E293B !important;
