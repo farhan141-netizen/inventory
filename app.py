@@ -1117,12 +1117,101 @@ st.markdown(
         font-size: 16px !important;
         line-height: 1 !important;
         box-shadow: none !important;
+        transition: all 150ms ease !important;
     }
     [data-testid="stPopover"] > div > button:hover,
     [data-testid="stPopover"] button[data-testid="stBaseButton-secondary"]:hover {
         background: var(--panel-2) !important;
-        border-color: #CBD5E1 !important;
+        border-color: var(--accent) !important;
+        color: var(--accent) !important;
+    }
+
+    /* Popover content panel — outer shell */
+    [data-testid="stPopover"] [data-testid="stPopoverBody"],
+    div[data-baseweb="popover"] [data-testid="stPopoverBody"] {
+        background: #FFFFFF !important;
+        border: 1px solid var(--border) !important;
+        border-radius: 14px !important;
+        box-shadow: 0 12px 40px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06) !important;
         color: var(--text) !important;
+        padding: 18px 20px 14px !important;
+        min-width: 230px !important;
+        max-width: 270px !important;
+    }
+
+    /* ===== Popover interior — polished card settings ===== */
+    /* Header caption */
+    [data-testid="stPopoverBody"] [data-testid="stCaptionContainer"] p {
+        font-size: 10px !important;
+        font-weight: 700 !important;
+        text-transform: uppercase !important;
+        letter-spacing: 0.10em !important;
+        color: var(--muted) !important;
+        padding-bottom: 10px !important;
+        margin-bottom: 6px !important;
+        border-bottom: 1px solid var(--border) !important;
+    }
+
+    /* Compact selectbox labels inside popover */
+    [data-testid="stPopoverBody"] .stSelectbox label p,
+    [data-testid="stPopoverBody"] [data-testid="stWidgetLabel"] label p {
+        font-size: 11px !important;
+        font-weight: 600 !important;
+        color: #64748B !important;
+        text-transform: uppercase !important;
+        letter-spacing: 0.05em !important;
+        margin-bottom: 2px !important;
+    }
+
+    /* Selectbox controls */
+    [data-testid="stPopoverBody"] div[data-baseweb="select"] > div {
+        min-height: 34px !important;
+        border-radius: 8px !important;
+        font-size: 13px !important;
+        border: 1.5px solid var(--border) !important;
+        background: var(--panel-2, #F8FAFC) !important;
+        transition: border-color 150ms ease, box-shadow 150ms ease !important;
+    }
+    [data-testid="stPopoverBody"] div[data-baseweb="select"] > div:hover {
+        border-color: rgba(124,92,252,0.50) !important;
+    }
+    [data-testid="stPopoverBody"] div[data-baseweb="select"] > div:focus-within {
+        border-color: var(--accent) !important;
+        box-shadow: 0 0 0 3px rgba(124,92,252,0.10) !important;
+    }
+
+    /* Reduce vertical gaps inside popover */
+    [data-testid="stPopoverBody"] [data-testid="stVerticalBlock"] > div {
+        margin-bottom: 0 !important;
+        padding-top: 0 !important;
+        padding-bottom: 0 !important;
+    }
+    [data-testid="stPopoverBody"] .stSelectbox {
+        margin-bottom: 4px !important;
+    }
+
+    /* Refresh / action button inside popover */
+    [data-testid="stPopoverBody"] button[data-testid="stBaseButton-secondary"] {
+        width: 100% !important;
+        margin-top: 12px !important;
+        padding: 7px 14px !important;
+        min-height: 34px !important;
+        height: 34px !important;
+        border-radius: 8px !important;
+        font-size: 12px !important;
+        font-weight: 600 !important;
+        background: linear-gradient(135deg, #7C5CFC, #6366F1) !important;
+        color: #FFFFFF !important;
+        border: none !important;
+        box-shadow: 0 2px 6px rgba(124,92,252,0.22) !important;
+        transition: all 150ms ease !important;
+        letter-spacing: 0.03em !important;
+        text-transform: none !important;
+    }
+    [data-testid="stPopoverBody"] button[data-testid="stBaseButton-secondary"]:hover {
+        background: linear-gradient(135deg, #6D4AE8, #5558E6) !important;
+        box-shadow: 0 4px 12px rgba(124,92,252,0.32) !important;
+        transform: translateY(-1px) !important;
     }
 
     /* ===== Fix: DataFrame / data_editor header — light background ===== */
@@ -2096,7 +2185,7 @@ def _card_controls(card_id: str, allow_view_mode: bool = False, allow_chart_type
     state = st.session_state.dash_cards[card_id]
 
     with st.popover("⋮", use_container_width=False):
-        st.caption("Card settings")
+        st.caption("⚙  CARD SETTINGS")
         state["sort"] = st.selectbox(
             "Sort order",
             options=["High → Low", "Low → High"],
@@ -2138,7 +2227,7 @@ def _card_controls(card_id: str, allow_view_mode: bool = False, allow_chart_type
                 key=f"{card_id}_label_mode",
             )
 
-        if st.button("Refresh card", key=f"{card_id}_refresh_btn"):
+        if st.button("🔄  Refresh", key=f"{card_id}_refresh_btn"):
             st.cache_data.clear()
             st.rerun()
 
