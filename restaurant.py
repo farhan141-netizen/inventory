@@ -816,7 +816,7 @@ st.markdown("""
     /* ===== Cards / containers ===== */
     [data-testid="stVerticalBlockBorderWrapper"] {
         background: #FFFFFF !important;
-        border: 1.5px solid rgba(249,115,22,0.18) !important;
+        border: 1.5px solid #FFFFFF !important;
         border-radius: 16px !important;
         box-shadow: 0 4px 6px rgba(0,0,0,0.04), 0 10px 40px rgba(0,0,0,0.10) !important;
         padding: 20px !important;
