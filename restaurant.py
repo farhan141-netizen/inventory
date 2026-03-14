@@ -819,11 +819,11 @@ st.markdown("""
         border: 1.5px solid rgba(249,115,22,0.18) !important;
         border-radius: 16px !important;
         box-shadow: 0 4px 6px rgba(0,0,0,0.04), 0 10px 40px rgba(0,0,0,0.10) !important;
-        padding: 0 !important;
+        padding: 20px !important;
         margin-bottom: 1px !important;
         transition: box-shadow 200ms ease, border-color 200ms ease, transform 150ms ease;
         position: relative;
-        overflow: visible;
+        overflow: hidden;
     }
     [data-testid="stVerticalBlockBorderWrapper"]:hover {
         border-color: rgba(249,115,22,0.40) !important;
@@ -831,13 +831,30 @@ st.markdown("""
         transform: translateY(-2px) !important;
     }
     [data-testid="stVerticalBlockBorderWrapper"] > div {
-        padding: 0.6rem 0.8rem !important;
-    }
-    [data-testid="stVerticalBlockBorderWrapper"] > div > [data-testid="stVerticalBlock"] {
-        gap: 0.4rem !important;
+        padding: 0 !important;
     }
 
-    /* Orange top accent line on each dashboard card */
+    /* NESTED border wrappers inside a card — make them invisible */
+    [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stVerticalBlockBorderWrapper"] {
+        background: transparent !important;
+        border: none !important;
+        border-radius: 0 !important;
+        box-shadow: none !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        transform: none !important;
+        overflow: visible !important;
+    }
+    [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stVerticalBlockBorderWrapper"]:hover {
+        border: none !important;
+        box-shadow: none !important;
+        transform: none !important;
+    }
+    [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stVerticalBlockBorderWrapper"]::before {
+        display: none !important;
+    }
+
+    /* Orange top accent line — only on top-level cards */
     [data-testid="stVerticalBlockBorderWrapper"]::before {
         content: "";
         position: absolute;
