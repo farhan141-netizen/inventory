@@ -953,8 +953,8 @@ st.markdown("""
         border: 1.5px solid rgba(249,115,22,0.18) !important;
         border-radius: 16px !important;
         box-shadow: 0 4px 6px rgba(0,0,0,0.04), 0 10px 40px rgba(0,0,0,0.10) !important;
-        padding: 20px !important;
-        margin-bottom: 16px !important;
+        padding: 1px !important;
+        margin-bottom: 1px !important;
         transition: box-shadow 200ms ease, border-color 200ms ease, transform 150ms ease;
         position: relative;
     }
