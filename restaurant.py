@@ -955,17 +955,34 @@ st.markdown("""
     
     hr { margin: 8px 0; opacity: 0.15; border-color: var(--border); }
 
-    /* ===== Top toolbar — hide dark bar ===== */
-    [data-testid="stToolbar"],
+    /* ===== Top toolbar — hide dark bar, keep sidebar button ===== */
+    [data-testid="stToolbar"] {
+        display: none !important;
+    }
     [data-testid="stDecoration"],
     #stDecoration {
         display: none !important;
-        visibility: hidden !important;
-        height: 0 !important;
     }
     header[data-testid="stHeader"] {
         background: transparent !important;
-        height: 0 !important;
+        height: 3rem !important;
+        min-height: 3rem !important;
+    }
+
+    /* Keep sidebar collapse/expand button visible */
+    [data-testid="stSidebarCollapsedControl"],
+    [data-testid="stSidebarContent"] ~ [data-testid="stSidebarCollapsedControl"],
+    button[data-testid="baseButton-headerNoPadding"],
+    [data-testid="collapsedControl"] {
+        display: flex !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+        color: var(--text) !important;
+        background: #FFFFFF !important;
+        border: 1px solid var(--border) !important;
+        border-radius: 8px !important;
+        box-shadow: var(--shadow) !important;
+        z-index: 999999 !important;
     }
 
     /* ===== Expander headers — white background, dark text ===== */
