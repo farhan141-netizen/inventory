@@ -820,7 +820,7 @@ st.markdown("""
         min-height: 28px !important;
         height: 28px !important;
         width: 28px !important;
-        background: transparent !important;
+        background: #FFFFFF !important;
         border: 1px solid var(--border) !important;
         border-radius: 6px !important;
         color: var(--muted) !important;
