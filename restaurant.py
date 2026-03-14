@@ -1944,11 +1944,8 @@ with tab_dash:
 
     with row1_l:
         with st.container(border=True):
-            c_title, c_ctrl = st.columns([5, 1])
-            with c_title:
-                st.markdown('<div class="r01-card-title">🛒 Most Requested Items <span class="meta">by qty</span></div>', unsafe_allow_html=True)
-            with c_ctrl:
-                s1 = _r01_card_controls("r01_most_requested")
+            st.markdown('<div class="r01-card-title">🛒 Most Requested Items <span class="meta">by qty</span></div>', unsafe_allow_html=True)
+            s1 = _r01_card_controls("r01_most_requested")
             asc1  = (s1["sort"] == "Low → High")
             topn1 = int(s1["topn"])
             most_req = pd.DataFrame(columns=["Item", "Requested Qty"])
@@ -1966,11 +1963,8 @@ with tab_dash:
 
     with row1_r:
         with st.container(border=True):
-            c_title, c_ctrl = st.columns([5, 1])
-            with c_title:
-                st.markdown('<div class="r01-card-title">📦 Most Received Items <span class="meta">dispatched qty</span></div>', unsafe_allow_html=True)
-            with c_ctrl:
-                s2 = _r01_card_controls("r01_most_received")
+            st.markdown('<div class="r01-card-title">📦 Most Received Items <span class="meta">dispatched qty</span></div>', unsafe_allow_html=True)
+            s2 = _r01_card_controls("r01_most_received")
             asc2  = (s2["sort"] == "Low → High")
             topn2 = int(s2["topn"])
             most_recv = pd.DataFrame(columns=["Item", "Received Qty"])
@@ -1993,11 +1987,8 @@ with tab_dash:
 
     with row2_l:
         with st.container(border=True):
-            c_title, c_ctrl = st.columns([5, 1])
-            with c_title:
-                st.markdown('<div class="r01-card-title">📊 Current Stock Balance <span class="meta">closing stock</span></div>', unsafe_allow_html=True)
-            with c_ctrl:
-                s3 = _r01_card_controls("r01_stock_balance")
+            st.markdown('<div class="r01-card-title">📊 Current Stock Balance <span class="meta">closing stock</span></div>', unsafe_allow_html=True)
+            s3 = _r01_card_controls("r01_stock_balance")
             asc3  = (s3["sort"] == "Low → High")
             topn3 = int(s3["topn"])
             stock_bal = pd.DataFrame(columns=["Product Name", "Closing Stock"])
@@ -2015,11 +2006,8 @@ with tab_dash:
 
     with row2_r:
         with st.container(border=True):
-            c_title, c_ctrl = st.columns([5, 1])
-            with c_title:
-                st.markdown('<div class="r01-card-title">⚠️ Low / Zero Stock Items <span class="meta">needs reorder</span></div>', unsafe_allow_html=True)
-            with c_ctrl:
-                s4 = _r01_card_controls("r01_low_stock")
+            st.markdown('<div class="r01-card-title">⚠️ Low / Zero Stock Items <span class="meta">needs reorder</span></div>', unsafe_allow_html=True)
+            s4 = _r01_card_controls("r01_low_stock")
             topn4 = int(s4["topn"])
             low_stock = pd.DataFrame(columns=["Product Name", "Closing Stock"])
             if not inv_dash.empty and "Closing Stock" in inv_dash.columns:
@@ -2044,11 +2032,8 @@ with tab_dash:
 
     with row3_l:
         with st.container(border=True):
-            c_title, c_ctrl = st.columns([5, 1])
-            with c_title:
-                st.markdown('<div class="r01-card-title">🔵 Requisition Status Breakdown <span class="meta">by count</span></div>', unsafe_allow_html=True)
-            with c_ctrl:
-                s5 = _r01_card_controls("r01_req_status")
+            st.markdown('<div class="r01-card-title">🔵 Requisition Status Breakdown <span class="meta">by count</span></div>', unsafe_allow_html=True)
+            s5 = _r01_card_controls("r01_req_status")
             status_breakdown = pd.DataFrame(columns=["Status", "Count"])
             if not req_filtered.empty and "Status" in req_filtered.columns:
                 status_breakdown = (
@@ -2063,11 +2048,8 @@ with tab_dash:
 
     with row3_r:
         with st.container(border=True):
-            c_title, c_ctrl = st.columns([5, 1])
-            with c_title:
-                st.markdown('<div class="r01-card-title">⏳ Top Pending Items <span class="meta">unfulfilled qty</span></div>', unsafe_allow_html=True)
-            with c_ctrl:
-                s6 = _r01_card_controls("r01_pending_items")
+            st.markdown('<div class="r01-card-title">⏳ Top Pending Items <span class="meta">unfulfilled qty</span></div>', unsafe_allow_html=True)
+            s6 = _r01_card_controls("r01_pending_items")
             asc6  = (s6["sort"] == "Low → High")
             topn6 = int(s6["topn"])
             pending_items = pd.DataFrame(columns=["Item", "Pending Qty"])
@@ -2125,11 +2107,8 @@ with tab_dash:
 
     with row4_r:
         with st.container(border=True):
-            c_title, c_ctrl = st.columns([5, 1])
-            with c_title:
-                st.markdown('<div class="r01-card-title">🗂️ Stock by Category <span class="meta">closing stock</span></div>', unsafe_allow_html=True)
-            with c_ctrl:
-                s7 = _r01_card_controls("r01_cat_stock")
+            st.markdown('<div class="r01-card-title">🗂️ Stock by Category <span class="meta">closing stock</span></div>', unsafe_allow_html=True)
+            s7 = _r01_card_controls("r01_cat_stock")
             cat_stock = pd.DataFrame(columns=["Category", "Total Stock"])
             if not inv_dash.empty and "Category" in inv_dash.columns and "Closing Stock" in inv_dash.columns:
                 cat_stock = (
