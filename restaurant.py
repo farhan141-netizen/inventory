@@ -185,9 +185,12 @@ def _clean_for_supabase(df: pd.DataFrame) -> pd.DataFrame:
 # Map: table_name → primary key column
 # Map: table_name → primary key column
 _TABLE_PK = {
-    "rest_01_inventory":        "Product Name",
-    "restaurant_requisitions":  "ReqID",
+    "rest_01_inventory":        '"Product Name",user_id',
+    "restaurant_requisitions":  '"ReqID",user_id',
 }
+
+# Tables that need user_id injected on save
+_USER_ID_TABLES = {"rest_01_inventory", "restaurant_requisitions"}
 
 # Tables that have org_id column
 _ORG_SCOPED_TABLES = {"restaurant_requisitions"}
@@ -239,11 +242,16 @@ def save_to_sheet(df, table_name):
         org_id = st.session_state.get("org_id")
         if org_id and table_name in _ORG_SCOPED_TABLES:
             df["org_id"] = org_id
-
+            
         # Inject location using the correct column name for each table
         location_id = st.session_state.get("location_id")
         if location_id and table_name in _LOCATION_COL:
             df[_LOCATION_COL[table_name]] = location_id
+
+        # Inject user_id for tables that need it in their PK
+        user_id = st.session_state.get("user_id")
+        if user_id and table_name in _USER_ID_TABLES:
+            df["user_id"] = user_id
 
         # Replace NaN with None for JSON serialisation
         df = df.where(pd.notnull(df), None)
