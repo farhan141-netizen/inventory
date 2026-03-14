@@ -1923,7 +1923,7 @@ with st.sidebar:
             del st.session_state["inventory"]
         st.rerun()
     
-st.divider()
+    st.divider()
     st.subheader("📦 Product Catalogue")
     st.info(
         "Products are loaded automatically from your organisation's warehouse catalogue. "
@@ -1931,7 +1931,6 @@ st.divider()
         icon="ℹ️",
     )
 
-    # Show catalogue summary
     _sidebar_org_id = st.session_state.get("org_id")
     if _sidebar_org_id:
         try:
