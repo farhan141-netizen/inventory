@@ -823,7 +823,7 @@ st.markdown("""
         background: #FFFFFF !important;
         border: 1px solid var(--border) !important;
         border-radius: 6px !important;
-        color: var(--muted) !important;
+        color: #FFFFFF !important;
         font-size: 16px !important;
         line-height: 1 !important;
         box-shadow: none !important;
@@ -843,7 +843,7 @@ st.markdown("""
         border: 1px solid var(--border) !important;
         border-radius: 14px !important;
         box-shadow: 0 12px 40px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06) !important;
-        color: var(--text) !important;
+        color: #FFFFFF !important;
         padding: 1px 1px 1px !important;
         min-width: 230px !important;
         max-width: 270px !important;
@@ -856,7 +856,7 @@ st.markdown("""
         font-weight: 700 !important;
         text-transform: uppercase !important;
         letter-spacing: 0.10em !important;
-        color: var(--muted) !important;
+        color: #FFFFFF !important;
         padding-bottom: 0px !important;
         margin-bottom: 0px !important;
         border-bottom: 1px solid var(--border) !important;
