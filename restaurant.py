@@ -363,7 +363,7 @@ def _r01_card_controls(card_id: str):
     """Kebab ⋮ popover for per-card settings."""
     _r01_init_card_state(card_id)
     state = st.session_state.r01_dash_cards[card_id]
-    with st.popover("⋮", use_container_width=False):
+    with st.popover("⋮", use_container_width=True):
         st.caption("⚙  CARD SETTINGS")
         state["sort"] = st.selectbox(
             "Sort order",
