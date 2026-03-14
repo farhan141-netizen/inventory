@@ -868,6 +868,15 @@ st.markdown("""
         box-shadow: 0 12px 40px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06) !important;
         overflow: visible !important;
     }
+    div[data-baseweb="popover"] {
+        background: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
+    }
+    div[data-baseweb="popover"] > div > div {
+        background: #FFFFFF !important;
+        border-radius: 14px !important;
+    }
 
     /* Orange top accent line — only on top-level cards */
     [data-testid="stVerticalBlockBorderWrapper"]::before {
