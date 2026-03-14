@@ -990,12 +990,78 @@ if _rest_uid and not _rest_memberships_restaurant:
     st.stop()
 
 # --- INITIALIZATION ---
-if 'inventory' not in st.session_state:
-    st.session_state.inventory = load_from_sheet("rest_01_inventory")
-    if not st.session_state.inventory.empty:
-        st.session_state.inventory = recalculate_inventory(st.session_state.inventory)
+# --- INITIALIZATION ---
+def _build_inventory_from_catalogue() -> pd.DataFrame:
+    """
+    Build restaurant inventory from the org-wide product_metadata catalogue.
+    Merges with any existing rest_01_inventory rows so saved day/consumption
+    data is preserved. New products from the catalogue are added automatically.
+    """
+    org_id = st.session_state.get("org_id")
+    if not org_id:
+        return pd.DataFrame()
 
-if 'cart' not in st.session_state:
+    # 1. Load org product catalogue
+    try:
+        cat_resp = conn.table("product_metadata").select(
+            '"Product Name", "UOM", "Price", "Category"'
+        ).eq("org_id", org_id).execute()
+        cat_rows = cat_resp.data or []
+    except Exception:
+        cat_rows = []
+
+    if not cat_rows:
+        return pd.DataFrame()
+
+    # Normalise catalogue column names (Supabase returns lowercase)
+    cat_df = pd.DataFrame(cat_rows).rename(columns={
+        "product name": "Product Name",
+        "uom":          "UOM",
+        "price":        "Price",
+        "category":     "Category",
+    })
+
+    # 2. Load existing restaurant inventory (has day columns + consumption etc.)
+    existing = load_from_sheet("rest_01_inventory")
+
+    # 3. Build base inventory from catalogue
+    day_cols = [str(i) for i in range(1, 32)]
+    base = pd.DataFrame()
+    base["Product Name"] = cat_df["Product Name"]
+    base["Category"]     = cat_df.get("Category", pd.Series(["General"] * len(cat_df)))
+    base["UOM"]          = cat_df.get("UOM",      pd.Series(["pcs"]     * len(cat_df)))
+    base["Price"]        = pd.to_numeric(cat_df.get("Price", pd.Series([0.0] * len(cat_df))), errors="coerce").fillna(0.0)
+    for d in day_cols:
+        base[d] = 0.0
+    base["Opening Stock"]  = 0.0
+    base["Total Received"] = 0.0
+    base["Consumption"]    = 0.0
+    base["Closing Stock"]  = 0.0
+    base["Physical Count"] = None
+    base["Variance"]       = 0.0
+
+    # 4. Merge: overlay existing saved data onto the base
+    if not existing.empty and "Product Name" in existing.columns:
+        existing = existing.set_index("Product Name")
+        for i, row in base.iterrows():
+            pname = row["Product Name"]
+            if pname in existing.index:
+                ex = existing.loc[pname]
+                # Restore saved numeric columns
+                for col in day_cols + ["Opening Stock", "Total Received", "Consumption",
+                                       "Closing Stock", "Physical Count", "Variance"]:
+                    if col in existing.columns:
+                        base.at[i, col] = ex[col]
+
+    base = base.fillna({d: 0.0 for d in day_cols})
+    base = base.reset_index(drop=True)
+    return recalculate_inventory(base)
+
+
+if "inventory" not in st.session_state:
+    st.session_state.inventory = _build_inventory_from_catalogue()
+
+if "cart" not in st.session_state:
     st.session_state.cart = []
 
 # --- READ-ONLY MODE CHECK ---
@@ -1857,71 +1923,40 @@ with st.sidebar:
             del st.session_state["inventory"]
         st.rerun()
     
-    st.divider()
-    st.subheader("📋 Create Standard Inventory")
-    
-    st.info("""
-    📌 **Expected Format:**
-    - Row 5: Headers (ignored)
-    - Column B: Product Name
-    - Column C: UOM (Unit of Measure)
-    - Column D: Opening Stock
-    
-    ✅ The system will automatically create:
-    - Days 1-31 columns
-    - Total Received, Consumption
-    - Closing Stock, Physical Count, Variance
-    """)
-    
-    inv_file = st.file_uploader("📁 Upload Excel/CSV", type=["csv", "xlsx"], key="upload_inv")
-    
-    if inv_file:
+st.divider()
+    st.subheader("📦 Product Catalogue")
+    st.info(
+        "Products are loaded automatically from your organisation's warehouse catalogue. "
+        "When the warehouse manager adds or updates a product, it will appear here on the next refresh.",
+        icon="ℹ️",
+    )
+
+    # Show catalogue summary
+    _sidebar_org_id = st.session_state.get("org_id")
+    if _sidebar_org_id:
         try:
-            if inv_file.name.endswith('.xlsx'):
-                raw_df = pd.read_excel(inv_file, skiprows=4, header=None)
-            else:
-                raw_df = pd.read_csv(inv_file, skiprows=4, header=None)
+            _cat_resp = conn.table("product_metadata").select(
+                '"Product Name", "Category", "UOM", "Price"'
+            ).eq("org_id", _sidebar_org_id).execute()
+            _cat_count = len(_cat_resp.data or [])
+            st.metric("Products in Catalogue", _cat_count)
+        except Exception:
+            st.caption("Could not load catalogue count.")
 
-            # Create standard format
-            standard_df = create_standard_inventory(raw_df)
-            standard_df = recalculate_inventory(standard_df)
-
-            st.success(f"✅ Template validated: {len(standard_df)} items found")
-            
-            # Preview
-            preview_cols = ["Product Name", "Category", "UOM", "Opening Stock", "Closing Stock"]
-            preview_cols_filtered = [c for c in preview_cols if c in standard_df.columns]
-            
-            st.write("📊 Preview (first 5 items):")
-            st.dataframe(standard_df[preview_cols_filtered].head(), use_container_width=True)
-
-            if st.button("🚀 Create Inventory", type="primary", use_container_width=True, key="push_inv_rest"):
-                try:
-                    if save_to_sheet(standard_df, "rest_01_inventory"):
-                        st.session_state.inventory = standard_df
-                        st.success(f"✅ Inventory created with {len(standard_df)} items!")
-                        st.balloons()
-                        st.rerun()
-                except Exception as e:
-                    st.error(f"❌ Error saving inventory: {str(e)}")
-
-        except Exception as e:
-            st.error(f"❌ Error processing file: {e}")
-    
     st.divider()
     st.subheader("📊 Quick Info")
     st.write("""
     **Inventory Features:**
-    - Days 1-31 tracking
+    - Auto-synced from warehouse catalogue
+    - Days 1-31 daily count tracking
     - Auto-calculation of totals
-    - Daily stock updates
-    
+
     **Requisition Tracking:**
     - Request & receive tracking
     - Pending items with follow-up
     - Complete requisition history
     """)
-    
+
     st.divider()
     if st.button("🗑️ Clear Cache", use_container_width=True, key="clear_cache_rest"):
         if "inventory" in st.session_state:
