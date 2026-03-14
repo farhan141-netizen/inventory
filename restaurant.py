@@ -364,7 +364,7 @@ def _r01_card_controls(card_id: str):
     _r01_init_card_state(card_id)
     state = st.session_state.r01_dash_cards[card_id]
     with st.popover("⋮", use_container_width=False):
-        st.caption("⚙  CARD SETTINGS")
+        st.caption("⚙  Card Settings")
         state["sort"] = st.selectbox(
             "Sort order",
             options=["High → Low", "Low → High"],
@@ -849,25 +849,25 @@ st.markdown("""
     /* ===== Popover interior — polished card settings ===== */
     /* Header caption */
     [data-testid="stPopoverBody"] [data-testid="stCaptionContainer"] p {
-        font-size: 10px !important;
+        font-size: 11px !important;
         font-weight: 700 !important;
         text-transform: uppercase !important;
-        letter-spacing: 0.10em !important;
-        color: var(--muted) !important;
-        padding-bottom: 10px !important;
-        margin-bottom: 6px !important;
-        border-bottom: 1px solid var(--border) !important;
+        letter-spacing: 0.08em !important;
+        color: #94A3B8 !important;
+        padding-bottom: 8px !important;
+        margin-bottom: 4px !important;
+        border-bottom: 1px solid #E2E8F0 !important;
     }
 
-    /* Compact selectbox labels inside popover */
+    /* Selectbox labels inside popover — clean, readable */
     [data-testid="stPopoverBody"] .stSelectbox label p,
     [data-testid="stPopoverBody"] [data-testid="stWidgetLabel"] label p {
-        font-size: 11px !important;
+        font-size: 12px !important;
         font-weight: 600 !important;
-        color: #64748B !important;
-        text-transform: uppercase !important;
-        letter-spacing: 0.05em !important;
-        margin-bottom: 2px !important;
+        color: #334155 !important;
+        text-transform: none !important;
+        letter-spacing: normal !important;
+        margin-bottom: 3px !important;
     }
 
     /* Selectbox controls */
@@ -875,16 +875,18 @@ st.markdown("""
         min-height: 34px !important;
         border-radius: 8px !important;
         font-size: 13px !important;
-        border: 1.5px solid var(--border) !important;
-        background: var(--panel-2, #F8FAFC) !important;
+        border: 1.5px solid #E2E8F0 !important;
+        background: #F8FAFC !important;
         transition: border-color 150ms ease, box-shadow 150ms ease !important;
     }
     [data-testid="stPopoverBody"] div[data-baseweb="select"] > div:hover {
-        border-color: rgba(249,115,22,0.50) !important;
+        border-color: #CBD5E1 !important;
     }
+    /* Override global orange focus ring — keep it subtle inside settings panel */
+    [data-testid="stPopoverBody"] [data-baseweb="select"]:focus-within > div:first-child,
     [data-testid="stPopoverBody"] div[data-baseweb="select"] > div:focus-within {
         border-color: #F97316 !important;
-        box-shadow: 0 0 0 3px rgba(249,115,22,0.10) !important;
+        box-shadow: 0 0 0 2px rgba(249,115,22,0.08) !important;
     }
 
     /* Reduce vertical gaps inside popover */
@@ -949,6 +951,28 @@ st.markdown("""
         height: 3px;
         background: linear-gradient(90deg, #F97316, #F59E0B);
         border-radius: 16px 16px 0 0;
+    }
+
+    /* ===== RESET: Strip card styling from containers INSIDE popovers ===== */
+    [data-testid="stPopoverBody"] [data-testid="stVerticalBlockBorderWrapper"],
+    div[data-baseweb="popover"] [data-testid="stVerticalBlockBorderWrapper"] {
+        background: transparent !important;
+        border: none !important;
+        border-radius: 0 !important;
+        box-shadow: none !important;
+        padding: 0 !important;
+        margin-bottom: 0 !important;
+        transform: none !important;
+    }
+    [data-testid="stPopoverBody"] [data-testid="stVerticalBlockBorderWrapper"]:hover,
+    div[data-baseweb="popover"] [data-testid="stVerticalBlockBorderWrapper"]:hover {
+        border: none !important;
+        box-shadow: none !important;
+        transform: none !important;
+    }
+    [data-testid="stPopoverBody"] [data-testid="stVerticalBlockBorderWrapper"]::before,
+    div[data-baseweb="popover"] [data-testid="stVerticalBlockBorderWrapper"]::before {
+        display: none !important;
     }
 
     /* ===== DataFrames ===== */
