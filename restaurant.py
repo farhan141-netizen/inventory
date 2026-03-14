@@ -364,7 +364,7 @@ def _r01_card_controls(card_id: str):
     _r01_init_card_state(card_id)
     state = st.session_state.r01_dash_cards[card_id]
     with st.popover("⋮", use_container_width=False):
-        st.caption("Card settings")
+        st.caption("⚙  CARD SETTINGS")
         state["sort"] = st.selectbox(
             "Sort order",
             options=["High → Low", "Low → High"],
@@ -384,7 +384,7 @@ def _r01_card_controls(card_id: str):
             index=_chart_opts.index(state["chart_type"]) if state["chart_type"] in _chart_opts else 0,
             key=f"{card_id}_chart_type",
         )
-        if st.button("Refresh card", key=f"{card_id}_refresh"):
+        if st.button("🔄  Refresh", key=f"{card_id}_refresh"):
             for k in ["inventory"]:
                 if k in st.session_state:
                     del st.session_state[k]
@@ -808,7 +808,7 @@ st.markdown("""
         font-weight: 500 !important;
     }
 
-    /* ===== Popover (⋮ card settings) ===== */
+    /* ===== Popover (⋮ card settings) — trigger button ===== */
     [data-testid="stPopover"] {
         display: inline-flex !important;
         width: auto !important;
@@ -825,15 +825,100 @@ st.markdown("""
         color: var(--muted) !important;
         font-size: 16px !important;
         box-shadow: none !important;
+        transition: all 150ms ease !important;
     }
-    /* Popover content panel */
+    [data-testid="stPopover"] > div > button:hover {
+        background: var(--panel-2) !important;
+        border-color: #F97316 !important;
+        color: #F97316 !important;
+    }
+
+    /* Popover content panel — outer shell */
     [data-testid="stPopover"] [data-testid="stPopoverBody"],
     div[data-baseweb="popover"] [data-testid="stPopoverBody"] {
         background: #FFFFFF !important;
         border: 1px solid var(--border) !important;
-        border-radius: 12px !important;
-        box-shadow: var(--shadow-hover) !important;
+        border-radius: 14px !important;
+        box-shadow: 0 12px 40px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06) !important;
         color: var(--text) !important;
+        padding: 18px 20px 14px !important;
+        min-width: 230px !important;
+        max-width: 270px !important;
+    }
+
+    /* ===== Popover interior — polished card settings ===== */
+    /* Header caption */
+    [data-testid="stPopoverBody"] [data-testid="stCaptionContainer"] p {
+        font-size: 10px !important;
+        font-weight: 700 !important;
+        text-transform: uppercase !important;
+        letter-spacing: 0.10em !important;
+        color: var(--muted) !important;
+        padding-bottom: 10px !important;
+        margin-bottom: 6px !important;
+        border-bottom: 1px solid var(--border) !important;
+    }
+
+    /* Compact selectbox labels inside popover */
+    [data-testid="stPopoverBody"] .stSelectbox label p,
+    [data-testid="stPopoverBody"] [data-testid="stWidgetLabel"] label p {
+        font-size: 11px !important;
+        font-weight: 600 !important;
+        color: #64748B !important;
+        text-transform: uppercase !important;
+        letter-spacing: 0.05em !important;
+        margin-bottom: 2px !important;
+    }
+
+    /* Selectbox controls */
+    [data-testid="stPopoverBody"] div[data-baseweb="select"] > div {
+        min-height: 34px !important;
+        border-radius: 8px !important;
+        font-size: 13px !important;
+        border: 1.5px solid var(--border) !important;
+        background: var(--panel-2, #F8FAFC) !important;
+        transition: border-color 150ms ease, box-shadow 150ms ease !important;
+    }
+    [data-testid="stPopoverBody"] div[data-baseweb="select"] > div:hover {
+        border-color: rgba(249,115,22,0.50) !important;
+    }
+    [data-testid="stPopoverBody"] div[data-baseweb="select"] > div:focus-within {
+        border-color: #F97316 !important;
+        box-shadow: 0 0 0 3px rgba(249,115,22,0.10) !important;
+    }
+
+    /* Reduce vertical gaps inside popover */
+    [data-testid="stPopoverBody"] [data-testid="stVerticalBlock"] > div {
+        margin-bottom: 0 !important;
+        padding-top: 0 !important;
+        padding-bottom: 0 !important;
+    }
+    [data-testid="stPopoverBody"] .stSelectbox {
+        margin-bottom: 4px !important;
+    }
+
+    /* Refresh / action button inside popover */
+    [data-testid="stPopoverBody"] button[data-testid="stBaseButton-secondary"] {
+        width: 100% !important;
+        margin-top: 12px !important;
+        padding: 7px 14px !important;
+        min-height: 34px !important;
+        height: 34px !important;
+        border-radius: 8px !important;
+        font-size: 12px !important;
+        font-weight: 600 !important;
+        background: linear-gradient(135deg, #F97316, #F59E0B) !important;
+        color: #FFFFFF !important;
+        border: none !important;
+        box-shadow: 0 2px 6px rgba(249,115,22,0.22) !important;
+        transition: all 150ms ease !important;
+        letter-spacing: 0.03em !important;
+        text-transform: none !important;
+    }
+    [data-testid="stPopoverBody"] button[data-testid="stBaseButton-secondary"]:hover {
+        background: linear-gradient(135deg, #EA580C, #D97706) !important;
+        box-shadow: 0 4px 12px rgba(249,115,22,0.32) !important;
+        transform: translateY(-1px) !important;
     }
 
     /* ===== Cards / containers ===== */
