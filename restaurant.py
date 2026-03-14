@@ -839,18 +839,32 @@ st.markdown("""
     /* ===== Cards / containers ===== */
     [data-testid="stVerticalBlockBorderWrapper"] {
         background: #FFFFFF !important;
-        border: 1.5px solid rgba(249,115,22,0.15) !important;
+        border: 1.5px solid rgba(249,115,22,0.18) !important;
         border-radius: 16px !important;
-        box-shadow: var(--shadow) !important;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.04), 0 10px 40px rgba(0,0,0,0.10) !important;
         padding: 20px !important;
         margin-bottom: 16px !important;
-        transition: box-shadow 200ms ease, border-color 200ms ease;
+        transition: box-shadow 200ms ease, border-color 200ms ease, transform 150ms ease;
+        position: relative;
     }
     [data-testid="stVerticalBlockBorderWrapper"]:hover {
-        border-color: rgba(249,115,22,0.35) !important;
-        box-shadow: var(--shadow-hover) !important;
+        border-color: rgba(249,115,22,0.40) !important;
+        box-shadow: 0 8px 16px rgba(0,0,0,0.08), 0 20px 60px rgba(0,0,0,0.14) !important;
+        transform: translateY(-2px) !important;
     }
     [data-testid="stVerticalBlockBorderWrapper"] > div { padding: 0 !important; }
+
+    /* Orange top accent line on each dashboard card */
+    [data-testid="stVerticalBlockBorderWrapper"]::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 3px;
+        background: linear-gradient(90deg, #F97316, #F59E0B);
+        border-radius: 16px 16px 0 0;
+    }
 
     /* ===== DataFrames ===== */
     [data-testid="stDataFrame"] {
