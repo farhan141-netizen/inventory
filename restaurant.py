@@ -118,7 +118,7 @@ def _rest_logout():
         pass
     keys_to_clear = [
         "user_id", "user_email", "org_id", "location_id", "memberships", "role",
-        "restaurant_name", "read_only", "r01_dash_cards", "inventory", "cart",
+        "restaurant_name", "read_only", "inventory", "cart",
     ]
     for k in keys_to_clear:
         if k in st.session_state:
@@ -349,52 +349,6 @@ def recalculate_inventory(df):
 _R01_CHART_PALETTE = ["#7C5CFC", "#10B981", "#F59E0B", "#EF4444", "#6366F1", "#06B6D4", "#F97316", "#8B5CF6", "#14B8A6", "#EC4899"]
 
 # --- Dashboard card state helpers ---
-def _r01_init_card_state(card_id, default_sort="High → Low", default_topn=10):
-    if "r01_dash_cards" not in st.session_state:
-        st.session_state.r01_dash_cards = {}
-    if card_id not in st.session_state.r01_dash_cards:
-        st.session_state.r01_dash_cards[card_id] = {
-            "sort": default_sort,
-            "topn": default_topn,
-            "chart_type": "Pie Chart",
-        }
-
-def _r01_card_controls(card_id: str):
-    """Kebab ⋮ popover for per-card settings."""
-    _r01_init_card_state(card_id)
-    state = st.session_state.r01_dash_cards[card_id]
-    with st.popover("⋮", use_container_width=False):
-        st.caption("⚙  CARD SETTINGS")
-        state["sort"] = st.selectbox(
-            "Sort order",
-            options=["High → Low", "Low → High"],
-            index=0 if state["sort"] == "High → Low" else 1,
-            key=f"{card_id}_sort",
-        )
-        state["topn"] = st.selectbox(
-            "Item count",
-            options=[3, 5, 10, 25, 50, 100],
-            index=[3, 5, 10, 25, 50, 100].index(state["topn"]) if state["topn"] in [3, 5, 10, 25, 50, 100] else 2,
-            key=f"{card_id}_topn",
-        )
-        _chart_opts = ["Pie Chart", "Bar Chart", "Table"]
-        state["chart_type"] = st.selectbox(
-            "Chart type",
-            options=_chart_opts,
-            index=_chart_opts.index(state["chart_type"]) if state["chart_type"] in _chart_opts else 0,
-            key=f"{card_id}_chart_type",
-        )
-        if st.button("🔄  Refresh", key=f"{card_id}_refresh"):
-            for k in ["inventory"]:
-                if k in st.session_state:
-                    del st.session_state[k]
-            st.rerun()
-    state["sort"] = st.session_state.get(f"{card_id}_sort", state["sort"])
-    state["topn"] = st.session_state.get(f"{card_id}_topn", state["topn"])
-    state["chart_type"] = st.session_state.get(f"{card_id}_chart_type", state["chart_type"])
-    st.session_state.r01_dash_cards[card_id] = state
-    return state
-
 def _r01_make_pie(df, label_col, value_col):
     if df is None or df.empty:
         st.info("📭 No data.")
@@ -808,144 +762,6 @@ st.markdown("""
         font-weight: 500 !important;
     }
 
-    /* ===== Fix: Popover (⋮) card-settings button — compact & inline ===== */
-    [data-testid="stPopover"] {
-        display: inline-flex !important;
-        width: auto !important;
-        vertical-align: middle !important;
-    }
-    [data-testid="stPopover"] > div > button,
-    [data-testid="stPopover"] button[data-testid="stBaseButton-secondary"] {
-        padding: 2px 6px !important;
-        min-height: 28px !important;
-        height: 28px !important;
-        width: 28px !important;
-        background: transparent !important;
-        border: 1px solid var(--border) !important;
-        border-radius: 6px !important;
-        color: var(--muted) !important;
-        font-size: 16px !important;
-        line-height: 1 !important;
-        box-shadow: none !important;
-        transition: all 150ms ease !important;
-    }
-    [data-testid="stPopover"] > div > button:hover,
-    [data-testid="stPopover"] button[data-testid="stBaseButton-secondary"]:hover {
-        background: var(--panel-2) !important;
-        border-color: var(--accent) !important;
-        color: var(--accent) !important;
-    }
-
-    /* Popover content panel — outer shell */
-    [data-testid="stPopover"] [data-testid="stPopoverBody"],
-    div[data-baseweb="popover"] [data-testid="stPopoverBody"] {
-        background: #FFFFFF !important;
-        border: 1px solid var(--border) !important;
-        border-radius: 14px !important;
-        box-shadow: 0 12px 40px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06) !important;
-        color: var(--text) !important;
-        padding: 18px 20px 14px !important;
-        min-width: 230px !important;
-        max-width: 270px !important;
-    }
-
-    /* ===== Popover interior — polished card settings ===== */
-    /* Header caption */
-    [data-testid="stPopoverBody"] [data-testid="stCaptionContainer"] p {
-        font-size: 10px !important;
-        font-weight: 700 !important;
-        text-transform: uppercase !important;
-        letter-spacing: 0.10em !important;
-        color: var(--muted) !important;
-        padding-bottom: 10px !important;
-        margin-bottom: 6px !important;
-        border-bottom: 1px solid var(--border) !important;
-    }
-
-    /* Compact selectbox labels inside popover */
-    [data-testid="stPopoverBody"] .stSelectbox label p,
-    [data-testid="stPopoverBody"] [data-testid="stWidgetLabel"] label p {
-        font-size: 11px !important;
-        font-weight: 600 !important;
-        color: #64748B !important;
-        text-transform: uppercase !important;
-        letter-spacing: 0.05em !important;
-        margin-bottom: 2px !important;
-    }
-
-    /* Selectbox controls */
-    [data-testid="stPopoverBody"] div[data-baseweb="select"] > div {
-        min-height: 34px !important;
-        border-radius: 8px !important;
-        font-size: 13px !important;
-        border: 1.5px solid var(--border) !important;
-        background: var(--panel-2, #F8FAFC) !important;
-        transition: border-color 150ms ease, box-shadow 150ms ease !important;
-    }
-    [data-testid="stPopoverBody"] div[data-baseweb="select"] > div:hover {
-        border-color: rgba(249,115,22,0.50) !important;
-    }
-    [data-testid="stPopoverBody"] div[data-baseweb="select"] > div:focus-within {
-        border-color: var(--accent) !important;
-        box-shadow: 0 0 0 3px rgba(249,115,22,0.10) !important;
-    }
-
-    /* Reduce vertical gaps inside popover */
-    [data-testid="stPopoverBody"] [data-testid="stVerticalBlock"] > div {
-        margin-bottom: 0 !important;
-        padding-top: 0 !important;
-        padding-bottom: 0 !important;
-    }
-    [data-testid="stPopoverBody"] .stSelectbox {
-        margin-bottom: 4px !important;
-    }
-
-    /* Refresh / action button inside popover */
-    [data-testid="stPopoverBody"] button[data-testid="stBaseButton-secondary"] {
-        width: 100% !important;
-        margin-top: 12px !important;
-        padding: 7px 14px !important;
-        min-height: 34px !important;
-        height: 34px !important;
-        border-radius: 8px !important;
-        font-size: 12px !important;
-        font-weight: 600 !important;
-        background: linear-gradient(135deg, #F97316, #F59E0B) !important;
-        color: #FFFFFF !important;
-        border: none !important;
-        box-shadow: 0 2px 6px rgba(249,115,22,0.22) !important;
-        transition: all 150ms ease !important;
-        letter-spacing: 0.03em !important;
-        text-transform: none !important;
-    }
-    [data-testid="stPopoverBody"] button[data-testid="stBaseButton-secondary"]:hover {
-        background: linear-gradient(135deg, #EA580C, #D97706) !important;
-        box-shadow: 0 4px 12px rgba(249,115,22,0.32) !important;
-        transform: translateY(-1px) !important;
-    }
-
-    /* Strip card styling from containers inside popovers */
-    [data-testid="stPopoverBody"] [data-testid="stVerticalBlockBorderWrapper"],
-    div[data-baseweb="popover"] [data-testid="stVerticalBlockBorderWrapper"] {
-        background: transparent !important;
-        border: none !important;
-        border-radius: 0 !important;
-        box-shadow: none !important;
-        padding: 0 !important;
-        margin: 0 !important;
-        transform: none !important;
-    }
-    [data-testid="stPopoverBody"] [data-testid="stVerticalBlockBorderWrapper"]:hover,
-    div[data-baseweb="popover"] [data-testid="stVerticalBlockBorderWrapper"]:hover {
-        border: none !important;
-        box-shadow: none !important;
-        transform: none !important;
-    }
-    [data-testid="stPopoverBody"] [data-testid="stVerticalBlockBorderWrapper"]::before,
-    div[data-baseweb="popover"] [data-testid="stVerticalBlockBorderWrapper"]::before {
-        display: none !important;
-        content: none !important;
-    }
 
     /* ===== Cards / containers ===== */
     [data-testid="stVerticalBlockBorderWrapper"] {
@@ -1945,9 +1761,8 @@ with tab_dash:
     with row1_l:
         with st.container(border=True):
             st.markdown('<div class="r01-card-title">🛒 Most Requested Items <span class="meta">by qty</span></div>', unsafe_allow_html=True)
-            s1 = _r01_card_controls("r01_most_requested")
-            asc1  = (s1["sort"] == "Low → High")
-            topn1 = int(s1["topn"])
+            asc1 = False
+            topn1 = 10
             most_req = pd.DataFrame(columns=["Item", "Requested Qty"])
             if not req_filtered.empty and "Item" in req_filtered.columns and "Qty" in req_filtered.columns:
                 most_req = (
@@ -1957,16 +1772,15 @@ with tab_dash:
                     .sort_values("Requested Qty", ascending=asc1)
                     .head(topn1)
                 )
-            _r01_render_card(most_req, "Item", "Requested Qty", s1["chart_type"])
+            _r01_render_card(most_req, "Item", "Requested Qty", "Pie Chart")
             if st.button("⛶ Expand", key="expand_r01_most_requested", use_container_width=True):
-                _r01_show_fullscreen_card("Most Requested Items", most_req, "Item", "Requested Qty", s1["chart_type"])
+                _r01_show_fullscreen_card("Most Requested Items", most_req, "Item", "Requested Qty", "Pie Chart")
 
     with row1_r:
         with st.container(border=True):
             st.markdown('<div class="r01-card-title">📦 Most Received Items <span class="meta">dispatched qty</span></div>', unsafe_allow_html=True)
-            s2 = _r01_card_controls("r01_most_received")
-            asc2  = (s2["sort"] == "Low → High")
-            topn2 = int(s2["topn"])
+            asc2 = False
+            topn2 = 10
             most_recv = pd.DataFrame(columns=["Item", "Received Qty"])
             if not req_filtered.empty and "DispatchQty" in req_filtered.columns:
                 disp = req_filtered[req_filtered["Status"].isin(["Dispatched", "Completed"])]
@@ -1978,9 +1792,9 @@ with tab_dash:
                         .sort_values("Received Qty", ascending=asc2)
                         .head(topn2)
                     )
-            _r01_render_card(most_recv, "Item", "Received Qty", s2["chart_type"])
+            _r01_render_card(most_recv, "Item", "Received Qty", "Pie Chart")
             if st.button("⛶ Expand", key="expand_r01_most_received", use_container_width=True):
-                _r01_show_fullscreen_card("Most Received Items", most_recv, "Item", "Received Qty", s2["chart_type"])
+                _r01_show_fullscreen_card("Most Received Items", most_recv, "Item", "Received Qty", "Pie Chart")
 
     # --- Row 2: Current Stock Balance | Low Stock Alert ---
     row2_l, row2_r = st.columns(2, gap="small")
@@ -1988,9 +1802,8 @@ with tab_dash:
     with row2_l:
         with st.container(border=True):
             st.markdown('<div class="r01-card-title">📊 Current Stock Balance <span class="meta">closing stock</span></div>', unsafe_allow_html=True)
-            s3 = _r01_card_controls("r01_stock_balance")
-            asc3  = (s3["sort"] == "Low → High")
-            topn3 = int(s3["topn"])
+            asc3 = False
+            topn3 = 10
             stock_bal = pd.DataFrame(columns=["Product Name", "Closing Stock"])
             if not inv_dash.empty and "Closing Stock" in inv_dash.columns:
                 stock_bal = (
@@ -2000,15 +1813,14 @@ with tab_dash:
                     .sort_values("Closing Stock", ascending=asc3)
                     .head(topn3)
                 )
-            _r01_render_card(stock_bal, "Product Name", "Closing Stock", s3["chart_type"])
+            _r01_render_card(stock_bal, "Product Name", "Closing Stock", "Pie Chart")
             if st.button("⛶ Expand", key="expand_r01_stock_balance", use_container_width=True):
-                _r01_show_fullscreen_card("Current Stock Balance", stock_bal, "Product Name", "Closing Stock", s3["chart_type"])
+                _r01_show_fullscreen_card("Current Stock Balance", stock_bal, "Product Name", "Closing Stock", "Pie Chart")
 
     with row2_r:
         with st.container(border=True):
             st.markdown('<div class="r01-card-title">⚠️ Low / Zero Stock Items <span class="meta">needs reorder</span></div>', unsafe_allow_html=True)
-            s4 = _r01_card_controls("r01_low_stock")
-            topn4 = int(s4["topn"])
+            topn4 = 10
             low_stock = pd.DataFrame(columns=["Product Name", "Closing Stock"])
             if not inv_dash.empty and "Closing Stock" in inv_dash.columns:
                 low_stock = (
@@ -2023,9 +1835,9 @@ with tab_dash:
                 st.success("✅ All items have sufficient stock!")
             else:
                 st.warning(f"⚠️ {len(low_stock)} items with low/zero stock")
-                _r01_render_card(low_stock, "Product Name", "Closing Stock", s4["chart_type"])
+                _r01_render_card(low_stock, "Product Name", "Closing Stock", "Pie Chart")
                 if st.button("⛶ Expand", key="expand_r01_low_stock", use_container_width=True):
-                    _r01_show_fullscreen_card("Low / Zero Stock Items", low_stock, "Product Name", "Closing Stock", s4["chart_type"])
+                    _r01_show_fullscreen_card("Low / Zero Stock Items", low_stock, "Product Name", "Closing Stock", "Pie Chart")
 
     # --- Row 3: Requisition Status Breakdown | Top Pending Items ---
     row3_l, row3_r = st.columns(2, gap="small")
@@ -2033,7 +1845,6 @@ with tab_dash:
     with row3_l:
         with st.container(border=True):
             st.markdown('<div class="r01-card-title">🔵 Requisition Status Breakdown <span class="meta">by count</span></div>', unsafe_allow_html=True)
-            s5 = _r01_card_controls("r01_req_status")
             status_breakdown = pd.DataFrame(columns=["Status", "Count"])
             if not req_filtered.empty and "Status" in req_filtered.columns:
                 status_breakdown = (
@@ -2042,16 +1853,15 @@ with tab_dash:
                     .rename(columns={"size": "Count"})
                     .sort_values("Count", ascending=False)
                 )
-            _r01_render_card(status_breakdown, "Status", "Count", s5["chart_type"])
+            _r01_render_card(status_breakdown, "Status", "Count", "Pie Chart")
             if st.button("⛶ Expand", key="expand_r01_req_status", use_container_width=True):
-                _r01_show_fullscreen_card("Requisition Status Breakdown", status_breakdown, "Status", "Count", s5["chart_type"])
+                _r01_show_fullscreen_card("Requisition Status Breakdown", status_breakdown, "Status", "Count", "Pie Chart")
 
     with row3_r:
         with st.container(border=True):
             st.markdown('<div class="r01-card-title">⏳ Top Pending Items <span class="meta">unfulfilled qty</span></div>', unsafe_allow_html=True)
-            s6 = _r01_card_controls("r01_pending_items")
-            asc6  = (s6["sort"] == "Low → High")
-            topn6 = int(s6["topn"])
+            asc6 = False
+            topn6 = 10
             pending_items = pd.DataFrame(columns=["Item", "Pending Qty"])
             if not req_filtered.empty and "Status" in req_filtered.columns:
                 pend_df = req_filtered[req_filtered["Status"] == "Pending"].copy()
@@ -2063,9 +1873,9 @@ with tab_dash:
                         .sort_values("Pending Qty", ascending=asc6)
                         .head(topn6)
                     )
-            _r01_render_card(pending_items, "Item", "Pending Qty", s6["chart_type"])
+            _r01_render_card(pending_items, "Item", "Pending Qty", "Pie Chart")
             if st.button("⛶ Expand", key="expand_r01_pending_items", use_container_width=True):
-                _r01_show_fullscreen_card("Top Pending Items", pending_items, "Item", "Pending Qty", s6["chart_type"])
+                _r01_show_fullscreen_card("Top Pending Items", pending_items, "Item", "Pending Qty", "Pie Chart")
 
     # --- Row 4: Daily Requisition Trend | Category Stock Distribution ---
     row4_l, row4_r = st.columns(2, gap="small")
@@ -2108,7 +1918,6 @@ with tab_dash:
     with row4_r:
         with st.container(border=True):
             st.markdown('<div class="r01-card-title">🗂️ Stock by Category <span class="meta">closing stock</span></div>', unsafe_allow_html=True)
-            s7 = _r01_card_controls("r01_cat_stock")
             cat_stock = pd.DataFrame(columns=["Category", "Total Stock"])
             if not inv_dash.empty and "Category" in inv_dash.columns and "Closing Stock" in inv_dash.columns:
                 cat_stock = (
@@ -2116,11 +1925,11 @@ with tab_dash:
                     .groupby("Category", as_index=False)["Closing Stock"]
                     .sum()
                     .rename(columns={"Closing Stock": "Total Stock"})
-                    .sort_values("Total Stock", ascending=(s7["sort"] == "Low → High"))
+                    .sort_values("Total Stock", ascending=False)
                 )
-            _r01_render_card(cat_stock, "Category", "Total Stock", s7["chart_type"])
+            _r01_render_card(cat_stock, "Category", "Total Stock", "Pie Chart")
             if st.button("⛶ Expand", key="expand_r01_cat_stock", use_container_width=True):
-                _r01_show_fullscreen_card("Stock by Category", cat_stock, "Category", "Total Stock", s7["chart_type"])
+                _r01_show_fullscreen_card("Stock by Category", cat_stock, "Category", "Total Stock", "Pie Chart")
 
     # --- Export ---
     st.markdown("---")
