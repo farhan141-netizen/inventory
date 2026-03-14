@@ -1041,7 +1041,7 @@ st.markdown("""
     }
 
 
-    /* ===== Card Settings Popover ===== */
+    /* ===== Card Settings Popover — absolute top-right of card ===== */
     .card-settings-header {
         font-size: 11px;
         font-weight: 600;
@@ -1061,7 +1061,16 @@ st.markdown("""
         margin-bottom: 4px;
         margin-top: 10px;
     }
-    /* Style the popover trigger button (⋮) */
+    /* Pin popover trigger to top-right of its bordered card */
+    [data-testid="stVerticalBlockBorderWrapper"] {
+        position: relative;
+    }
+    [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stPopoverButton"] {
+        position: absolute !important;
+        top: 10px;
+        right: 10px;
+        z-index: 10;
+    }
     [data-testid="stPopoverButton"] > button {
         background: transparent !important;
         border: 1px solid transparent !important;
@@ -1078,6 +1087,13 @@ st.markdown("""
         background: rgba(249,115,22,0.08) !important;
         border-color: rgba(249,115,22,0.25) !important;
         color: #F97316 !important;
+    }
+    /* Strip cumulative padding from nested elements inside dashboard cards */
+    [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stHorizontalBlock"] {
+        gap: 0.5rem !important;
+    }
+    [data-testid="stVerticalBlockBorderWrapper"] [data-testid="column"] > div {
+        padding: 0 !important;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -1843,11 +1859,8 @@ with tab_dash:
 
     with row1_l:
         with st.container(border=True):
-            _title_c1, _set_c1 = st.columns([9, 1])
-            with _title_c1:
-                st.markdown('<div class="r01-card-title">🛒 Most Requested Items <span class="meta">by qty</span></div>', unsafe_allow_html=True)
-            with _set_c1:
-                asc1, topn1, chart1 = _r01_card_settings("most_req")
+            st.markdown('<div class="r01-card-title">🛒 Most Requested Items <span class="meta">by qty</span></div>', unsafe_allow_html=True)
+            asc1, topn1, chart1 = _r01_card_settings("most_req")
             most_req = pd.DataFrame(columns=["Item", "Requested Qty"])
             if not req_filtered.empty and "Item" in req_filtered.columns and "Qty" in req_filtered.columns:
                 most_req = (
@@ -1863,11 +1876,8 @@ with tab_dash:
 
     with row1_r:
         with st.container(border=True):
-            _title_c2, _set_c2 = st.columns([9, 1])
-            with _title_c2:
-                st.markdown('<div class="r01-card-title">📦 Most Received Items <span class="meta">dispatched qty</span></div>', unsafe_allow_html=True)
-            with _set_c2:
-                asc2, topn2, chart2 = _r01_card_settings("most_recv")
+            st.markdown('<div class="r01-card-title">📦 Most Received Items <span class="meta">dispatched qty</span></div>', unsafe_allow_html=True)
+            asc2, topn2, chart2 = _r01_card_settings("most_recv")
             most_recv = pd.DataFrame(columns=["Item", "Received Qty"])
             if not req_filtered.empty and "DispatchQty" in req_filtered.columns:
                 disp = req_filtered[req_filtered["Status"].isin(["Dispatched", "Completed"])]
@@ -1888,11 +1898,8 @@ with tab_dash:
 
     with row2_l:
         with st.container(border=True):
-            _title_c3, _set_c3 = st.columns([9, 1])
-            with _title_c3:
-                st.markdown('<div class="r01-card-title">📊 Current Stock Balance <span class="meta">closing stock</span></div>', unsafe_allow_html=True)
-            with _set_c3:
-                asc3, topn3, chart3 = _r01_card_settings("stock_bal")
+            st.markdown('<div class="r01-card-title">📊 Current Stock Balance <span class="meta">closing stock</span></div>', unsafe_allow_html=True)
+            asc3, topn3, chart3 = _r01_card_settings("stock_bal")
             stock_bal = pd.DataFrame(columns=["Product Name", "Closing Stock"])
             if not inv_dash.empty and "Closing Stock" in inv_dash.columns:
                 stock_bal = (
@@ -1908,11 +1915,8 @@ with tab_dash:
 
     with row2_r:
         with st.container(border=True):
-            _title_c4, _set_c4 = st.columns([9, 1])
-            with _title_c4:
-                st.markdown('<div class="r01-card-title">⚠️ Low / Zero Stock Items <span class="meta">needs reorder</span></div>', unsafe_allow_html=True)
-            with _set_c4:
-                _asc4, topn4, chart4 = _r01_card_settings("low_stock", default_sort="Low → High")
+            st.markdown('<div class="r01-card-title">⚠️ Low / Zero Stock Items <span class="meta">needs reorder</span></div>', unsafe_allow_html=True)
+            _asc4, topn4, chart4 = _r01_card_settings("low_stock", default_sort="Low → High")
             low_stock = pd.DataFrame(columns=["Product Name", "Closing Stock"])
             if not inv_dash.empty and "Closing Stock" in inv_dash.columns:
                 low_stock = (
@@ -1936,11 +1940,8 @@ with tab_dash:
 
     with row3_l:
         with st.container(border=True):
-            _title_c5, _set_c5 = st.columns([9, 1])
-            with _title_c5:
-                st.markdown('<div class="r01-card-title">🔵 Requisition Status Breakdown <span class="meta">by count</span></div>', unsafe_allow_html=True)
-            with _set_c5:
-                asc5, topn5, chart5 = _r01_card_settings("req_status")
+            st.markdown('<div class="r01-card-title">🔵 Requisition Status Breakdown <span class="meta">by count</span></div>', unsafe_allow_html=True)
+            asc5, topn5, chart5 = _r01_card_settings("req_status")
             status_breakdown = pd.DataFrame(columns=["Status", "Count"])
             if not req_filtered.empty and "Status" in req_filtered.columns:
                 status_breakdown = (
@@ -1956,11 +1957,8 @@ with tab_dash:
 
     with row3_r:
         with st.container(border=True):
-            _title_c6, _set_c6 = st.columns([9, 1])
-            with _title_c6:
-                st.markdown('<div class="r01-card-title">⏳ Top Pending Items <span class="meta">unfulfilled qty</span></div>', unsafe_allow_html=True)
-            with _set_c6:
-                asc6, topn6, chart6 = _r01_card_settings("pending_items")
+            st.markdown('<div class="r01-card-title">⏳ Top Pending Items <span class="meta">unfulfilled qty</span></div>', unsafe_allow_html=True)
+            asc6, topn6, chart6 = _r01_card_settings("pending_items")
             pending_items = pd.DataFrame(columns=["Item", "Pending Qty"])
             if not req_filtered.empty and "Status" in req_filtered.columns:
                 pend_df = req_filtered[req_filtered["Status"] == "Pending"].copy()
@@ -1981,11 +1979,8 @@ with tab_dash:
 
     with row4_l:
         with st.container(border=True):
-            _title_c7, _set_c7 = st.columns([9, 1])
-            with _title_c7:
-                st.markdown('<div class="r01-card-title">📅 Daily Requisition Trend <span class="meta">requests over time</span></div>', unsafe_allow_html=True)
-            with _set_c7:
-                _asc7, _topn7, chart7 = _r01_card_settings("trend", default_chart="Bar Chart")
+            st.markdown('<div class="r01-card-title">📅 Daily Requisition Trend <span class="meta">requests over time</span></div>', unsafe_allow_html=True)
+            _asc7, _topn7, chart7 = _r01_card_settings("trend", default_chart="Bar Chart")
             trend_df = pd.DataFrame(columns=["Date", "Total Qty"])
             if not req_filtered.empty and "RequestedDate" in req_filtered.columns and "Qty" in req_filtered.columns:
                 _trend_src = req_filtered.copy()
@@ -2027,11 +2022,8 @@ with tab_dash:
 
     with row4_r:
         with st.container(border=True):
-            _title_c8, _set_c8 = st.columns([9, 1])
-            with _title_c8:
-                st.markdown('<div class="r01-card-title">🗂️ Stock by Category <span class="meta">closing stock</span></div>', unsafe_allow_html=True)
-            with _set_c8:
-                asc8, topn8, chart8 = _r01_card_settings("cat_stock")
+            st.markdown('<div class="r01-card-title">🗂️ Stock by Category <span class="meta">closing stock</span></div>', unsafe_allow_html=True)
+            asc8, topn8, chart8 = _r01_card_settings("cat_stock")
             cat_stock = pd.DataFrame(columns=["Category", "Total Stock"])
             if not inv_dash.empty and "Category" in inv_dash.columns and "Closing Stock" in inv_dash.columns:
                 cat_stock = (
