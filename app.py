@@ -3256,31 +3256,42 @@ with tab_ops:
         logs = load_from_sheet("activity_logs")
         if not logs.empty:
             full_logs = logs.iloc[::-1]
-            items_per_page = 6
+            items_per_page = 8
             total_pages = (len(full_logs) - 1) // items_per_page + 1
             start_idx = st.session_state.log_page * items_per_page
             end_idx = start_idx + items_per_page
             current_logs = full_logs.iloc[start_idx:end_idx]
 
-            st.markdown('<div class="log-container">', unsafe_allow_html=True)
             for _, row in current_logs.iterrows():
                 is_undone = row.get("Status", "") == "Undone"
-                row_class = "log-row-undone" if is_undone else ""
+                h_item = row.get("Item", "")
+                h_qty = row.get("Qty", "")
+                h_day = row.get("Day", "")
+                h_time = str(row.get("Timestamp", ""))
+                # Extract just time portion if timestamp is long
+                if len(h_time) > 8:
+                    h_time = h_time.split(" ")[-1][:8] if " " in h_time else h_time[:8]
 
-                c_row = st.container()
-                c_txt, c_undo = c_row.columns([4, 1])
-                with c_txt:
-                    h_item, h_qty, h_day, h_time = row.get("Item", ""), row.get("Qty", ""), row.get("Day", ""), row.get("Timestamp", "")
-                    l_html = (
-                        f'<div class="log-row {row_class}"><div class="log-info"><b>{h_item}</b><br>'
-                        f'{h_qty} | D{h_day} <span class="log-time">{h_time}</span></div></div>'
+                _opacity = "0.50" if is_undone else "1"
+                _border_color = "#EF4444" if is_undone else "var(--accent)"
+                _badge = "<span style='color:#EF4444;font-size:9px;font-weight:600;margin-left:4px;'>UNDONE</span>" if is_undone else ""
+
+                _log_c1, _log_c2 = st.columns([6, 1])
+                with _log_c1:
+                    st.markdown(
+                        f"<div style='display:flex;align-items:center;justify-content:space-between;"
+                        f"background:#fff;border:1px solid var(--border);border-left:3px solid {_border_color};"
+                        f"border-radius:8px;padding:6px 10px;font-size:12px;opacity:{_opacity};'>"
+                        f"<span><b>{h_item}</b>&nbsp;&nbsp;QTY: {h_qty} &nbsp;|&nbsp; D{h_day}"
+                        f" <span style='color:var(--muted);font-size:10px;margin-left:4px;'>{h_time}</span>"
+                        f"{_badge}</span>"
+                        f"</div>",
+                        unsafe_allow_html=True,
                     )
-                    st.markdown(l_html, unsafe_allow_html=True)
-                with c_undo:
+                with _log_c2:
                     if (not is_undone) and str(row.get("LogID", "")).strip():
-                        if st.button("↩", key=f"rev_{row['LogID']}", use_container_width=True):
+                        if st.button("↩", key=f"rev_{row['LogID']}"):
                             undo_entry(row["LogID"])
-            st.markdown("</div>", unsafe_allow_html=True)
 
             p_prev, p_next = st.columns(2)
             with p_prev:
