@@ -2829,6 +2829,29 @@ def _build_lss_html(df, cols, height=300):
             display = _fmt_val(c, val)
             h.append(f'<td style="padding:7px 10px;border-bottom:1px solid #E2E8F0;{style}">{display}</td>')
         h.append('</tr>')
+    # Footer: Total Amount sum
+    if "Total Amount" in cols:
+        try:
+            grand_total = df["Total Amount"].astype(float).sum()
+        except Exception:
+            grand_total = 0.0
+        ta_idx = cols.index("Total Amount")
+        h.append('<tr style="background:#F1F5F9;border-top:2px solid var(--border);">')
+        for ci, c in enumerate(cols):
+            if ci == ta_idx - 1:
+                h.append(
+                    f'<td style="padding:8px 10px;font-weight:700;font-size:12px;color:var(--text);'
+                    f'text-align:right;border-top:2px solid var(--border);">Total =</td>'
+                )
+            elif ci == ta_idx:
+                h.append(
+                    f'<td style="padding:8px 10px;font-weight:700;font-size:13px;color:var(--accent);'
+                    f'text-align:{align};border-top:2px solid var(--border);'
+                    f'font-family:JetBrains Mono,monospace;">{grand_total:,.2f}</td>'
+                )
+            else:
+                h.append(f'<td style="padding:8px 10px;border-top:2px solid var(--border);"></td>')
+        h.append('</tr>')
     h.append('</tbody></table></div>')
     return "".join(h)
 
