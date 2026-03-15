@@ -529,7 +529,7 @@ def logout_user():
     keys_to_clear = [
         "user_id", "org_id", "location_id", "memberships", "role",
         "dash_cards", "r01_dash_cards", "inventory", "log_page",
-        "bulk_upload_state", "cart", "_show_lss_fullscreen", "_lss_fmt_pending",
+        "bulk_upload_state", "cart", "_show_lss_fullscreen", "_lss_fmt_pending", "_lss_sort",
     ]
     for k in keys_to_clear:
         if k in st.session_state:
@@ -2649,6 +2649,63 @@ if "_lss_fmt" not in st.session_state:
         "rules": [],
     }
 
+# Sort state: persists across expanded/shrunk views
+if "_lss_sort" not in st.session_state:
+    st.session_state["_lss_sort"] = {"col": None, "asc": True}
+
+_LSS_TEXT_COLS = {"Product Name", "Category", "UOM"}
+
+
+def _apply_lss_sort(df):
+    """Sort dataframe based on saved LSS sort state. Returns sorted copy."""
+    sort = st.session_state.get("_lss_sort", {})
+    col = sort.get("col")
+    if col and col in df.columns:
+        asc = sort.get("asc", True)
+        return df.sort_values(by=col, ascending=asc, ignore_index=True)
+    return df
+
+
+def _lss_sort_bar(key_suffix=""):
+    """Render a compact sort bar. Reads/writes _lss_sort in session state."""
+    sort = st.session_state.get("_lss_sort", {"col": None, "asc": True})
+    current_col = sort.get("col")
+    current_asc = sort.get("asc", True)
+
+    all_cols = list(_LSS_DISP_COLS)
+    options = ["None"] + all_cols
+    idx = 0
+    if current_col and current_col in all_cols:
+        idx = all_cols.index(current_col) + 1
+
+    sc1, sc2, sc3 = st.columns([2.5, 2, 0.8])
+    with sc1:
+        picked = st.selectbox(
+            "Sort by", options, index=idx,
+            key=f"lss_sort_col_{key_suffix}", label_visibility="collapsed",
+        )
+    with sc2:
+        if picked != "None":
+            is_text = picked in _LSS_TEXT_COLS
+            if is_text:
+                dir_options = ["A → Z", "Z → A"]
+                dir_idx = 0 if current_asc else 1
+            else:
+                dir_options = ["Ascending ↑", "Descending ↓"]
+                dir_idx = 0 if current_asc else 1
+            direction = st.selectbox(
+                "Dir", dir_options, index=dir_idx,
+                key=f"lss_sort_dir_{key_suffix}", label_visibility="collapsed",
+            )
+            new_asc = (direction == dir_options[0])
+        else:
+            st.markdown("<div style='height:1px;'></div>", unsafe_allow_html=True)
+            new_asc = True
+    with sc3:
+        if st.button("🔃", key=f"lss_sort_apply_{key_suffix}", help="Apply sort"):
+            new_col = None if picked == "None" else picked
+            st.session_state["_lss_sort"] = {"col": new_col, "asc": new_asc}
+
 _LSS_QUICK_RULES = [
     {"label": "🔴 Zero Closing Stock",   "col": "Closing Stock", "cond": "=",  "val": 0,  "bg": "#FFCDD2", "fc": "#B71C1C"},
     {"label": "🟡 Low Stock (< 5)",      "col": "Closing Stock", "cond": "<",  "val": 5,  "bg": "#FFF9C4", "fc": "#F57F17"},
@@ -2718,6 +2775,10 @@ def _build_lss_html(df, cols, height=300):
             return _html.escape(str(value) if value is not None else "0.00")
 
     # Build HTML
+    sort = st.session_state.get("_lss_sort", {})
+    sort_col = sort.get("col")
+    sort_asc = sort.get("asc", True)
+
     h = []
     h.append(f'<div style="max-height:{height}px;overflow:auto;border:1px solid var(--border);border-radius:10px;">')
     h.append('<table style="width:100%;border-collapse:collapse;font-size:13px;font-family:Inter,sans-serif;">')
@@ -2725,11 +2786,16 @@ def _build_lss_html(df, cols, height=300):
     h.append('<thead><tr>')
     for c in cols:
         ta = "left" if c in text_cols else align
+        # Sort indicator
+        indicator = ""
+        if c == sort_col:
+            indicator = " ↑" if sort_asc else " ↓"
+            indicator = f"<span style='color:var(--accent);font-size:11px;'>{indicator}</span>"
         h.append(
             f'<th style="position:sticky;top:0;z-index:1;background:#F1F5F9;padding:8px 10px;'
             f'text-align:{ta};font-weight:600;font-size:12px;color:var(--muted);'
             f'border-bottom:2px solid var(--border);white-space:nowrap;">'
-            f'{_html.escape(c)}</th>'
+            f'{_html.escape(c)}{indicator}</th>'
         )
     h.append('</tr></thead>')
     # Body
@@ -2748,8 +2814,10 @@ def _build_lss_html(df, cols, height=300):
 
 
 def _render_lss_table(df, cols, height=300, key_suffix=""):
-    """Render LSS formatted HTML table via st.markdown."""
-    html_str = _build_lss_html(df, cols, height=height)
+    """Render sort bar + LSS formatted HTML table via st.markdown."""
+    _lss_sort_bar(key_suffix=key_suffix)
+    sorted_df = _apply_lss_sort(df)
+    html_str = _build_lss_html(sorted_df, cols, height=height)
     st.markdown(html_str, unsafe_allow_html=True)
 
 
@@ -2878,7 +2946,7 @@ def _lss_fullscreen_dialog():
                 pending["rules"] = _rules
 
     # ── Formatted table (uses saved/applied formatting) ──
-    _render_lss_table(_df, _LSS_DISP_COLS, height=500)
+    _render_lss_table(_df, _LSS_DISP_COLS, height=500, key_suffix="fs")
 
     if st.button("Close", key="close_lss_fs", use_container_width=True):
         # Clean up pending state
@@ -3002,14 +3070,19 @@ with tab_ops:
 
         _has_fmt_rules = bool(st.session_state.get("_lss_fmt", {}).get("rules"))
 
+        # Sort bar (always visible)
+        _lss_sort_bar(key_suffix="sm")
+        _sorted_status = _apply_lss_sort(df_status)
+
         if _has_fmt_rules:
-            # Show formatted read-only HTML view
-            _render_lss_table(df_status, disp_cols, height=300)
+            # Show formatted read-only HTML view (sort bar already shown above, skip inner one)
+            html_str = _build_lss_html(_sorted_status, disp_cols, height=300)
+            st.markdown(html_str, unsafe_allow_html=True)
             edited_df = df_status[disp_cols]
         else:
-            # No formatting rules — show editable data_editor
+            # No formatting rules — show editable data_editor (sorted)
             edited_df = st.data_editor(
-                df_status[disp_cols],
+                _sorted_status[disp_cols],
                 height=300,
                 use_container_width=True,
                 disabled=["Product Name", "Category", "UOM", "Total Received", "Closing Stock", "Variance"],
