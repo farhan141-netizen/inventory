@@ -2776,92 +2776,28 @@ def _lss_fullscreen_dialog():
 
     # ── Formatting Panel ──
     with st.expander("🎨 Format & Style", expanded=False):
-        _fc1, _fc2 = st.columns(2)
-        with _fc1:
+        # Row 1: Alignment + Wrap + Quick Rules all on one line concept
+        _r1c1, _r1c2, _r1c3, _r1c4 = st.columns([1.5, 1, 1.5, 1.5])
+        with _r1c1:
             _align = st.selectbox(
-                "Number Alignment", ["left", "center", "right"],
+                "Align", ["left", "center", "right"],
                 index=["left", "center", "right"].index(pending.get("align", "right")),
                 key="fs_align",
             )
             pending["align"] = _align
-        with _fc2:
-            _wrap = st.checkbox("Wrap Text", value=pending.get("wrap", False), key="fs_wrap")
+        with _r1c2:
+            st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+            _wrap = st.checkbox("Wrap", value=pending.get("wrap", False), key="fs_wrap")
             pending["wrap"] = _wrap
-
-        st.markdown("---")
-
-        # ── Quick-add presets ──
-        st.caption("⚡ Quick Rules (click to add)")
-        _qcols = st.columns(3)
-        for qi, qr in enumerate(_LSS_QUICK_RULES):
-            with _qcols[qi % 3]:
-                if st.button(qr["label"], key=f"qr_{qi}", use_container_width=True):
-                    _rules.append({k: qr[k] for k in ("col", "cond", "val", "bg", "fc")})
-                    pending["rules"] = _rules
-
-        st.markdown("---")
-
-        # ── Current rules ──
-        if _rules:
-            st.caption("📋 Active Rules")
-            for idx, r in enumerate(_rules):
-                rc1, rc2, rc3, rc4 = st.columns([4, 1, 1, 0.5])
-                with rc1:
-                    st.markdown(
-                        f"<span style='font-size:12px;'><b>{r['col']}</b> {r['cond']} {r['val']}</span>",
-                        unsafe_allow_html=True,
-                    )
-                with rc2:
-                    _rbg = r.get("bg", "#fff")
-                    st.markdown(
-                        f"<div style='width:20px;height:20px;border-radius:4px;background:{_rbg};border:1px solid #ccc;'></div>",
-                        unsafe_allow_html=True,
-                    )
-                with rc3:
-                    _rfc = r.get("fc", "#000")
-                    st.markdown(
-                        f"<div style='width:20px;height:20px;border-radius:4px;background:{_rfc};border:1px solid #ccc;'></div>",
-                        unsafe_allow_html=True,
-                    )
-                with rc4:
-                    if st.button("✕", key=f"del_r_{idx}"):
-                        _rules.pop(idx)
-                        pending["rules"] = _rules
-        else:
-            st.caption("No rules yet — add one below or use a Quick Rule above.")
-
-        st.markdown("---")
-
-        # ── Add custom rule ──
-        st.caption("➕ Custom Rule")
-        nc1, nc2, nc3 = st.columns(3)
-        with nc1:
-            _new_col = st.selectbox("Column", _LSS_NUM_COLS, key="fs_new_col")
-        with nc2:
-            _new_cond = st.selectbox("Condition", [">", ">=", "<", "<=", "=", "!="], key="fs_new_cond")
-        with nc3:
-            _new_val = st.number_input("Value", value=0.0, step=1.0, key="fs_new_val")
-
-        cc1, cc2 = st.columns(2)
-        with cc1:
-            _new_bg = st.color_picker("Fill Color", "#FFCDD2", key="fs_new_bg")
-        with cc2:
-            _new_fc = st.color_picker("Font Color", "#B71C1C", key="fs_new_fc")
-
-        ac1, ac2, ac3 = st.columns(3)
-        with ac1:
-            if st.button("➕ Add Rule", key="fs_add_rule", use_container_width=True):
-                _rules.append({"col": _new_col, "cond": _new_cond, "val": _new_val, "bg": _new_bg, "fc": _new_fc})
-                pending["rules"] = _rules
-        with ac2:
-            if st.button("✅ Apply All", key="fs_apply", use_container_width=True, type="primary"):
+        with _r1c3:
+            if st.button("✅ Apply", key="fs_apply", use_container_width=True, type="primary"):
                 st.session_state["_lss_fmt"] = {
                     "align": pending.get("align", "right"),
                     "wrap": pending.get("wrap", False),
                     "rules": list(pending.get("rules", [])),
                 }
                 st.toast("✅ Formatting applied!", icon="🎨")
-        with ac3:
+        with _r1c4:
             if st.button("🗑️ Clear All", key="fs_clear_all", use_container_width=True):
                 pending["align"] = "right"
                 pending["wrap"] = False
@@ -2869,6 +2805,70 @@ def _lss_fullscreen_dialog():
                 _rules.clear()
                 st.session_state["_lss_fmt"] = {"align": "right", "wrap": False, "rules": []}
                 st.toast("🗑️ All formatting cleared!")
+
+        # ── Quick Rules: 6 buttons in one row ──
+        st.markdown(
+            "<div style='font-size:11px;color:var(--muted);font-weight:600;margin:6px 0 2px;'>⚡ QUICK RULES</div>",
+            unsafe_allow_html=True,
+        )
+        _q1, _q2, _q3, _q4, _q5, _q6 = st.columns(6)
+        for qi, (_qcol, qr) in enumerate(zip([_q1, _q2, _q3, _q4, _q5, _q6], _LSS_QUICK_RULES)):
+            with _qcol:
+                if st.button(qr["label"], key=f"qr_{qi}", use_container_width=True):
+                    _rules.append({k: qr[k] for k in ("col", "cond", "val", "bg", "fc")})
+                    pending["rules"] = _rules
+
+        # ── Active Rules: compact inline ──
+        if _rules:
+            st.markdown(
+                "<div style='font-size:11px;color:var(--muted);font-weight:600;margin:8px 0 2px;'>📋 ACTIVE RULES</div>",
+                unsafe_allow_html=True,
+            )
+            # Build all rules as a compact HTML block
+            _rule_chips = []
+            for idx, r in enumerate(_rules):
+                _rbg = r.get("bg", "#eee")
+                _rfc = r.get("fc", "#000")
+                _rule_chips.append(
+                    f"<span style='display:inline-flex;align-items:center;gap:5px;background:#F8FAFC;"
+                    f"border:1px solid #CBD5E1;border-radius:8px;padding:3px 8px;font-size:12px;margin:2px 4px 2px 0;'>"
+                    f"<b>{r['col']}</b> {r['cond']} {r['val']}"
+                    f"<span style='width:12px;height:12px;border-radius:3px;background:{_rbg};border:1px solid #aaa;display:inline-block;'></span>"
+                    f"<span style='width:12px;height:12px;border-radius:3px;background:{_rfc};border:1px solid #aaa;display:inline-block;'></span>"
+                    f"</span>"
+                )
+            st.markdown(
+                "<div style='display:flex;flex-wrap:wrap;gap:2px;'>" + "".join(_rule_chips) + "</div>",
+                unsafe_allow_html=True,
+            )
+            # Delete buttons in a compact row
+            _del_cols = st.columns(min(len(_rules), 8))
+            for idx, r in enumerate(_rules):
+                with _del_cols[idx % min(len(_rules), 8)]:
+                    if st.button(f"✕ {r['col'][:6]}…", key=f"del_r_{idx}", use_container_width=True):
+                        _rules.pop(idx)
+                        pending["rules"] = _rules
+
+        # ── Custom Rule: single compact row ──
+        st.markdown(
+            "<div style='font-size:11px;color:var(--muted);font-weight:600;margin:8px 0 2px;'>➕ CUSTOM RULE</div>",
+            unsafe_allow_html=True,
+        )
+        nc1, nc2, nc3, nc4, nc5, nc6 = st.columns([2, 1.5, 1.2, 0.8, 0.8, 1])
+        with nc1:
+            _new_col = st.selectbox("Column", _LSS_NUM_COLS, key="fs_new_col", label_visibility="collapsed")
+        with nc2:
+            _new_cond = st.selectbox("Cond", [">", ">=", "<", "<=", "=", "!="], key="fs_new_cond", label_visibility="collapsed")
+        with nc3:
+            _new_val = st.number_input("Val", value=0.0, step=1.0, key="fs_new_val", label_visibility="collapsed")
+        with nc4:
+            _new_bg = st.color_picker("BG", "#FFCDD2", key="fs_new_bg")
+        with nc5:
+            _new_fc = st.color_picker("FC", "#B71C1C", key="fs_new_fc")
+        with nc6:
+            if st.button("➕ Add", key="fs_add_rule", use_container_width=True):
+                _rules.append({"col": _new_col, "cond": _new_cond, "val": _new_val, "bg": _new_bg, "fc": _new_fc})
+                pending["rules"] = _rules
 
     # ── Formatted table (uses saved/applied formatting) ──
     _render_lss_table(_df, _LSS_DISP_COLS, height=500)
