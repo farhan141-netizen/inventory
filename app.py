@@ -604,8 +604,7 @@ st.markdown(
     .main { background: var(--bg) !important; }
     .stApp { background: var(--bg) !important; }
     [data-testid="stAppViewContainer"]{ background: var(--bg) !important; }
-    [data-testid="stHeader"]{ background: transparent !important; pointer-events: none; }
-    [data-testid="stHeader"] > * { pointer-events: auto; }
+    [data-testid="stHeader"]{ background: var(--bg) !important; }
     [data-testid="stToolbar"]{ visibility: visible; }
     footer{ visibility: hidden; }
     [data-testid="stSidebarCollapsedControl"]{ visibility: visible !important; display: flex !important; z-index: 999999 !important; }
