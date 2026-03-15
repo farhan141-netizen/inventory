@@ -946,47 +946,53 @@ st.markdown(
     .dash-kpi-row{
         display: flex;
         flex-direction: row;
-        gap: 14px;
-        flex-wrap: nowrap;
+        gap: 10px;
+        flex-wrap: wrap;
     }
     .dash-kpi-box{
-        flex: 1;
+        flex: 1 1 calc(25% - 10px);
+        min-width: 100px;
         background: #FFFFFF;
         border: 1px solid var(--border);
         border-radius: var(--radius);
-        padding: 18px 14px 16px;
-        min-width: 0;
+        padding: 12px 10px 14px;
         text-align: center;
         box-shadow: var(--shadow);
         transition: box-shadow 200ms ease;
+        overflow: hidden;
+        word-break: break-word;
     }
     .dash-kpi-box:hover{ box-shadow: var(--shadow-hover); }
     .dash-kpi-box .kpi-icon{
-        font-size: 20px;
-        margin-bottom: 6px;
+        font-size: 18px;
+        margin-bottom: 4px;
     }
     .dash-kpi-box .kpi-label{
-        font-size: 11px;
+        font-size: 10px;
         color: var(--muted);
         font-weight: 600;
-        margin-bottom: 8px;
+        margin-bottom: 6px;
         text-transform: uppercase;
         letter-spacing: 0.06em;
+        line-height: 1.3;
     }
     .dash-kpi-box .kpi-value{
-        font-size: 20px;
+        font-size: 16px;
         font-weight: 700;
         color: var(--text);
         font-family: "JetBrains Mono", ui-monospace, monospace !important;
         letter-spacing: -0.01em;
+        line-height: 1.2;
+        word-break: break-all;
     }
     .dash-kpi-box .kpi-value.bad{ color: var(--danger); }
     .dash-kpi-box .kpi-value.good{ color: var(--good); }
     .dash-kpi-box .kpi-currency{
-        font-size: 10px;
+        font-size: 9px;
         color: var(--muted2);
         margin-top: 4px;
         font-weight: 400;
+        line-height: 1.3;
     }
 
     /* ===== White-background chart card ===== */
