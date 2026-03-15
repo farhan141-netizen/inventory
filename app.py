@@ -3159,40 +3159,36 @@ with tab_ops:
             if col not in df_status.columns:
                 df_status[col] = 0.0
 
-        _has_fmt_rules = bool(st.session_state.get("_lss_fmt", {}).get("rules"))
-
-        # Sort bar (always visible)
+        # Sort bar
         _lss_sort_bar(key_suffix="sm")
         _sorted_status = _apply_lss_sort(df_status)
 
-        if _has_fmt_rules:
-            # Show formatted read-only HTML view (sort bar already shown above, skip inner one)
-            html_str = _build_lss_html(_sorted_status, disp_cols, height=450, compact=True)
-            st.markdown(html_str, unsafe_allow_html=True)
-            edited_df = df_status[disp_cols]
-        else:
-            # No formatting rules — show editable data_editor (sorted)
+        # Always show compact HTML table in shrunk mode
+        html_str = _build_lss_html(_sorted_status, disp_cols, height=450, compact=True)
+        st.markdown(html_str, unsafe_allow_html=True)
+
+        # Editable fields via expander for stock updates
+        with st.expander("✏️ Edit Stock", expanded=False):
+            edit_cols = ["Product Name", "Opening Stock", "Consumption", "Physical Count"]
             edited_df = st.data_editor(
-                _sorted_status[disp_cols],
-                height=450,
+                df_status[edit_cols],
+                height=300,
                 use_container_width=True,
-                disabled=["Product Name", "Category", "UOM", "Total Received", "Closing Stock", "Variance", "Price", "Total Amount"],
+                disabled=["Product Name"],
                 hide_index=True,
             )
-
-        sc1, sc2, sc3 = st.columns(3)
-        with sc1:
             if st.button("💾 Update Stock", use_container_width=True, type="primary", key="update_stock"):
                 df_status.update(edited_df)
                 for item in df_status["Product Name"]:
                     df_status = recalculate_item(df_status, item)
                 save_to_sheet(df_status, "persistent_inventory")
                 st.rerun()
-        with sc2:
+
+        sc1, sc2 = st.columns(2)
+        with sc1:
             buf = io.BytesIO()
             with pd.ExcelWriter(buf, engine="xlsxwriter") as writer:
                 _exp_df = df_status[disp_cols].copy()
-                # Append grand total row
                 _total_row = {c: "" for c in disp_cols}
                 _total_row["Price"] = "Total ="
                 try:
@@ -3202,7 +3198,7 @@ with tab_ops:
                 _exp_df = pd.concat([_exp_df, pd.DataFrame([_total_row])], ignore_index=True)
                 _exp_df.to_excel(writer, index=False, sheet_name="Summary")
             st.download_button("📥 Summary", data=buf.getvalue(), file_name="Summary.xlsx", use_container_width=True, key="dl_summary")
-        with sc3:
+        with sc2:
             day_cols = [str(i) for i in range(1, 32)]
             existing_day_cols = [col for col in day_cols if col in df_status.columns]
             full_cols = ["Product Name", "Category", "UOM", "Opening Stock"] + existing_day_cols + [
@@ -3220,7 +3216,6 @@ with tab_ops:
                 buf_f = io.BytesIO()
                 with pd.ExcelWriter(buf_f, engine="xlsxwriter") as writer:
                     _exp_full = df_status[full_cols].copy()
-                    # Append grand total row
                     _total_row_f = {c: "" for c in full_cols}
                     if "Price" in full_cols:
                         _total_row_f["Price"] = "Total ="
