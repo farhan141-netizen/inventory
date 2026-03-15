@@ -3145,7 +3145,16 @@ with tab_ops:
         with sc2:
             buf = io.BytesIO()
             with pd.ExcelWriter(buf, engine="xlsxwriter") as writer:
-                df_status[disp_cols].to_excel(writer, index=False, sheet_name="Summary")
+                _exp_df = df_status[disp_cols].copy()
+                # Append grand total row
+                _total_row = {c: "" for c in disp_cols}
+                _total_row["Price"] = "Total ="
+                try:
+                    _total_row["Total Amount"] = round(pd.to_numeric(_exp_df["Total Amount"], errors="coerce").fillna(0).sum(), 2)
+                except Exception:
+                    _total_row["Total Amount"] = 0.0
+                _exp_df = pd.concat([_exp_df, pd.DataFrame([_total_row])], ignore_index=True)
+                _exp_df.to_excel(writer, index=False, sheet_name="Summary")
             st.download_button("📥 Summary", data=buf.getvalue(), file_name="Summary.xlsx", use_container_width=True, key="dl_summary")
         with sc3:
             day_cols = [str(i) for i in range(1, 32)]
@@ -3164,7 +3173,18 @@ with tab_ops:
             if full_cols:
                 buf_f = io.BytesIO()
                 with pd.ExcelWriter(buf_f, engine="xlsxwriter") as writer:
-                    df_status[full_cols].to_excel(writer, index=False, sheet_name="Details")
+                    _exp_full = df_status[full_cols].copy()
+                    # Append grand total row
+                    _total_row_f = {c: "" for c in full_cols}
+                    if "Price" in full_cols:
+                        _total_row_f["Price"] = "Total ="
+                    if "Total Amount" in full_cols:
+                        try:
+                            _total_row_f["Total Amount"] = round(pd.to_numeric(_exp_full["Total Amount"], errors="coerce").fillna(0).sum(), 2)
+                        except Exception:
+                            _total_row_f["Total Amount"] = 0.0
+                    _exp_full = pd.concat([_exp_full, pd.DataFrame([_total_row_f])], ignore_index=True)
+                    _exp_full.to_excel(writer, index=False, sheet_name="Details")
                 st.download_button("📂 Details", data=buf_f.getvalue(), file_name="Full_Report.xlsx", use_container_width=True, key="dl_details")
             else:
                 st.warning("⚠️ No data columns available for export")
