@@ -948,6 +948,7 @@ st.markdown(
         flex-direction: row;
         gap: 10px;
         flex-wrap: wrap;
+        padding-bottom: 5px;
     }
     .dash-kpi-box{
         flex: 1 1 calc(25% - 10px);
