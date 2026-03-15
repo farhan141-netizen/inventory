@@ -3253,45 +3253,6 @@ with tab_ops:
 
     with log_col:
         st.markdown('<span class="section-title">📜 Activity</span>', unsafe_allow_html=True)
-        st.markdown(
-            """
-            <style>
-            /* Kill all vertical gaps inside activity log wrapper */
-            .alog-wrap [data-testid="stHorizontalBlock"] {
-                background:#FFFFFF;border:1px solid #E2E8F0;border-radius:10px;
-                padding:0 6px 0 0 !important;margin-bottom:4px !important;
-                align-items:center !important;min-height:0 !important;
-                transition:border-color 150ms ease;
-            }
-            .alog-wrap [data-testid="stHorizontalBlock"]:hover {
-                border-color:rgba(124,92,252,0.25);
-            }
-            /* Kill internal streamlit gaps */
-            .alog-wrap [data-testid="stVerticalBlock"] > div {
-                margin:0 !important; padding:0 !important;
-            }
-            .alog-wrap [data-testid="stVerticalBlock"] {
-                gap:0 !important;
-            }
-            /* Undo button: tiny, inside the card */
-            .alog-wrap .stButton > button {
-                min-height:26px !important;height:26px !important;
-                width:26px !important;padding:0 !important;
-                border-radius:6px !important;font-size:12px !important;
-                background:#FFE4E6 !important;border:1px solid #FECDD3 !important;
-                color:#E11D48 !important;box-shadow:none !important;
-                margin:0 !important;
-            }
-            .alog-wrap .stButton > button:hover {
-                background:#FECDD3 !important;border-color:#E11D48 !important;
-            }
-            .alog-wrap .stButton { margin:0 !important; padding:0 !important; }
-            /* Remove default markdown padding */
-            .alog-wrap .stMarkdown { margin:0 !important; padding:0 !important; }
-            </style>
-            """,
-            unsafe_allow_html=True,
-        )
         logs = load_from_sheet("activity_logs")
         if not logs.empty:
             full_logs = logs.iloc[::-1]
@@ -3301,37 +3262,54 @@ with tab_ops:
             end_idx = start_idx + items_per_page
             current_logs = full_logs.iloc[start_idx:end_idx]
 
-            st.markdown('<div class="alog-wrap">', unsafe_allow_html=True)
+            # Build pure HTML activity log
+            _alog_rows = []
+            _undo_options = {}
             for _, row in current_logs.iterrows():
                 is_undone = row.get("Status", "") == "Undone"
-                h_item = row.get("Item", "")
+                h_item = str(row.get("Item", ""))
                 h_qty = row.get("Qty", "")
                 h_day = row.get("Day", "")
                 h_time = str(row.get("Timestamp", ""))
                 if len(h_time) > 8:
                     h_time = h_time.split(" ")[-1][:8] if " " in h_time else h_time[:8]
                 _lid = str(row.get("LogID", "")).strip()
-                _can_undo = (not is_undone) and bool(_lid)
 
                 _bcol = "#EF4444" if is_undone else "#7C5CFC"
-                _op = "0.55" if is_undone else "1"
-                _badge = "<span style='font-size:8px;color:#EF4444;font-weight:700;margin-left:3px;'>UNDONE</span>" if is_undone else ""
-
-                _rc1, _rc2 = st.columns([8, 1])
-                with _rc1:
-                    st.markdown(
-                        f"<div style='display:flex;align-items:center;padding:6px 0 6px 8px;"
-                        f"border-left:3px solid {_bcol};opacity:{_op};font-size:12px;'>"
-                        f"<b>{h_item}</b>&nbsp;&nbsp;QTY: {h_qty} &nbsp;|&nbsp; D{h_day}"
-                        f"<span style='font-size:10px;color:#94A3B8;margin-left:4px;'>{h_time}</span>"
-                        f"{_badge}</div>",
-                        unsafe_allow_html=True,
+                _op = "0.50" if is_undone else "1"
+                _badge = " <span style='font-size:8px;color:#EF4444;font-weight:700;'>UNDONE</span>" if is_undone else ""
+                _undo_dot = ""
+                if (not is_undone) and _lid:
+                    _undo_options[_lid] = f"{h_item} | QTY:{h_qty} | D{h_day}"
+                    _undo_dot = (
+                        "<span style='width:22px;height:22px;border-radius:6px;background:#FFE4E6;"
+                        "border:1px solid #FECDD3;display:inline-flex;align-items:center;"
+                        "justify-content:center;font-size:11px;color:#E11D48;flex-shrink:0;'>↩</span>"
                     )
-                with _rc2:
-                    if _can_undo:
-                        if st.button("↩", key=f"rev_{_lid}"):
-                            undo_entry(_lid)
-            st.markdown('</div>', unsafe_allow_html=True)
+
+                _alog_rows.append(
+                    f"<div style='display:flex;align-items:center;justify-content:space-between;"
+                    f"background:#FFFFFF;border:1px solid #E2E8F0;border-left:3px solid {_bcol};"
+                    f"border-radius:8px;padding:5px 8px 5px 10px;margin-bottom:3px;opacity:{_op};"
+                    f"min-height:30px;font-size:12px;'>"
+                    f"<span><b>{h_item}</b>&nbsp;&nbsp;QTY: {h_qty} &nbsp;|&nbsp; D{h_day}"
+                    f"<span style='font-size:10px;color:#94A3B8;margin-left:4px;'>{h_time}</span>"
+                    f"{_badge}</span>"
+                    f"{_undo_dot}"
+                    f"</div>"
+                )
+
+            st.markdown("".join(_alog_rows), unsafe_allow_html=True)
+
+            # Undo control: compact selectbox + button
+            if _undo_options:
+                _uc1, _uc2 = st.columns([5, 1])
+                with _uc1:
+                    _undo_labels = {v: k for k, v in _undo_options.items()}
+                    _pick = st.selectbox("Undo", list(_undo_labels.keys()), key="undo_pick", label_visibility="collapsed")
+                with _uc2:
+                    if st.button("↩", key="undo_btn", help="Undo selected"):
+                        undo_entry(_undo_labels[_pick])
 
             p_prev, p_next = st.columns(2)
             with p_prev:
