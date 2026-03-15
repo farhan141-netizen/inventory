@@ -2661,16 +2661,28 @@ _LSS_QUICK_RULES = [
 def _build_lss_styler(df, cols):
     """Return a pandas Styler with user-configured LSS formatting."""
     fmt = st.session_state.get("_lss_fmt", {})
-    s = df[cols].style
+
+    # Round numeric columns to 2 decimal places for display
+    _df = df[cols].copy()
+    for c in _LSS_NUM_COLS:
+        if c in _df.columns:
+            _df[c] = pd.to_numeric(_df[c], errors="coerce").fillna(0).round(2)
+
+    s = _df.style
+
+    # --- Number format: max 2 decimal places ---
+    _num_in_cols = [c for c in _LSS_NUM_COLS if c in cols]
+    if _num_in_cols:
+        s = s.format("{:.2f}", subset=_num_in_cols)
 
     # --- Alignment ---
     align = fmt.get("align", "right")
     text_cols = [c for c in cols if c in ("Product Name", "Category", "UOM")]
-    num_cols = [c for c in cols if c not in text_cols and c in df.columns]
+    num_cols = [c for c in cols if c not in text_cols and c in _df.columns]
     if text_cols:
-        s = s.set_properties(subset=text_cols, **{"text-align": "left"})
+        s = s.set_properties(subset=text_cols, **{"text-align": "left !important"})
     if num_cols:
-        s = s.set_properties(subset=num_cols, **{"text-align": align})
+        s = s.set_properties(subset=num_cols, **{"text-align": f"{align} !important"})
 
     # --- Wrap ---
     if fmt.get("wrap"):
@@ -2679,7 +2691,7 @@ def _build_lss_styler(df, cols):
     # --- Conditional rules ---
     for r in fmt.get("rules", []):
         col = r.get("col")
-        if col not in cols or col not in df.columns:
+        if col not in cols or col not in _df.columns:
             continue
         cond = r.get("cond", ">")
         val = float(r.get("val", 0))
@@ -2703,9 +2715,9 @@ def _build_lss_styler(df, cols):
                         if hit:
                             parts = []
                             if _bg:
-                                parts.append(f"background-color: {_bg}")
+                                parts.append(f"background-color: {_bg} !important")
                             if _fc:
-                                parts.append(f"color: {_fc}")
+                                parts.append(f"color: {_fc} !important")
                             out[i] = "; ".join(parts)
                     except (ValueError, TypeError):
                         pass
@@ -2729,8 +2741,15 @@ def _lss_fullscreen_dialog():
         if c not in _df.columns:
             _df[c] = 0.0
 
-    fmt = st.session_state.get("_lss_fmt", {})
-    _rules = list(fmt.get("rules", []))
+    # Work with a pending copy so changes don't require rerun
+    if "_lss_fmt_pending" not in st.session_state:
+        st.session_state["_lss_fmt_pending"] = dict(st.session_state.get("_lss_fmt", {}))
+        st.session_state["_lss_fmt_pending"]["rules"] = list(
+            st.session_state.get("_lss_fmt", {}).get("rules", [])
+        )
+
+    pending = st.session_state["_lss_fmt_pending"]
+    _rules = pending.get("rules", [])
 
     # ── Formatting Panel ──
     with st.expander("🎨 Format & Style", expanded=False):
@@ -2738,11 +2757,13 @@ def _lss_fullscreen_dialog():
         with _fc1:
             _align = st.selectbox(
                 "Number Alignment", ["left", "center", "right"],
-                index=["left", "center", "right"].index(fmt.get("align", "right")),
+                index=["left", "center", "right"].index(pending.get("align", "right")),
                 key="fs_align",
             )
+            pending["align"] = _align
         with _fc2:
-            _wrap = st.checkbox("Wrap Text", value=fmt.get("wrap", False), key="fs_wrap")
+            _wrap = st.checkbox("Wrap Text", value=pending.get("wrap", False), key="fs_wrap")
+            pending["wrap"] = _wrap
 
         st.markdown("---")
 
@@ -2753,8 +2774,7 @@ def _lss_fullscreen_dialog():
             with _qcols[qi % 3]:
                 if st.button(qr["label"], key=f"qr_{qi}", use_container_width=True):
                     _rules.append({k: qr[k] for k in ("col", "cond", "val", "bg", "fc")})
-                    st.session_state["_lss_fmt"] = {"align": _align, "wrap": _wrap, "rules": _rules}
-                    st.rerun()
+                    pending["rules"] = _rules
 
         st.markdown("---")
 
@@ -2783,8 +2803,7 @@ def _lss_fullscreen_dialog():
                 with rc4:
                     if st.button("✕", key=f"del_r_{idx}"):
                         _rules.pop(idx)
-                        st.session_state["_lss_fmt"] = {"align": _align, "wrap": _wrap, "rules": _rules}
-                        st.rerun()
+                        pending["rules"] = _rules
         else:
             st.caption("No rules yet — add one below or use a Quick Rule above.")
 
@@ -2810,29 +2829,38 @@ def _lss_fullscreen_dialog():
         with ac1:
             if st.button("➕ Add Rule", key="fs_add_rule", use_container_width=True):
                 _rules.append({"col": _new_col, "cond": _new_cond, "val": _new_val, "bg": _new_bg, "fc": _new_fc})
-                st.session_state["_lss_fmt"] = {"align": _align, "wrap": _wrap, "rules": _rules}
-                st.rerun()
+                pending["rules"] = _rules
         with ac2:
             if st.button("✅ Apply All", key="fs_apply", use_container_width=True, type="primary"):
-                st.session_state["_lss_fmt"] = {"align": _align, "wrap": _wrap, "rules": _rules}
-                st.rerun()
+                st.session_state["_lss_fmt"] = {
+                    "align": pending.get("align", "right"),
+                    "wrap": pending.get("wrap", False),
+                    "rules": list(pending.get("rules", [])),
+                }
+                st.toast("✅ Formatting applied!", icon="🎨")
         with ac3:
             if st.button("🗑️ Clear All", key="fs_clear_all", use_container_width=True):
+                pending["align"] = "right"
+                pending["wrap"] = False
+                pending["rules"] = []
+                _rules.clear()
                 st.session_state["_lss_fmt"] = {"align": "right", "wrap": False, "rules": []}
-                st.rerun()
+                st.toast("🗑️ All formatting cleared!")
 
-    # ── Formatted table ──
+    # ── Formatted table (uses saved/applied formatting) ──
     _styler = _build_lss_styler(_df, _LSS_DISP_COLS)
     st.dataframe(_styler, use_container_width=True, hide_index=True, height=500)
 
     if st.button("Close", key="close_lss_fs", use_container_width=True):
+        # Clean up pending state
+        if "_lss_fmt_pending" in st.session_state:
+            del st.session_state["_lss_fmt_pending"]
         st.session_state["_show_lss_fullscreen"] = False
         st.rerun()
 
 
 if st.session_state.get("_show_lss_fullscreen"):
     _lss_fullscreen_dialog()
-    st.session_state["_show_lss_fullscreen"] = False
 
 # ===================== OPERATIONS TAB =====================
 with tab_ops:
@@ -2939,13 +2967,14 @@ with tab_ops:
                 df_status[col] = 0.0
 
         _has_fmt_rules = bool(st.session_state.get("_lss_fmt", {}).get("rules"))
-        _lss_mode = st.radio(
-            "", ["✏️ Edit", "🎨 Formatted"], horizontal=True,
-            key="lss_view_toggle", label_visibility="collapsed",
-            index=1 if _has_fmt_rules else 0,
-        )
 
-        if _lss_mode == "✏️ Edit":
+        if _has_fmt_rules:
+            # Show formatted read-only view
+            _styler = _build_lss_styler(df_status, disp_cols)
+            st.dataframe(_styler, use_container_width=True, hide_index=True, height=300)
+            edited_df = df_status[disp_cols]
+        else:
+            # No formatting rules — show editable data_editor
             edited_df = st.data_editor(
                 df_status[disp_cols],
                 height=300,
@@ -2953,10 +2982,6 @@ with tab_ops:
                 disabled=["Product Name", "Category", "UOM", "Total Received", "Closing Stock", "Variance"],
                 hide_index=True,
             )
-        else:
-            _styler = _build_lss_styler(df_status, disp_cols)
-            st.dataframe(_styler, use_container_width=True, hide_index=True, height=300)
-            edited_df = df_status[disp_cols]
 
         sc1, sc2, sc3 = st.columns(3)
         with sc1:
