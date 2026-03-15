@@ -1268,6 +1268,11 @@ st.markdown(
     textarea::placeholder {
         color: var(--muted2) !important;
     }
+
+    /* ===== Compact expand button ===== */
+    button[data-testid="stBaseButton-secondary"][kind="secondary"]:has(> div > p:only-child) {
+        min-height: auto !important;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -2630,6 +2635,27 @@ with st.sidebar:
 
 tab_ops, tab_req, tab_sup, tab_dash, tab_restaurants = st.tabs(["📊 Operations", "🚚 Requisitions", "📞 Suppliers", "📊 Dashboard", "🍴 Restaurants"])
 
+# --- Fullscreen dialog for Live Stock Status ---
+@st.dialog("📊 Live Stock Status", width="large")
+def _lss_fullscreen_dialog():
+    _df = st.session_state.get("inventory")
+    if _df is None or _df.empty:
+        st.info("No inventory data available.")
+        return
+    _df = _df.copy()
+    _cols = ["Product Name", "Category", "UOM", "Opening Stock", "Total Received", "Closing Stock", "Consumption", "Physical Count", "Variance"]
+    for c in _cols:
+        if c not in _df.columns:
+            _df[c] = 0.0
+    st.dataframe(_df[_cols], use_container_width=True, hide_index=True, height=600)
+    if st.button("Close", key="close_lss_fs", use_container_width=True):
+        st.session_state["_show_lss_fullscreen"] = False
+        st.rerun()
+
+if st.session_state.get("_show_lss_fullscreen"):
+    _lss_fullscreen_dialog()
+    st.session_state["_show_lss_fullscreen"] = False
+
 # ===================== OPERATIONS TAB =====================
 with tab_ops:
     col_receipt_main, col_quick_main = st.columns([3, 1])
@@ -2721,7 +2747,13 @@ with tab_ops:
             st.caption("📭 No logs.")
 
     with stat_col:
-        st.markdown('<span class="section-title">📊 Live Stock Status</span>', unsafe_allow_html=True)
+        _lss_title_col, _lss_btn_col = st.columns([8, 1])
+        with _lss_title_col:
+            st.markdown('<span class="section-title">📊 Live Stock Status</span>', unsafe_allow_html=True)
+        with _lss_btn_col:
+            if st.button("⛶", key="expand_lss", help="Expand fullscreen"):
+                st.session_state["_show_lss_fullscreen"] = True
+                st.rerun()
         df_status = st.session_state.inventory.copy()
         disp_cols = ["Product Name", "Category", "UOM", "Opening Stock", "Total Received", "Closing Stock", "Consumption", "Physical Count", "Variance"]
         for col in disp_cols:
