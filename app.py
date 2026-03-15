@@ -3253,6 +3253,35 @@ with tab_ops:
 
     with log_col:
         st.markdown('<span class="section-title">📜 Activity</span>', unsafe_allow_html=True)
+        # Ultra-tight CSS for activity log rows
+        st.markdown(
+            """
+            <style>
+            .alog [data-testid="stVerticalBlock"] { gap:3px !important; }
+            .alog [data-testid="stHorizontalBlock"] {
+                gap:4px !important; align-items:center !important;
+            }
+            .alog [data-testid="stVerticalBlock"] > div[data-testid="stVerticalBlockBorderWrapper"] {
+                display:none !important;
+            }
+            .alog .stMarkdown { padding:0 !important; margin:0 !important; }
+            .alog .stButton { padding:0 !important; margin:0 !important; }
+            .alog .stButton > button {
+                min-height:24px !important; height:24px !important;
+                width:24px !important; padding:0 !important;
+                border-radius:6px !important; font-size:11px !important;
+                background:#FFE4E6 !important; border:1px solid #FECDD3 !important;
+                color:#E11D48 !important; box-shadow:none !important;
+                line-height:1 !important; margin:0 !important;
+            }
+            .alog .stButton > button:hover {
+                background:#FECDD3 !important; border-color:#E11D48 !important;
+            }
+            .alog .stSelectbox, .alog .stButton { display:none; }
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
         logs = load_from_sheet("activity_logs")
         if not logs.empty:
             full_logs = logs.iloc[::-1]
@@ -3262,9 +3291,9 @@ with tab_ops:
             end_idx = start_idx + items_per_page
             current_logs = full_logs.iloc[start_idx:end_idx]
 
-            # Build pure HTML activity log
-            _alog_rows = []
-            _undo_options = {}
+            # Build full HTML log block
+            _alog_html = []
+            _undo_map = {}
             for _, row in current_logs.iterrows():
                 is_undone = row.get("Status", "") == "Undone"
                 h_item = str(row.get("Item", ""))
@@ -3278,38 +3307,39 @@ with tab_ops:
                 _bcol = "#EF4444" if is_undone else "#7C5CFC"
                 _op = "0.50" if is_undone else "1"
                 _badge = " <span style='font-size:8px;color:#EF4444;font-weight:700;'>UNDONE</span>" if is_undone else ""
-                _undo_dot = ""
+                _undo_html = ""
                 if (not is_undone) and _lid:
-                    _undo_options[_lid] = f"{h_item} | QTY:{h_qty} | D{h_day}"
-                    _undo_dot = (
-                        "<span style='width:22px;height:22px;border-radius:6px;background:#FFE4E6;"
+                    _undo_map[_lid] = f"{h_item} | QTY:{h_qty} | D{h_day}"
+                    _undo_html = (
+                        "<span style='width:24px;height:24px;border-radius:6px;background:#FFE4E6;"
                         "border:1px solid #FECDD3;display:inline-flex;align-items:center;"
-                        "justify-content:center;font-size:11px;color:#E11D48;flex-shrink:0;'>↩</span>"
+                        "justify-content:center;font-size:11px;color:#E11D48;flex-shrink:0;"
+                        "cursor:pointer;' title='Select below to undo'>↩</span>"
                     )
 
-                _alog_rows.append(
+                _alog_html.append(
                     f"<div style='display:flex;align-items:center;justify-content:space-between;"
                     f"background:#FFFFFF;border:1px solid #E2E8F0;border-left:3px solid {_bcol};"
                     f"border-radius:8px;padding:5px 8px 5px 10px;margin-bottom:3px;opacity:{_op};"
                     f"min-height:30px;font-size:12px;'>"
                     f"<span><b>{h_item}</b>&nbsp;&nbsp;QTY: {h_qty} &nbsp;|&nbsp; D{h_day}"
                     f"<span style='font-size:10px;color:#94A3B8;margin-left:4px;'>{h_time}</span>"
-                    f"{_badge}</span>"
-                    f"{_undo_dot}"
-                    f"</div>"
+                    f"{_badge}</span>{_undo_html}</div>"
                 )
 
-            st.markdown("".join(_alog_rows), unsafe_allow_html=True)
+            st.markdown("".join(_alog_html), unsafe_allow_html=True)
 
-            # Undo control: compact selectbox + button
-            if _undo_options:
+            # Undo control
+            if _undo_map:
                 _uc1, _uc2 = st.columns([5, 1])
                 with _uc1:
-                    _undo_labels = {v: k for k, v in _undo_options.items()}
-                    _pick = st.selectbox("Undo", list(_undo_labels.keys()), key="undo_pick", label_visibility="collapsed")
+                    _labels = list(_undo_map.values())
+                    _ids = list(_undo_map.keys())
+                    _pick = st.selectbox("Undo", _labels, key="undo_pick", label_visibility="collapsed")
                 with _uc2:
-                    if st.button("↩", key="undo_btn", help="Undo selected"):
-                        undo_entry(_undo_labels[_pick])
+                    if st.button("↩ Undo", key="undo_btn"):
+                        _idx = _labels.index(_pick)
+                        undo_entry(_ids[_idx])
 
             p_prev, p_next = st.columns(2)
             with p_prev:
