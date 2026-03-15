@@ -3253,49 +3253,23 @@ with tab_ops:
 
     with log_col:
         st.markdown('<span class="section-title">📜 Activity</span>', unsafe_allow_html=True)
-        # CSS for activity log rows - makes each container look like unified pill
+        # Compact log row styling
         st.markdown(
             """
             <style>
-            .log-entry-wrap [data-testid="stVerticalBlockBorderWrapper"] {
-                background: #FFFFFF !important;
-                border: 1px solid var(--border) !important;
-                border-radius: 24px !important;
-                padding: 4px 8px 4px 0 !important;
-                margin-bottom: 6px !important;
-                box-shadow: 0 1px 3px rgba(0,0,0,0.04) !important;
-                overflow: hidden !important;
-                transform: none !important;
+            .alog-row{
+                display:flex;align-items:center;justify-content:space-between;
+                background:#FFFFFF;border:1px solid #E2E8F0;border-radius:10px;
+                padding:5px 8px;margin-bottom:5px;min-height:32px;
+                transition:border-color 150ms ease;
             }
-            .log-entry-wrap [data-testid="stVerticalBlockBorderWrapper"]:hover {
-                transform: none !important;
-                border-color: rgba(124,92,252,0.25) !important;
-                box-shadow: 0 2px 8px rgba(124,92,252,0.10) !important;
-            }
-            .log-entry-wrap [data-testid="stVerticalBlockBorderWrapper"] > div {
-                padding: 0 !important;
-            }
-            .log-entry-wrap .stButton > button {
-                min-height: 34px !important;
-                height: 34px !important;
-                width: 34px !important;
-                padding: 0 !important;
-                border-radius: 10px !important;
-                font-size: 15px !important;
-                background: #FFE4E6 !important;
-                border: 1px solid #FECDD3 !important;
-                color: #E11D48 !important;
-                box-shadow: none !important;
-            }
-            .log-entry-wrap .stButton > button:hover {
-                background: #FECDD3 !important;
-                border-color: #E11D48 !important;
-            }
-            .log-entry-undone .stButton > button {
-                background: #D1FAE5 !important;
-                border: 1px solid #A7F3D0 !important;
-                color: #059669 !important;
-            }
+            .alog-row:hover{border-color:rgba(124,92,252,0.25);}
+            .alog-txt{font-size:12px;color:#1E293B;display:flex;align-items:center;gap:4px;
+                       border-left:3px solid #7C5CFC;padding-left:8px;border-radius:1px;}
+            .alog-undone .alog-txt{border-left-color:#EF4444;opacity:0.55;}
+            .alog-time{font-size:10px;color:#94A3B8;margin-left:4px;}
+            .alog-badge{font-size:8px;color:#EF4444;font-weight:700;margin-left:4px;letter-spacing:0.04em;}
+            .alog-undo-slot{flex-shrink:0;width:30px;height:30px;}
             </style>
             """,
             unsafe_allow_html=True,
@@ -3303,12 +3277,15 @@ with tab_ops:
         logs = load_from_sheet("activity_logs")
         if not logs.empty:
             full_logs = logs.iloc[::-1]
-            items_per_page = 8
+            items_per_page = 10
             total_pages = (len(full_logs) - 1) // items_per_page + 1
             start_idx = st.session_state.log_page * items_per_page
             end_idx = start_idx + items_per_page
             current_logs = full_logs.iloc[start_idx:end_idx]
 
+            # Collect undo-able log IDs for button rendering
+            _undo_ids = []
+            _log_html_parts = []
             for _, row in current_logs.iterrows():
                 is_undone = row.get("Status", "") == "Undone"
                 h_item = row.get("Item", "")
@@ -3317,30 +3294,42 @@ with tab_ops:
                 h_time = str(row.get("Timestamp", ""))
                 if len(h_time) > 8:
                     h_time = h_time.split(" ")[-1][:8] if " " in h_time else h_time[:8]
+                _lid = str(row.get("LogID", "")).strip()
 
-                _border_color = "#EF4444" if is_undone else "var(--accent)"
-                _opacity = "0.55" if is_undone else "1"
-                _badge = " <span style='color:#EF4444;font-size:9px;font-weight:700;'>UNDONE</span>" if is_undone else ""
-                _undone_class = "log-entry-undone" if is_undone else ""
+                _cls = "alog-undone" if is_undone else ""
+                _badge = "<span class='alog-badge'>UNDONE</span>" if is_undone else ""
 
-                st.markdown(f'<div class="log-entry-wrap {_undone_class}">', unsafe_allow_html=True)
-                with st.container(border=True):
-                    _lc1, _lc2 = st.columns([7, 1])
-                    with _lc1:
-                        st.markdown(
-                            f"<div style='display:flex;align-items:center;padding:4px 0 4px 6px;"
-                            f"border-left:3px solid {_border_color};border-radius:2px;opacity:{_opacity};'>"
-                            f"<span style='font-size:12px;'>"
-                            f"<b>{h_item}</b>&nbsp;&nbsp;QTY: {h_qty} &nbsp;|&nbsp; D{h_day}"
-                            f" <span style='color:var(--muted);font-size:10px;margin-left:4px;'>{h_time}</span>"
-                            f"{_badge}</span></div>",
-                            unsafe_allow_html=True,
-                        )
-                    with _lc2:
-                        if (not is_undone) and str(row.get("LogID", "")).strip():
-                            if st.button("↩", key=f"rev_{row['LogID']}"):
-                                undo_entry(row["LogID"])
-                st.markdown('</div>', unsafe_allow_html=True)
+                if (not is_undone) and _lid:
+                    _undo_ids.append(_lid)
+
+            # Render each row: HTML text + streamlit button side by side
+            for _, row in current_logs.iterrows():
+                is_undone = row.get("Status", "") == "Undone"
+                h_item = row.get("Item", "")
+                h_qty = row.get("Qty", "")
+                h_day = row.get("Day", "")
+                h_time = str(row.get("Timestamp", ""))
+                if len(h_time) > 8:
+                    h_time = h_time.split(" ")[-1][:8] if " " in h_time else h_time[:8]
+                _lid = str(row.get("LogID", "")).strip()
+                _cls = "alog-undone" if is_undone else ""
+                _badge = "<span class='alog-badge'>UNDONE</span>" if is_undone else ""
+                _can_undo = (not is_undone) and bool(_lid)
+
+                _rc1, _rc2 = st.columns([7, 1])
+                with _rc1:
+                    st.markdown(
+                        f"<div class='alog-row {_cls}'>"
+                        f"<div class='alog-txt'>"
+                        f"<b>{h_item}</b>&nbsp;&nbsp;QTY: {h_qty} &nbsp;|&nbsp; D{h_day}"
+                        f"<span class='alog-time'>{h_time}</span>{_badge}"
+                        f"</div></div>",
+                        unsafe_allow_html=True,
+                    )
+                with _rc2:
+                    if _can_undo:
+                        if st.button("↩", key=f"rev_{_lid}"):
+                            undo_entry(_lid)
 
             p_prev, p_next = st.columns(2)
             with p_prev:
