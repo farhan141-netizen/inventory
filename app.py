@@ -2658,75 +2658,98 @@ _LSS_QUICK_RULES = [
 ]
 
 
-def _build_lss_styler(df, cols):
-    """Return a pandas Styler with user-configured LSS formatting."""
+def _build_lss_html(df, cols, height=300):
+    """Build an HTML table string with user-configured LSS formatting."""
+    import html as _html
     fmt = st.session_state.get("_lss_fmt", {})
-
-    # Round numeric columns to 2 decimal places for display
-    _df = df[cols].copy()
-    for c in _LSS_NUM_COLS:
-        if c in _df.columns:
-            _df[c] = pd.to_numeric(_df[c], errors="coerce").fillna(0).round(2)
-
-    s = _df.style
-
-    # --- Number format: max 2 decimal places ---
-    _num_in_cols = [c for c in _LSS_NUM_COLS if c in cols]
-    if _num_in_cols:
-        s = s.format("{:.2f}", subset=_num_in_cols)
-
-    # --- Alignment ---
     align = fmt.get("align", "right")
-    text_cols = [c for c in cols if c in ("Product Name", "Category", "UOM")]
-    num_cols = [c for c in cols if c not in text_cols and c in _df.columns]
-    if text_cols:
-        s = s.set_properties(subset=text_cols, **{"text-align": "left !important"})
-    if num_cols:
-        s = s.set_properties(subset=num_cols, **{"text-align": f"{align} !important"})
+    wrap = fmt.get("wrap", False)
+    rules = fmt.get("rules", [])
 
-    # --- Wrap ---
-    if fmt.get("wrap"):
-        s = s.set_properties(**{"white-space": "normal", "word-wrap": "break-word"})
+    text_cols = {"Product Name", "Category", "UOM"}
 
-    # --- Conditional rules ---
-    for r in fmt.get("rules", []):
-        col = r.get("col")
-        if col not in cols or col not in _df.columns:
-            continue
-        cond = r.get("cond", ">")
-        val = float(r.get("val", 0))
-        bg = r.get("bg", "")
-        fc = r.get("fc", "")
+    # Pre-compute per-cell styles
+    def _cell_style(col_name, value):
+        parts = []
+        # Alignment
+        if col_name in text_cols:
+            parts.append("text-align:left")
+        else:
+            parts.append(f"text-align:{align}")
+        # Wrap
+        if wrap:
+            parts.append("white-space:normal;word-wrap:break-word")
+        # Conditional rules
+        if col_name not in text_cols:
+            try:
+                nv = float(value)
+                for r in rules:
+                    if r.get("col") != col_name:
+                        continue
+                    cond = r.get("cond", ">")
+                    rv = float(r.get("val", 0))
+                    hit = (
+                        (cond == ">"  and nv > rv)  or
+                        (cond == ">=" and nv >= rv) or
+                        (cond == "<"  and nv < rv)  or
+                        (cond == "<=" and nv <= rv) or
+                        (cond == "="  and nv == rv) or
+                        (cond == "!=" and nv != rv)
+                    )
+                    if hit:
+                        bg = r.get("bg", "")
+                        fc = r.get("fc", "")
+                        if bg:
+                            parts.append(f"background-color:{bg}")
+                        if fc:
+                            parts.append(f"color:{fc}")
+            except (ValueError, TypeError):
+                pass
+        return ";".join(parts)
 
-        def _make_fn(_cond, _val, _bg, _fc):
-            def _fn(series):
-                out = [""] * len(series)
-                for i, v in enumerate(series):
-                    try:
-                        nv = float(v)
-                        hit = (
-                            (_cond == ">"  and nv > _val)  or
-                            (_cond == ">=" and nv >= _val) or
-                            (_cond == "<"  and nv < _val)  or
-                            (_cond == "<=" and nv <= _val) or
-                            (_cond == "="  and nv == _val) or
-                            (_cond == "!=" and nv != _val)
-                        )
-                        if hit:
-                            parts = []
-                            if _bg:
-                                parts.append(f"background-color: {_bg} !important")
-                            if _fc:
-                                parts.append(f"color: {_fc} !important")
-                            out[i] = "; ".join(parts)
-                    except (ValueError, TypeError):
-                        pass
-                return out
-            return _fn
+    # Format value
+    def _fmt_val(col_name, value):
+        if col_name in text_cols:
+            return _html.escape(str(value) if value is not None else "")
+        try:
+            return f"{float(value):.2f}"
+        except (ValueError, TypeError):
+            return _html.escape(str(value) if value is not None else "0.00")
 
-        s = s.apply(_make_fn(cond, val, bg, fc), subset=[col])
+    # Build HTML
+    h = []
+    h.append(f'<div style="max-height:{height}px;overflow:auto;border:1px solid var(--border);border-radius:10px;">')
+    h.append('<table style="width:100%;border-collapse:collapse;font-size:13px;font-family:Inter,sans-serif;">')
+    # Header
+    h.append('<thead><tr>')
+    for c in cols:
+        ta = "left" if c in text_cols else align
+        h.append(
+            f'<th style="position:sticky;top:0;z-index:1;background:#F1F5F9;padding:8px 10px;'
+            f'text-align:{ta};font-weight:600;font-size:12px;color:var(--muted);'
+            f'border-bottom:2px solid var(--border);white-space:nowrap;">'
+            f'{_html.escape(c)}</th>'
+        )
+    h.append('</tr></thead>')
+    # Body
+    h.append('<tbody>')
+    for row_idx in range(len(df)):
+        bg_row = "#FFFFFF" if row_idx % 2 == 0 else "#F8FAFC"
+        h.append(f'<tr style="background:{bg_row};">')
+        for c in cols:
+            val = df[c].iloc[row_idx]
+            style = _cell_style(c, val)
+            display = _fmt_val(c, val)
+            h.append(f'<td style="padding:7px 10px;border-bottom:1px solid #E2E8F0;{style}">{display}</td>')
+        h.append('</tr>')
+    h.append('</tbody></table></div>')
+    return "".join(h)
 
-    return s
+
+def _render_lss_table(df, cols, height=300, key_suffix=""):
+    """Render LSS formatted HTML table via st.markdown."""
+    html_str = _build_lss_html(df, cols, height=height)
+    st.markdown(html_str, unsafe_allow_html=True)
 
 
 # --- Fullscreen dialog for Live Stock Status ---
@@ -2848,8 +2871,7 @@ def _lss_fullscreen_dialog():
                 st.toast("🗑️ All formatting cleared!")
 
     # ── Formatted table (uses saved/applied formatting) ──
-    _styler = _build_lss_styler(_df, _LSS_DISP_COLS)
-    st.dataframe(_styler, use_container_width=True, hide_index=True, height=500)
+    _render_lss_table(_df, _LSS_DISP_COLS, height=500)
 
     if st.button("Close", key="close_lss_fs", use_container_width=True):
         # Clean up pending state
@@ -2969,9 +2991,8 @@ with tab_ops:
         _has_fmt_rules = bool(st.session_state.get("_lss_fmt", {}).get("rules"))
 
         if _has_fmt_rules:
-            # Show formatted read-only view
-            _styler = _build_lss_styler(df_status, disp_cols)
-            st.dataframe(_styler, use_container_width=True, hide_index=True, height=300)
+            # Show formatted read-only HTML view
+            _render_lss_table(df_status, disp_cols, height=300)
             edited_df = df_status[disp_cols]
         else:
             # No formatting rules — show editable data_editor
