@@ -3253,6 +3253,53 @@ with tab_ops:
 
     with log_col:
         st.markdown('<span class="section-title">📜 Activity</span>', unsafe_allow_html=True)
+        # CSS for activity log rows - makes each container look like unified pill
+        st.markdown(
+            """
+            <style>
+            .log-entry-wrap [data-testid="stVerticalBlockBorderWrapper"] {
+                background: #FFFFFF !important;
+                border: 1px solid var(--border) !important;
+                border-radius: 24px !important;
+                padding: 4px 8px 4px 0 !important;
+                margin-bottom: 6px !important;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.04) !important;
+                overflow: hidden !important;
+                transform: none !important;
+            }
+            .log-entry-wrap [data-testid="stVerticalBlockBorderWrapper"]:hover {
+                transform: none !important;
+                border-color: rgba(124,92,252,0.25) !important;
+                box-shadow: 0 2px 8px rgba(124,92,252,0.10) !important;
+            }
+            .log-entry-wrap [data-testid="stVerticalBlockBorderWrapper"] > div {
+                padding: 0 !important;
+            }
+            .log-entry-wrap .stButton > button {
+                min-height: 34px !important;
+                height: 34px !important;
+                width: 34px !important;
+                padding: 0 !important;
+                border-radius: 10px !important;
+                font-size: 15px !important;
+                background: #FFE4E6 !important;
+                border: 1px solid #FECDD3 !important;
+                color: #E11D48 !important;
+                box-shadow: none !important;
+            }
+            .log-entry-wrap .stButton > button:hover {
+                background: #FECDD3 !important;
+                border-color: #E11D48 !important;
+            }
+            .log-entry-undone .stButton > button {
+                background: #D1FAE5 !important;
+                border: 1px solid #A7F3D0 !important;
+                color: #059669 !important;
+            }
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
         logs = load_from_sheet("activity_logs")
         if not logs.empty:
             full_logs = logs.iloc[::-1]
@@ -3268,30 +3315,32 @@ with tab_ops:
                 h_qty = row.get("Qty", "")
                 h_day = row.get("Day", "")
                 h_time = str(row.get("Timestamp", ""))
-                # Extract just time portion if timestamp is long
                 if len(h_time) > 8:
                     h_time = h_time.split(" ")[-1][:8] if " " in h_time else h_time[:8]
 
-                _opacity = "0.50" if is_undone else "1"
                 _border_color = "#EF4444" if is_undone else "var(--accent)"
-                _badge = "<span style='color:#EF4444;font-size:9px;font-weight:600;margin-left:4px;'>UNDONE</span>" if is_undone else ""
+                _opacity = "0.55" if is_undone else "1"
+                _badge = " <span style='color:#EF4444;font-size:9px;font-weight:700;'>UNDONE</span>" if is_undone else ""
+                _undone_class = "log-entry-undone" if is_undone else ""
 
-                _log_c1, _log_c2 = st.columns([6, 1])
-                with _log_c1:
-                    st.markdown(
-                        f"<div style='display:flex;align-items:center;justify-content:space-between;"
-                        f"background:#fff;border:1px solid var(--border);border-left:3px solid {_border_color};"
-                        f"border-radius:8px;padding:6px 10px;font-size:12px;opacity:{_opacity};'>"
-                        f"<span><b>{h_item}</b>&nbsp;&nbsp;QTY: {h_qty} &nbsp;|&nbsp; D{h_day}"
-                        f" <span style='color:var(--muted);font-size:10px;margin-left:4px;'>{h_time}</span>"
-                        f"{_badge}</span>"
-                        f"</div>",
-                        unsafe_allow_html=True,
-                    )
-                with _log_c2:
-                    if (not is_undone) and str(row.get("LogID", "")).strip():
-                        if st.button("↩", key=f"rev_{row['LogID']}"):
-                            undo_entry(row["LogID"])
+                st.markdown(f'<div class="log-entry-wrap {_undone_class}">', unsafe_allow_html=True)
+                with st.container(border=True):
+                    _lc1, _lc2 = st.columns([7, 1])
+                    with _lc1:
+                        st.markdown(
+                            f"<div style='display:flex;align-items:center;padding:4px 0 4px 6px;"
+                            f"border-left:3px solid {_border_color};border-radius:2px;opacity:{_opacity};'>"
+                            f"<span style='font-size:12px;'>"
+                            f"<b>{h_item}</b>&nbsp;&nbsp;QTY: {h_qty} &nbsp;|&nbsp; D{h_day}"
+                            f" <span style='color:var(--muted);font-size:10px;margin-left:4px;'>{h_time}</span>"
+                            f"{_badge}</span></div>",
+                            unsafe_allow_html=True,
+                        )
+                    with _lc2:
+                        if (not is_undone) and str(row.get("LogID", "")).strip():
+                            if st.button("↩", key=f"rev_{row['LogID']}"):
+                                undo_entry(row["LogID"])
+                st.markdown('</div>', unsafe_allow_html=True)
 
             p_prev, p_next = st.columns(2)
             with p_prev:
