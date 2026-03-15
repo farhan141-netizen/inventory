@@ -2759,13 +2759,35 @@ _LSS_QUICK_RULES = [
 ]
 
 
-def _build_lss_html(df, cols, height=300):
+def _build_lss_html(df, cols, height=300, compact=False):
     """Build an HTML table string with user-configured LSS formatting."""
     import html as _html
     fmt = st.session_state.get("_lss_fmt", {})
     align = fmt.get("align", "right")
     wrap = fmt.get("wrap", False)
     rules = fmt.get("rules", [])
+
+    text_cols = {"Product Name", "Category", "UOM"}
+
+    # Short header names for compact mode
+    _SHORT = {
+        "Product Name": "Product",
+        "Category": "Cat",
+        "Opening Stock": "Open",
+        "Total Received": "Recv",
+        "Closing Stock": "Close",
+        "Consumption": "Cons",
+        "Physical Count": "Phys",
+        "Variance": "Var",
+        "Price": "Price",
+        "Total Amount": "Amount",
+        "UOM": "UOM",
+    }
+
+    font_sz = "11px" if compact else "13px"
+    hdr_sz = "10px" if compact else "12px"
+    pad = "4px 6px" if compact else "7px 10px"
+    hdr_pad = "6px" if compact else "8px 10px"
 
     text_cols = {"Product Name", "Category", "UOM"}
 
@@ -2824,21 +2846,22 @@ def _build_lss_html(df, cols, height=300):
 
     h = []
     h.append(f'<div style="max-height:{height}px;overflow:auto;border:1px solid var(--border);border-radius:10px;">')
-    h.append('<table style="width:100%;border-collapse:collapse;font-size:13px;font-family:Inter,sans-serif;">')
+    h.append(f'<table style="width:100%;border-collapse:collapse;font-size:{font_sz};font-family:Inter,sans-serif;">')
     # Header
     h.append('<thead><tr>')
     for c in cols:
         ta = "left" if c in text_cols else align
+        label = _SHORT.get(c, c) if compact else c
         # Sort indicator
         indicator = ""
         if c == sort_col:
             indicator = " ↑" if sort_asc else " ↓"
-            indicator = f"<span style='color:var(--accent);font-size:11px;'>{indicator}</span>"
+            indicator = f"<span style='color:var(--accent);font-size:{hdr_sz};'>{indicator}</span>"
         h.append(
-            f'<th style="position:sticky;top:0;z-index:1;background:#F1F5F9;padding:8px 10px;'
-            f'text-align:{ta};font-weight:600;font-size:12px;color:var(--muted);'
+            f'<th style="position:sticky;top:0;z-index:1;background:#F1F5F9;padding:{hdr_pad};'
+            f'text-align:{ta};font-weight:600;font-size:{hdr_sz};color:var(--muted);'
             f'border-bottom:2px solid var(--border);white-space:nowrap;">'
-            f'{_html.escape(c)}{indicator}</th>'
+            f'{_html.escape(label)}{indicator}</th>'
         )
     h.append('</tr></thead>')
     # Body
@@ -2850,7 +2873,7 @@ def _build_lss_html(df, cols, height=300):
             val = df[c].iloc[row_idx]
             style = _cell_style(c, val)
             display = _fmt_val(c, val)
-            h.append(f'<td style="padding:7px 10px;border-bottom:1px solid #E2E8F0;{style}">{display}</td>')
+            h.append(f'<td style="padding:{pad};border-bottom:1px solid #E2E8F0;{style}">{display}</td>')
         h.append('</tr>')
     # Footer: Total Amount sum
     if "Total Amount" in cols:
@@ -2863,17 +2886,17 @@ def _build_lss_html(df, cols, height=300):
         for ci, c in enumerate(cols):
             if ci == ta_idx - 1:
                 h.append(
-                    f'<td style="padding:8px 10px;font-weight:700;font-size:12px;color:var(--text);'
+                    f'<td style="padding:{pad};font-weight:700;font-size:{hdr_sz};color:var(--text);'
                     f'text-align:right;border-top:2px solid var(--border);">Total =</td>'
                 )
             elif ci == ta_idx:
                 h.append(
-                    f'<td style="padding:8px 10px;font-weight:700;font-size:13px;color:var(--accent);'
+                    f'<td style="padding:{pad};font-weight:700;font-size:{font_sz};color:var(--accent);'
                     f'text-align:{align};border-top:2px solid var(--border);'
                     f'font-family:JetBrains Mono,monospace;">{grand_total:,.2f}</td>'
                 )
             else:
-                h.append(f'<td style="padding:8px 10px;border-top:2px solid var(--border);"></td>')
+                h.append(f'<td style="padding:{pad};border-top:2px solid var(--border);"></td>')
         h.append('</tr>')
     h.append('</tbody></table></div>')
     return "".join(h)
@@ -3144,14 +3167,14 @@ with tab_ops:
 
         if _has_fmt_rules:
             # Show formatted read-only HTML view (sort bar already shown above, skip inner one)
-            html_str = _build_lss_html(_sorted_status, disp_cols, height=300)
+            html_str = _build_lss_html(_sorted_status, disp_cols, height=450, compact=True)
             st.markdown(html_str, unsafe_allow_html=True)
             edited_df = df_status[disp_cols]
         else:
             # No formatting rules — show editable data_editor (sorted)
             edited_df = st.data_editor(
                 _sorted_status[disp_cols],
-                height=300,
+                height=450,
                 use_container_width=True,
                 disabled=["Product Name", "Category", "UOM", "Total Received", "Closing Stock", "Variance", "Price", "Total Amount"],
                 hide_index=True,
