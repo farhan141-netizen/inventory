@@ -600,7 +600,7 @@ st.markdown(
     }
 
     /* ===== Base layout ===== */
-    .block-container{ padding-top: 3.5rem; padding-bottom: 1.5rem; max-width: 1400px; }
+    .block-container{ padding-top: 2.5rem; padding-bottom: 1.5rem; max-width: 1400px; }
     .main { background: var(--bg) !important; }
     .stApp { background: var(--bg) !important; }
     [data-testid="stAppViewContainer"]{ background: var(--bg) !important; }
@@ -2548,44 +2548,39 @@ if "inventory" not in st.session_state:
 if "log_page" not in st.session_state:
     st.session_state.log_page = 0
 
-# --- HEADER ROW ---
-hdr_left, hdr_mid, hdr_right = st.columns([4, 1, 1])
-with hdr_left:
-    st.markdown(
-        """
-        <div class="wp-header">
-            <div>
-                <div class="title">Warehouse Pro Cloud</div>
-                <div class="subtitle">v8.6 · Calm operational command center</div>
-            </div>
+# --- COMPACT TOP TOOLBAR ---
+st.markdown(
+    """
+    <div style="display:flex;align-items:center;justify-content:space-between;
+        background:linear-gradient(135deg,#7C5CFC 0%,#6366F1 100%);
+        border-radius:12px;padding:10px 20px;margin-bottom:12px;
+        box-shadow:0 4px 20px rgba(124,92,252,0.25);">
+        <div style="display:flex;align-items:center;gap:12px;">
+            <span style="font-size:14px;font-weight:700;color:#fff;letter-spacing:0.06em;text-transform:uppercase;">
+                Warehouse Pro Cloud
+            </span>
+            <span style="font-size:11px;color:rgba(255,255,255,0.65);font-weight:400;">v8.6</span>
         </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-with hdr_mid:
-    # keep your Bulk Upload button here (assumes bulk_upload_modal defined elsewhere)
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+_tb1, _tb2, _tb3 = st.columns([1, 1, 1])
+with _tb1:
     if st.button("📦 Bulk Upload", use_container_width=True, key="bulk_upload_btn"):
         try:
-            bulk_upload_modal()  # if defined in your app
+            bulk_upload_modal()
         except Exception:
             st.warning("Bulk upload modal not available.")
-
-with hdr_right:
-    # Refresh button — clear cache then run safe_rerun
+with _tb2:
     if st.button("🔄 Refresh Data", use_container_width=True, key="refresh_all"):
         try:
             if hasattr(st, "cache_data"):
                 st.cache_data.clear()
         except Exception:
             pass
-        # trigger a robust rerun
         safe_rerun()
-
-    # optional small spacer for visual separation
-    st.write("")
-
-    # Logout button opens the confirm dialog
+with _tb3:
     if st.button("🔓 Logout", use_container_width=True, key="logout_btn"):
         st.session_state["_show_lss_fullscreen"] = False
         _logout_confirm_dialog()
