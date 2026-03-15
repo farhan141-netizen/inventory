@@ -3253,40 +3253,6 @@ with tab_ops:
 
     with log_col:
         st.markdown('<span class="section-title">📜 Activity</span>', unsafe_allow_html=True)
-        # CSS: style each columns row as a compact card, tiny undo button
-        st.markdown(
-            """
-            <style>
-            .alog [data-testid="stVerticalBlock"] { gap:0 !important; }
-            .alog [data-testid="stVerticalBlock"] > div { margin-top:0 !important; margin-bottom:3px !important; }
-            .alog [data-testid="stHorizontalBlock"]:has(.alog-txt) {
-                background:#FFFFFF !important;border:1px solid #E2E8F0 !important;
-                border-radius:8px !important;padding:0 6px 0 0 !important;
-                align-items:center !important;min-height:32px !important;
-                margin:0 !important;
-            }
-            .alog [data-testid="stHorizontalBlock"]:has(.alog-txt):hover {
-                border-color:rgba(124,92,252,0.30) !important;
-            }
-            .alog [data-testid="stHorizontalBlock"]:has(.alog-undone) {
-                opacity:0.55;
-            }
-            .alog .stMarkdown { padding:0 !important; margin:0 !important; }
-            .alog .stButton { padding:0 !important; margin:0 !important; }
-            .alog [data-testid="stHorizontalBlock"]:has(.alog-txt) .stButton > button {
-                min-height:24px !important; height:24px !important;
-                width:24px !important; padding:0 !important;
-                border-radius:6px !important; font-size:11px !important;
-                background:#FFE4E6 !important; border:1px solid #FECDD3 !important;
-                color:#E11D48 !important; box-shadow:none !important;
-            }
-            .alog [data-testid="stHorizontalBlock"]:has(.alog-txt) .stButton > button:hover {
-                background:#FECDD3 !important; border-color:#E11D48 !important;
-            }
-            </style>
-            """,
-            unsafe_allow_html=True,
-        )
         logs = load_from_sheet("activity_logs")
         if not logs.empty:
             full_logs = logs.iloc[::-1]
@@ -3296,7 +3262,8 @@ with tab_ops:
             end_idx = start_idx + items_per_page
             current_logs = full_logs.iloc[start_idx:end_idx]
 
-            st.markdown('<div class="alog">', unsafe_allow_html=True)
+            _alog_html = []
+            _undo_map = {}
             for _, row in current_logs.iterrows():
                 is_undone = row.get("Status", "") == "Undone"
                 h_item = str(row.get("Item", ""))
@@ -3306,27 +3273,36 @@ with tab_ops:
                 if len(h_time) > 8:
                     h_time = h_time.split(" ")[-1][:8] if " " in h_time else h_time[:8]
                 _lid = str(row.get("LogID", "")).strip()
-                _can_undo = (not is_undone) and bool(_lid)
 
                 _bcol = "#EF4444" if is_undone else "#7C5CFC"
+                _op = "0.50" if is_undone else "1"
                 _badge = " <span style='font-size:8px;color:#EF4444;font-weight:700;'>UNDONE</span>" if is_undone else ""
-                _ucls = "alog-undone" if is_undone else ""
 
-                _rc1, _rc2 = st.columns([8, 1])
-                with _rc1:
-                    st.markdown(
-                        f"<div class='alog-txt {_ucls}' style='border-left:3px solid {_bcol};"
-                        f"padding:6px 0 6px 10px;font-size:12px;border-radius:1px;'>"
-                        f"<b>{h_item}</b>&nbsp;&nbsp;QTY: {h_qty} &nbsp;|&nbsp; D{h_day}"
-                        f"<span style='font-size:10px;color:#94A3B8;margin-left:4px;'>{h_time}</span>"
-                        f"{_badge}</div>",
-                        unsafe_allow_html=True,
-                    )
-                with _rc2:
-                    if _can_undo:
-                        if st.button("↩", key=f"rev_{_lid}"):
-                            undo_entry(_lid)
-            st.markdown('</div>', unsafe_allow_html=True)
+                if (not is_undone) and _lid:
+                    _undo_map[_lid] = f"{h_item} | QTY:{h_qty} | D{h_day}"
+
+                _alog_html.append(
+                    f"<div style='display:flex;align-items:center;"
+                    f"background:#FFFFFF;border:1px solid #E2E8F0;border-left:3px solid {_bcol};"
+                    f"border-radius:8px;padding:5px 10px;margin-bottom:3px;opacity:{_op};"
+                    f"min-height:30px;font-size:12px;'>"
+                    f"<b>{h_item}</b>&nbsp;&nbsp;QTY: {h_qty} &nbsp;|&nbsp; D{h_day}"
+                    f"<span style='font-size:10px;color:#94A3B8;margin-left:4px;'>{h_time}</span>"
+                    f"{_badge}</div>"
+                )
+
+            st.markdown("".join(_alog_html), unsafe_allow_html=True)
+
+            # Undo control
+            if _undo_map:
+                _labels = list(_undo_map.values())
+                _ids = list(_undo_map.keys())
+                _uc1, _uc2 = st.columns([5, 1])
+                with _uc1:
+                    _pick = st.selectbox("Undo", _labels, key="undo_pick", label_visibility="collapsed")
+                with _uc2:
+                    if st.button("↩", key="undo_btn", help="Undo selected"):
+                        undo_entry(_ids[_labels.index(_pick)])
 
             p_prev, p_next = st.columns(2)
             with p_prev:
