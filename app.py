@@ -438,7 +438,7 @@ _ON_CONFLICT_BY_TABLE = {
 # explicit null bypasses the default and causes a NOT NULL violation.
 _SERVER_UUID_PK_TABLES = ("persistent_inventory", "product_metadata")
 # UI-only columns that exist in local DataFrames/session state but not in the DB schema
-_PERSISTENT_INVENTORY_UI_ONLY_COLS = frozenset(["Physical Count"])
+_PERSISTENT_INVENTORY_UI_ONLY_COLS = frozenset(["Physical Count", "Price", "Total Amount"])
 
 
 def save_to_sheet(df: pd.DataFrame, table_name: str, pk: str = None):
@@ -2638,9 +2638,10 @@ tab_ops, tab_req, tab_sup, tab_dash, tab_restaurants = st.tabs(["📊 Operations
 
 # --- LSS Formatting State & Style Helper ---
 _LSS_DISP_COLS = ["Product Name", "Category", "UOM", "Opening Stock", "Total Received",
-                  "Closing Stock", "Consumption", "Physical Count", "Variance"]
+                  "Closing Stock", "Consumption", "Physical Count", "Variance",
+                  "Price", "Total Amount"]
 _LSS_NUM_COLS = ["Opening Stock", "Total Received", "Closing Stock", "Consumption",
-                 "Physical Count", "Variance"]
+                 "Physical Count", "Variance", "Price", "Total Amount"]
 
 if "_lss_fmt" not in st.session_state:
     st.session_state["_lss_fmt"] = {
@@ -2654,6 +2655,25 @@ if "_lss_sort" not in st.session_state:
     st.session_state["_lss_sort"] = {"col": None, "asc": True}
 
 _LSS_TEXT_COLS = {"Product Name", "Category", "UOM"}
+
+
+def _enrich_lss_with_price(df):
+    """Merge Price from product_metadata and compute Total Amount = Price × Closing Stock."""
+    _meta = load_from_sheet("product_metadata")
+    if _meta is not None and not _meta.empty and "Price" in _meta.columns and "Product Name" in _meta.columns:
+        price_map = _meta[["Product Name", "Price"]].drop_duplicates(subset="Product Name")
+        price_map["Price"] = pd.to_numeric(price_map["Price"], errors="coerce").fillna(0.0)
+        if "Price" in df.columns:
+            df = df.drop(columns=["Price"])
+        df = df.merge(price_map, on="Product Name", how="left")
+        df["Price"] = df["Price"].fillna(0.0)
+    else:
+        if "Price" not in df.columns:
+            df["Price"] = 0.0
+    df["Closing Stock"] = pd.to_numeric(df["Closing Stock"], errors="coerce").fillna(0.0)
+    df["Price"] = pd.to_numeric(df["Price"], errors="coerce").fillna(0.0)
+    df["Total Amount"] = (df["Price"] * df["Closing Stock"]).round(2)
+    return df
 
 
 def _apply_lss_sort(df):
@@ -2829,6 +2849,7 @@ def _lss_fullscreen_dialog():
         st.info("No inventory data available.")
         return
     _df = _df.copy()
+    _df = _enrich_lss_with_price(_df)
     for c in _LSS_DISP_COLS:
         if c not in _df.columns:
             _df[c] = 0.0
@@ -3063,7 +3084,8 @@ with tab_ops:
                 st.session_state["_show_lss_fullscreen"] = True
                 st.rerun()
         df_status = st.session_state.inventory.copy()
-        disp_cols = ["Product Name", "Category", "UOM", "Opening Stock", "Total Received", "Closing Stock", "Consumption", "Physical Count", "Variance"]
+        df_status = _enrich_lss_with_price(df_status)
+        disp_cols = ["Product Name", "Category", "UOM", "Opening Stock", "Total Received", "Closing Stock", "Consumption", "Physical Count", "Variance", "Price", "Total Amount"]
         for col in disp_cols:
             if col not in df_status.columns:
                 df_status[col] = 0.0
@@ -3085,7 +3107,7 @@ with tab_ops:
                 _sorted_status[disp_cols],
                 height=300,
                 use_container_width=True,
-                disabled=["Product Name", "Category", "UOM", "Total Received", "Closing Stock", "Variance"],
+                disabled=["Product Name", "Category", "UOM", "Total Received", "Closing Stock", "Variance", "Price", "Total Amount"],
                 hide_index=True,
             )
 
@@ -3111,6 +3133,8 @@ with tab_ops:
                 "Closing Stock",
                 "Physical Count",
                 "Variance",
+                "Price",
+                "Total Amount",
             ]
             full_cols = [col for col in full_cols if col in df_status.columns]
 
