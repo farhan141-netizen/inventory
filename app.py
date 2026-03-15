@@ -2549,23 +2549,51 @@ if "log_page" not in st.session_state:
     st.session_state.log_page = 0
 
 # --- COMPACT TOP TOOLBAR ---
+# Inject CSS to style the toolbar row as a single purple bar
 st.markdown(
     """
-    <div style="display:flex;align-items:center;justify-content:space-between;
-        background:linear-gradient(135deg,#7C5CFC 0%,#6366F1 100%);
-        border-radius:12px;padding:10px 20px;margin-bottom:12px;
-        box-shadow:0 4px 20px rgba(124,92,252,0.25);">
-        <div style="display:flex;align-items:center;gap:12px;">
-            <span style="font-size:14px;font-weight:700;color:#fff;letter-spacing:0.06em;text-transform:uppercase;">
-                Warehouse Pro Cloud
-            </span>
-            <span style="font-size:11px;color:rgba(255,255,255,0.65);font-weight:400;">v8.6</span>
-        </div>
-    </div>
+    <style>
+    /* Purple toolbar wrapper */
+    div[data-testid="stHorizontalBlock"]:has(> div[data-testid="stColumn"] .toolbar-title) {
+        background: linear-gradient(135deg, #7C5CFC 0%, #6366F1 100%) !important;
+        border-radius: 12px !important;
+        padding: 6px 12px !important;
+        box-shadow: 0 4px 20px rgba(124,92,252,0.25) !important;
+        margin-bottom: 12px !important;
+        align-items: center !important;
+    }
+    /* Make buttons inside toolbar white/translucent */
+    div[data-testid="stHorizontalBlock"]:has(> div[data-testid="stColumn"] .toolbar-title) .stButton > button {
+        background: rgba(255,255,255,0.18) !important;
+        border: 1px solid rgba(255,255,255,0.30) !important;
+        color: #ffffff !important;
+        font-size: 12px !important;
+        font-weight: 500 !important;
+        padding: 6px 14px !important;
+        border-radius: 8px !important;
+        box-shadow: none !important;
+        min-height: 36px !important;
+    }
+    div[data-testid="stHorizontalBlock"]:has(> div[data-testid="stColumn"] .toolbar-title) .stButton > button:hover {
+        background: rgba(255,255,255,0.30) !important;
+        border-color: rgba(255,255,255,0.50) !important;
+        color: #ffffff !important;
+        box-shadow: 0 2px 8px rgba(255,255,255,0.15) !important;
+    }
+    </style>
     """,
     unsafe_allow_html=True,
 )
-_tb1, _tb2, _tb3 = st.columns([1, 1, 1])
+_tb0, _tb1, _tb2, _tb3 = st.columns([4, 1.2, 1.2, 1])
+with _tb0:
+    st.markdown(
+        '<div class="toolbar-title" style="display:flex;align-items:center;gap:10px;padding:4px 0;">'
+        '<span style="font-size:14px;font-weight:700;color:#fff;letter-spacing:0.06em;text-transform:uppercase;">'
+        'Warehouse Pro Cloud</span>'
+        '<span style="font-size:11px;color:rgba(255,255,255,0.60);font-weight:400;">v8.6</span>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
 with _tb1:
     if st.button("📦 Bulk Upload", use_container_width=True, key="bulk_upload_btn"):
         try:
