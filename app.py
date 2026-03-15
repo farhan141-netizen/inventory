@@ -2892,8 +2892,9 @@ if st.session_state.get("_show_lss_fullscreen"):
     try:
         _lss_fullscreen_dialog()
     except Exception:
-        # Another dialog may already be open (e.g., logout); silently skip
         pass
+    # Clear flag after dialog closes (handles both X button and Close button)
+    st.session_state["_show_lss_fullscreen"] = False
 
 # ===================== OPERATIONS TAB =====================
 with tab_ops:
