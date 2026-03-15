@@ -529,7 +529,7 @@ def logout_user():
     keys_to_clear = [
         "user_id", "org_id", "location_id", "memberships", "role",
         "dash_cards", "r01_dash_cards", "inventory", "log_page",
-        "bulk_upload_state", "cart", "_show_lss_fullscreen", "_lss_fmt_pending", "_lss_sort",
+        "bulk_upload_state", "cart", "_show_lss_fullscreen", "_lss_fmt_pending", "_lss_sort", "_lss_fmt",
     ]
     for k in keys_to_clear:
         if k in st.session_state:
@@ -2749,16 +2749,77 @@ _LSS_DISP_COLS = ["Product Name", "Category", "UOM", "Opening Stock", "Total Rec
 _LSS_NUM_COLS = ["Opening Stock", "Total Received", "Closing Stock", "Consumption",
                  "Physical Count", "Variance", "Price", "Total Amount"]
 
+
+# --- Persistent Settings (Supabase app_settings table) ---
+import json as _json
+
+def _save_app_setting(key: str, value: dict):
+    """Save a setting to app_settings table (org+location scoped)."""
+    org_id = _current_org_id()
+    if not org_id:
+        return
+    loc_id = _current_location_id() or "00000000-0000-0000-0000-000000000000"
+    user_id = st.session_state.get("user_id")
+    try:
+        record = {
+            "org_id": org_id,
+            "location_id": loc_id,
+            "setting_key": key,
+            "setting_value": _json.dumps(value),
+            "updated_by": user_id,
+        }
+        conn.table("app_settings").upsert(
+            record, on_conflict="org_id,location_id,setting_key"
+        ).execute()
+    except Exception:
+        pass  # silently fail — settings just won't persist this time
+
+
+def _load_app_setting(key: str, default: dict = None) -> dict:
+    """Load a setting from app_settings table (org+location scoped)."""
+    org_id = _current_org_id()
+    if not org_id:
+        return default or {}
+    loc_id = _current_location_id() or "00000000-0000-0000-0000-000000000000"
+    try:
+        resp = (
+            conn.table("app_settings")
+            .select("setting_value")
+            .eq("org_id", org_id)
+            .eq("location_id", loc_id)
+            .eq("setting_key", key)
+            .limit(1)
+            .execute()
+        )
+        if resp.data:
+            val = resp.data[0].get("setting_value")
+            if isinstance(val, str):
+                return _json.loads(val)
+            if isinstance(val, dict):
+                return val
+    except Exception:
+        pass
+    return default or {}
+
+
+# Load LSS formatting from DB on startup (once per session)
+_LSS_FMT_DEFAULT = {"align": "right", "wrap": False, "rules": []}
+_LSS_SORT_DEFAULT = {"col": None, "asc": True}
+
 if "_lss_fmt" not in st.session_state:
-    st.session_state["_lss_fmt"] = {
-        "align": "right",
-        "wrap": False,
-        "rules": [],
-    }
+    _loaded_fmt = _load_app_setting("lss_fmt", _LSS_FMT_DEFAULT)
+    # Ensure all keys exist
+    _loaded_fmt.setdefault("align", "right")
+    _loaded_fmt.setdefault("wrap", False)
+    _loaded_fmt.setdefault("rules", [])
+    st.session_state["_lss_fmt"] = _loaded_fmt
 
 # Sort state: persists across expanded/shrunk views
 if "_lss_sort" not in st.session_state:
-    st.session_state["_lss_sort"] = {"col": None, "asc": True}
+    _loaded_sort = _load_app_setting("lss_sort", _LSS_SORT_DEFAULT)
+    _loaded_sort.setdefault("col", None)
+    _loaded_sort.setdefault("asc", True)
+    st.session_state["_lss_sort"] = _loaded_sort
 
 _LSS_TEXT_COLS = {"Product Name", "Category", "UOM"}
 
@@ -2830,7 +2891,9 @@ def _lss_sort_bar(key_suffix=""):
     with sc3:
         if st.button("🔃", key=f"lss_sort_apply_{key_suffix}", help="Apply sort"):
             new_col = None if picked == "None" else picked
-            st.session_state["_lss_sort"] = {"col": new_col, "asc": new_asc}
+            _new_sort = {"col": new_col, "asc": new_asc}
+            st.session_state["_lss_sort"] = _new_sort
+            _save_app_setting("lss_sort", _new_sort)
 
 _LSS_QUICK_RULES = [
     {"label": "🔴 Zero Closing Stock",   "col": "Closing Stock", "cond": "=",  "val": 0,  "bg": "#FFCDD2", "fc": "#B71C1C"},
@@ -3033,20 +3096,24 @@ def _lss_fullscreen_dialog():
             pending["wrap"] = _wrap
         with _r1c3:
             if st.button("✅ Apply", key="fs_apply", use_container_width=True, type="primary"):
-                st.session_state["_lss_fmt"] = {
+                _new_fmt = {
                     "align": pending.get("align", "right"),
                     "wrap": pending.get("wrap", False),
                     "rules": list(pending.get("rules", [])),
                 }
-                st.toast("✅ Formatting applied!", icon="🎨")
+                st.session_state["_lss_fmt"] = _new_fmt
+                _save_app_setting("lss_fmt", _new_fmt)
+                st.toast("✅ Formatting applied & saved!", icon="🎨")
         with _r1c4:
             if st.button("🗑️ Clear All", key="fs_clear_all", use_container_width=True):
                 pending["align"] = "right"
                 pending["wrap"] = False
                 pending["rules"] = []
                 _rules.clear()
-                st.session_state["_lss_fmt"] = {"align": "right", "wrap": False, "rules": []}
-                st.toast("🗑️ All formatting cleared!")
+                _cleared_fmt = {"align": "right", "wrap": False, "rules": []}
+                st.session_state["_lss_fmt"] = _cleared_fmt
+                _save_app_setting("lss_fmt", _cleared_fmt)
+                st.toast("🗑️ All formatting cleared & saved!")
 
         # ── Quick Rules: 6 buttons in one row ──
         st.markdown(
