@@ -2635,6 +2635,88 @@ with st.sidebar:
 
 tab_ops, tab_req, tab_sup, tab_dash, tab_restaurants = st.tabs(["📊 Operations", "🚚 Requisitions", "📞 Suppliers", "📊 Dashboard", "🍴 Restaurants"])
 
+# --- LSS Formatting State & Style Helper ---
+_LSS_DISP_COLS = ["Product Name", "Category", "UOM", "Opening Stock", "Total Received",
+                  "Closing Stock", "Consumption", "Physical Count", "Variance"]
+_LSS_NUM_COLS = ["Opening Stock", "Total Received", "Closing Stock", "Consumption",
+                 "Physical Count", "Variance"]
+
+if "_lss_fmt" not in st.session_state:
+    st.session_state["_lss_fmt"] = {
+        "align": "right",
+        "wrap": False,
+        "rules": [],
+    }
+
+_LSS_QUICK_RULES = [
+    {"label": "🔴 Zero Closing Stock",   "col": "Closing Stock", "cond": "=",  "val": 0,  "bg": "#FFCDD2", "fc": "#B71C1C"},
+    {"label": "🟡 Low Stock (< 5)",      "col": "Closing Stock", "cond": "<",  "val": 5,  "bg": "#FFF9C4", "fc": "#F57F17"},
+    {"label": "🔴 Negative Variance",    "col": "Variance",      "cond": "<",  "val": 0,  "bg": "#FFCDD2", "fc": "#B71C1C"},
+    {"label": "🟢 High Stock (> 50)",    "col": "Closing Stock", "cond": ">",  "val": 50, "bg": "#C8E6C9", "fc": "#1B5E20"},
+    {"label": "🔵 High Consumption (>10)","col": "Consumption",  "cond": ">",  "val": 10, "bg": "#BBDEFB", "fc": "#0D47A1"},
+    {"label": "🟠 No Receipts",          "col": "Total Received","cond": "=",  "val": 0,  "bg": "#FFE0B2", "fc": "#E65100"},
+]
+
+
+def _build_lss_styler(df, cols):
+    """Return a pandas Styler with user-configured LSS formatting."""
+    fmt = st.session_state.get("_lss_fmt", {})
+    s = df[cols].style
+
+    # --- Alignment ---
+    align = fmt.get("align", "right")
+    text_cols = [c for c in cols if c in ("Product Name", "Category", "UOM")]
+    num_cols = [c for c in cols if c not in text_cols and c in df.columns]
+    if text_cols:
+        s = s.set_properties(subset=text_cols, **{"text-align": "left"})
+    if num_cols:
+        s = s.set_properties(subset=num_cols, **{"text-align": align})
+
+    # --- Wrap ---
+    if fmt.get("wrap"):
+        s = s.set_properties(**{"white-space": "normal", "word-wrap": "break-word"})
+
+    # --- Conditional rules ---
+    for r in fmt.get("rules", []):
+        col = r.get("col")
+        if col not in cols or col not in df.columns:
+            continue
+        cond = r.get("cond", ">")
+        val = float(r.get("val", 0))
+        bg = r.get("bg", "")
+        fc = r.get("fc", "")
+
+        def _make_fn(_cond, _val, _bg, _fc):
+            def _fn(series):
+                out = [""] * len(series)
+                for i, v in enumerate(series):
+                    try:
+                        nv = float(v)
+                        hit = (
+                            (_cond == ">"  and nv > _val)  or
+                            (_cond == ">=" and nv >= _val) or
+                            (_cond == "<"  and nv < _val)  or
+                            (_cond == "<=" and nv <= _val) or
+                            (_cond == "="  and nv == _val) or
+                            (_cond == "!=" and nv != _val)
+                        )
+                        if hit:
+                            parts = []
+                            if _bg:
+                                parts.append(f"background-color: {_bg}")
+                            if _fc:
+                                parts.append(f"color: {_fc}")
+                            out[i] = "; ".join(parts)
+                    except (ValueError, TypeError):
+                        pass
+                return out
+            return _fn
+
+        s = s.apply(_make_fn(cond, val, bg, fc), subset=[col])
+
+    return s
+
+
 # --- Fullscreen dialog for Live Stock Status ---
 @st.dialog("📊 Live Stock Status", width="large")
 def _lss_fullscreen_dialog():
@@ -2643,14 +2725,110 @@ def _lss_fullscreen_dialog():
         st.info("No inventory data available.")
         return
     _df = _df.copy()
-    _cols = ["Product Name", "Category", "UOM", "Opening Stock", "Total Received", "Closing Stock", "Consumption", "Physical Count", "Variance"]
-    for c in _cols:
+    for c in _LSS_DISP_COLS:
         if c not in _df.columns:
             _df[c] = 0.0
-    st.dataframe(_df[_cols], use_container_width=True, hide_index=True, height=600)
+
+    fmt = st.session_state.get("_lss_fmt", {})
+    _rules = list(fmt.get("rules", []))
+
+    # ── Formatting Panel ──
+    with st.expander("🎨 Format & Style", expanded=False):
+        _fc1, _fc2 = st.columns(2)
+        with _fc1:
+            _align = st.selectbox(
+                "Number Alignment", ["left", "center", "right"],
+                index=["left", "center", "right"].index(fmt.get("align", "right")),
+                key="fs_align",
+            )
+        with _fc2:
+            _wrap = st.checkbox("Wrap Text", value=fmt.get("wrap", False), key="fs_wrap")
+
+        st.markdown("---")
+
+        # ── Quick-add presets ──
+        st.caption("⚡ Quick Rules (click to add)")
+        _qcols = st.columns(3)
+        for qi, qr in enumerate(_LSS_QUICK_RULES):
+            with _qcols[qi % 3]:
+                if st.button(qr["label"], key=f"qr_{qi}", use_container_width=True):
+                    _rules.append({k: qr[k] for k in ("col", "cond", "val", "bg", "fc")})
+                    st.session_state["_lss_fmt"] = {"align": _align, "wrap": _wrap, "rules": _rules}
+                    st.rerun()
+
+        st.markdown("---")
+
+        # ── Current rules ──
+        if _rules:
+            st.caption("📋 Active Rules")
+            for idx, r in enumerate(_rules):
+                rc1, rc2, rc3, rc4 = st.columns([4, 1, 1, 0.5])
+                with rc1:
+                    st.markdown(
+                        f"<span style='font-size:12px;'><b>{r['col']}</b> {r['cond']} {r['val']}</span>",
+                        unsafe_allow_html=True,
+                    )
+                with rc2:
+                    _rbg = r.get("bg", "#fff")
+                    st.markdown(
+                        f"<div style='width:20px;height:20px;border-radius:4px;background:{_rbg};border:1px solid #ccc;'></div>",
+                        unsafe_allow_html=True,
+                    )
+                with rc3:
+                    _rfc = r.get("fc", "#000")
+                    st.markdown(
+                        f"<div style='width:20px;height:20px;border-radius:4px;background:{_rfc};border:1px solid #ccc;'></div>",
+                        unsafe_allow_html=True,
+                    )
+                with rc4:
+                    if st.button("✕", key=f"del_r_{idx}"):
+                        _rules.pop(idx)
+                        st.session_state["_lss_fmt"] = {"align": _align, "wrap": _wrap, "rules": _rules}
+                        st.rerun()
+        else:
+            st.caption("No rules yet — add one below or use a Quick Rule above.")
+
+        st.markdown("---")
+
+        # ── Add custom rule ──
+        st.caption("➕ Custom Rule")
+        nc1, nc2, nc3 = st.columns(3)
+        with nc1:
+            _new_col = st.selectbox("Column", _LSS_NUM_COLS, key="fs_new_col")
+        with nc2:
+            _new_cond = st.selectbox("Condition", [">", ">=", "<", "<=", "=", "!="], key="fs_new_cond")
+        with nc3:
+            _new_val = st.number_input("Value", value=0.0, step=1.0, key="fs_new_val")
+
+        cc1, cc2 = st.columns(2)
+        with cc1:
+            _new_bg = st.color_picker("Fill Color", "#FFCDD2", key="fs_new_bg")
+        with cc2:
+            _new_fc = st.color_picker("Font Color", "#B71C1C", key="fs_new_fc")
+
+        ac1, ac2, ac3 = st.columns(3)
+        with ac1:
+            if st.button("➕ Add Rule", key="fs_add_rule", use_container_width=True):
+                _rules.append({"col": _new_col, "cond": _new_cond, "val": _new_val, "bg": _new_bg, "fc": _new_fc})
+                st.session_state["_lss_fmt"] = {"align": _align, "wrap": _wrap, "rules": _rules}
+                st.rerun()
+        with ac2:
+            if st.button("✅ Apply All", key="fs_apply", use_container_width=True, type="primary"):
+                st.session_state["_lss_fmt"] = {"align": _align, "wrap": _wrap, "rules": _rules}
+                st.rerun()
+        with ac3:
+            if st.button("🗑️ Clear All", key="fs_clear_all", use_container_width=True):
+                st.session_state["_lss_fmt"] = {"align": "right", "wrap": False, "rules": []}
+                st.rerun()
+
+    # ── Formatted table ──
+    _styler = _build_lss_styler(_df, _LSS_DISP_COLS)
+    st.dataframe(_styler, use_container_width=True, hide_index=True, height=500)
+
     if st.button("Close", key="close_lss_fs", use_container_width=True):
         st.session_state["_show_lss_fullscreen"] = False
         st.rerun()
+
 
 if st.session_state.get("_show_lss_fullscreen"):
     _lss_fullscreen_dialog()
@@ -2760,13 +2938,25 @@ with tab_ops:
             if col not in df_status.columns:
                 df_status[col] = 0.0
 
-        edited_df = st.data_editor(
-            df_status[disp_cols],
-            height=300,
-            use_container_width=True,
-            disabled=["Product Name", "Category", "UOM", "Total Received", "Closing Stock", "Variance"],
-            hide_index=True,
+        _has_fmt_rules = bool(st.session_state.get("_lss_fmt", {}).get("rules"))
+        _lss_mode = st.radio(
+            "", ["✏️ Edit", "🎨 Formatted"], horizontal=True,
+            key="lss_view_toggle", label_visibility="collapsed",
+            index=1 if _has_fmt_rules else 0,
         )
+
+        if _lss_mode == "✏️ Edit":
+            edited_df = st.data_editor(
+                df_status[disp_cols],
+                height=300,
+                use_container_width=True,
+                disabled=["Product Name", "Category", "UOM", "Total Received", "Closing Stock", "Variance"],
+                hide_index=True,
+            )
+        else:
+            _styler = _build_lss_styler(df_status, disp_cols)
+            st.dataframe(_styler, use_container_width=True, hide_index=True, height=300)
+            edited_df = df_status[disp_cols]
 
         sc1, sc2, sc3 = st.columns(3)
         with sc1:
