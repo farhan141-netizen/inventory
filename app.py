@@ -529,7 +529,7 @@ def logout_user():
     keys_to_clear = [
         "user_id", "org_id", "location_id", "memberships", "role",
         "dash_cards", "r01_dash_cards", "inventory", "log_page",
-        "bulk_upload_state", "cart",
+        "bulk_upload_state", "cart", "_show_lss_fullscreen", "_lss_fmt_pending",
     ]
     for k in keys_to_clear:
         if k in st.session_state:
@@ -2587,6 +2587,7 @@ with hdr_right:
 
     # Logout button opens the confirm dialog
     if st.button("🔓 Logout", use_container_width=True, key="logout_btn"):
+        st.session_state["_show_lss_fullscreen"] = False
         _logout_confirm_dialog()
 
 # ===================== SIDEBAR =====================
@@ -2888,7 +2889,11 @@ def _lss_fullscreen_dialog():
 
 
 if st.session_state.get("_show_lss_fullscreen"):
-    _lss_fullscreen_dialog()
+    try:
+        _lss_fullscreen_dialog()
+    except Exception:
+        # Another dialog may already be open (e.g., logout); silently skip
+        pass
 
 # ===================== OPERATIONS TAB =====================
 with tab_ops:
