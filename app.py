@@ -2818,36 +2818,42 @@ def _lss_fullscreen_dialog():
                     _rules.append({k: qr[k] for k in ("col", "cond", "val", "bg", "fc")})
                     pending["rules"] = _rules
 
-        # ── Active Rules: compact inline ──
+        # ── Active Rules: compact HTML chips + remove control ──
         if _rules:
             st.markdown(
-                "<div style='font-size:11px;color:var(--muted);font-weight:600;margin:8px 0 2px;'>📋 ACTIVE RULES</div>",
+                "<div style='font-size:11px;color:var(--muted);font-weight:600;margin:8px 0 4px;'>📋 ACTIVE RULES</div>",
                 unsafe_allow_html=True,
             )
-            # Build all rules as a compact HTML block
-            _rule_chips = []
+            _rule_chips_html = []
             for idx, r in enumerate(_rules):
                 _rbg = r.get("bg", "#eee")
                 _rfc = r.get("fc", "#000")
-                _rule_chips.append(
+                _rule_chips_html.append(
                     f"<span style='display:inline-flex;align-items:center;gap:5px;background:#F8FAFC;"
-                    f"border:1px solid #CBD5E1;border-radius:8px;padding:3px 8px;font-size:12px;margin:2px 4px 2px 0;'>"
+                    f"border:1px solid #CBD5E1;border-radius:8px;padding:4px 10px;font-size:11px;"
+                    f"margin:2px 4px 2px 0;white-space:nowrap;'>"
                     f"<b>{r['col']}</b> {r['cond']} {r['val']}"
-                    f"<span style='width:12px;height:12px;border-radius:3px;background:{_rbg};border:1px solid #aaa;display:inline-block;'></span>"
-                    f"<span style='width:12px;height:12px;border-radius:3px;background:{_rfc};border:1px solid #aaa;display:inline-block;'></span>"
+                    f" <span style='width:12px;height:12px;border-radius:3px;background:{_rbg};"
+                    f"border:1px solid #aaa;display:inline-block;'></span>"
+                    f" <span style='width:12px;height:12px;border-radius:3px;background:{_rfc};"
+                    f"border:1px solid #aaa;display:inline-block;'></span>"
+                    f" <span style='color:#EF4444;font-weight:700;font-size:13px;cursor:default;margin-left:2px;'>✕</span>"
                     f"</span>"
                 )
             st.markdown(
-                "<div style='display:flex;flex-wrap:wrap;gap:2px;'>" + "".join(_rule_chips) + "</div>",
+                "<div style='display:flex;flex-wrap:wrap;'>" + "".join(_rule_chips_html) + "</div>",
                 unsafe_allow_html=True,
             )
-            # Delete buttons in a compact row
-            _del_cols = st.columns(min(len(_rules), 8))
-            for idx, r in enumerate(_rules):
-                with _del_cols[idx % min(len(_rules), 8)]:
-                    if st.button(f"✕ {r['col'][:6]}…", key=f"del_r_{idx}", use_container_width=True):
-                        _rules.pop(idx)
-                        pending["rules"] = _rules
+            # Compact remove row
+            _rm_labels = [f"#{i+1} {r['col']} {r['cond']} {r['val']}" for i, r in enumerate(_rules)]
+            _rmc1, _rmc2 = st.columns([4, 1])
+            with _rmc1:
+                _rm_pick = st.selectbox("Remove", _rm_labels, key="fs_rm_pick", label_visibility="collapsed")
+            with _rmc2:
+                if st.button("🗑️", key="fs_rm_btn", help="Remove selected rule"):
+                    _rm_idx = _rm_labels.index(_rm_pick)
+                    _rules.pop(_rm_idx)
+                    pending["rules"] = _rules
 
         # ── Custom Rule: single compact row ──
         st.markdown(
