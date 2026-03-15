@@ -1438,13 +1438,12 @@ def recalculate_item(df, item_name):
     closing = opening + total_received - consumption
     df.at[idx, "Closing Stock"] = closing
 
-    if "Physical Count" in df.columns:
-        physical_val = df.at[idx, "Physical Count"]
-        if pd.notna(physical_val) and str(physical_val).strip() != "":
-            physical = pd.to_numeric(physical_val, errors="coerce")
-            df.at[idx, "Variance"] = physical - closing
-        else:
-            df.at[idx, "Variance"] = 0.0
+    # Variance is NOT calculated during daily operations.
+    # It is only calculated during Close Month when Physical Count is finalized.
+    # Reset to 0 to clear any stale values from previous logic.
+    if "Variance" in df.columns:
+        df.at[idx, "Variance"] = 0.0
+
     return df
 
 def apply_transaction(item_name, day_num, qty, is_undo=False):
@@ -1832,31 +1831,115 @@ def archive_explorer_modal():
     else:
         st.info("📭 No records found.")
 
-@st.dialog("🔒 Close Month & Rollover")
+@st.dialog("🔒 Close Month & Rollover", width="large")
 def close_month_modal():
-    st.warning("⚠️ Physical Counts will become new Opening Stocks.")
+    df = st.session_state.inventory.copy()
+    if df.empty:
+        st.info("No inventory data to close.")
+        return
+
     month_label = st.text_input("📅 Month Label", value=datetime.datetime.now().strftime("%b %Y"), key="month_label_input")
-    if st.button("✅ Confirm Monthly Close", type="primary", use_container_width=True, key="close_month_btn"):
-        df = st.session_state.inventory.copy()
-        hist_df = load_from_sheet("monthly_history")
-        archive_df = df.copy()
-        archive_df["Month_Period"] = month_label
-        save_to_sheet(pd.concat([hist_df, archive_df], ignore_index=True), "monthly_history")
 
-        new_df = df.copy()
-        for i in range(1, 32):
-            new_df[str(i)] = 0.0
-        for idx, row in new_df.iterrows():
-            phys = row.get("Physical Count")
-            new_df.at[idx, "Opening Stock"] = pd.to_numeric(phys) if pd.notna(phys) and str(phys).strip() != "" else row["Closing Stock"]
+    st.markdown(
+        "<div style='font-size:12px;color:var(--muted);margin:4px 0 8px;'>"
+        "Enter the <b>actual physical count</b> for each item from your warehouse floor. "
+        "Variance = Physical Count − Closing Stock. After confirming, Physical Count becomes "
+        "the new Opening Stock for next month.</div>",
+        unsafe_allow_html=True,
+    )
 
-        new_df["Total Received"] = 0.0
-        new_df["Consumption"] = 0.0
-        new_df["Closing Stock"] = new_df["Opening Stock"]
-        new_df["Physical Count"] = None
-        new_df["Variance"] = 0.0
-        save_to_sheet(new_df, "persistent_inventory")
-        st.rerun()
+    # Prepare editable table with Physical Count
+    _close_cols = ["Product Name", "Category", "UOM", "Opening Stock", "Total Received",
+                   "Closing Stock", "Consumption", "Physical Count"]
+    for c in _close_cols:
+        if c not in df.columns:
+            df[c] = 0.0
+
+    # Default Physical Count to Closing Stock (user can override)
+    df["Closing Stock"] = pd.to_numeric(df["Closing Stock"], errors="coerce").fillna(0.0)
+    df["Physical Count"] = pd.to_numeric(df["Physical Count"], errors="coerce").fillna(0.0)
+    # If Physical Count is 0, pre-fill with Closing Stock as a starting point
+    for idx in df.index:
+        if df.at[idx, "Physical Count"] == 0:
+            df.at[idx, "Physical Count"] = df.at[idx, "Closing Stock"]
+
+    st.markdown("**📋 Enter Physical Counts:**")
+    edit_close_cols = ["Product Name", "Closing Stock", "Physical Count"]
+    edited_close = st.data_editor(
+        df[edit_close_cols],
+        height=350,
+        use_container_width=True,
+        disabled=["Product Name", "Closing Stock"],
+        hide_index=True,
+        key="close_month_editor",
+    )
+
+    # Live preview of Variance
+    _preview = edited_close.copy()
+    _preview["Closing Stock"] = pd.to_numeric(_preview["Closing Stock"], errors="coerce").fillna(0.0)
+    _preview["Physical Count"] = pd.to_numeric(_preview["Physical Count"], errors="coerce").fillna(0.0)
+    _preview["Variance"] = _preview["Physical Count"] - _preview["Closing Stock"]
+
+    _has_var = (_preview["Variance"] != 0).any()
+    if _has_var:
+        _var_items = _preview[_preview["Variance"] != 0][["Product Name", "Closing Stock", "Physical Count", "Variance"]]
+        st.markdown("**⚠️ Items with Variance:**")
+        st.dataframe(_var_items, use_container_width=True, hide_index=True, height=min(200, 40 + len(_var_items) * 35))
+    else:
+        st.success("✅ All Physical Counts match Closing Stock — no variance.")
+
+    total_variance = _preview["Variance"].sum()
+    st.markdown(
+        f"<div style='font-size:13px;margin:8px 0;'>"
+        f"📊 <b>Total Variance:</b> <span style='color:{('#EF4444' if total_variance < 0 else '#10B981')};font-weight:700;'>"
+        f"{total_variance:,.2f}</span></div>",
+        unsafe_allow_html=True,
+    )
+
+    st.warning("⚠️ This action will archive the current month and start a new one. Physical Count → new Opening Stock.")
+
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("✅ Confirm Close Month", type="primary", use_container_width=True, key="close_month_btn"):
+            # 1) Apply Physical Count edits back to inventory
+            df.update(edited_close[["Product Name", "Physical Count"]].set_index(df.index))
+            df["Physical Count"] = pd.to_numeric(df["Physical Count"], errors="coerce").fillna(0.0)
+            df["Closing Stock"] = pd.to_numeric(df["Closing Stock"], errors="coerce").fillna(0.0)
+
+            # 2) Calculate final Variance
+            df["Variance"] = df["Physical Count"] - df["Closing Stock"]
+
+            # 3) Save current state with Variance to DB (so it's recorded)
+            save_to_sheet(df, "persistent_inventory")
+
+            # 4) Archive to monthly_history
+            hist_df = load_from_sheet("monthly_history")
+            archive_df = df.copy()
+            archive_df["Month_Period"] = month_label
+            save_to_sheet(pd.concat([hist_df, archive_df], ignore_index=True), "monthly_history")
+
+            # 5) Rollover: Physical Count → new Opening Stock, reset everything
+            new_df = df.copy()
+            for i in range(1, 32):
+                if str(i) in new_df.columns:
+                    new_df[str(i)] = 0.0
+
+            # Physical Count becomes new Opening Stock
+            new_df["Opening Stock"] = new_df["Physical Count"]
+            new_df["Total Received"] = 0.0
+            new_df["Consumption"] = 0.0
+            new_df["Closing Stock"] = new_df["Opening Stock"]
+            new_df["Physical Count"] = 0.0
+            new_df["Variance"] = 0.0
+
+            save_to_sheet(new_df, "persistent_inventory")
+            st.session_state.inventory = new_df
+            st.cache_data.clear()
+            st.success(f"✅ Month **{month_label}** closed! New month started.")
+            st.balloons()
+    with c2:
+        if st.button("❌ Cancel", use_container_width=True, key="close_month_cancel"):
+            st.rerun()
 
 # --- DASHBOARD HELPERS ---
 TOP_15_CURRENCIES_PLUS_BHD = [
@@ -3169,6 +3252,7 @@ with tab_ops:
 
         # Editable fields via expander for stock updates
         with st.expander("✏️ Edit Stock", expanded=False):
+            st.caption("💡 Physical Count is used during Close Month to calculate Variance.")
             edit_cols = ["Product Name", "Opening Stock", "Consumption", "Physical Count"]
             edited_df = st.data_editor(
                 df_status[edit_cols],
@@ -3182,6 +3266,7 @@ with tab_ops:
                 for item in df_status["Product Name"]:
                     df_status = recalculate_item(df_status, item)
                 save_to_sheet(df_status, "persistent_inventory")
+                st.cache_data.clear()
                 st.rerun()
 
         sc1, sc2 = st.columns(2)
