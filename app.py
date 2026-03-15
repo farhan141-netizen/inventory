@@ -600,11 +600,12 @@ st.markdown(
     }
 
     /* ===== Base layout ===== */
-    .block-container{ padding-top: 1.2rem; padding-bottom: 1.5rem; max-width: 1400px; }
+    .block-container{ padding-top: 3.5rem; padding-bottom: 1.5rem; max-width: 1400px; }
     .main { background: var(--bg) !important; }
     .stApp { background: var(--bg) !important; }
     [data-testid="stAppViewContainer"]{ background: var(--bg) !important; }
-    [data-testid="stHeader"]{ background: var(--bg) !important; }
+    [data-testid="stHeader"]{ background: transparent !important; pointer-events: none; }
+    [data-testid="stHeader"] > * { pointer-events: auto; }
     [data-testid="stToolbar"]{ visibility: visible; }
     footer{ visibility: hidden; }
     [data-testid="stSidebarCollapsedControl"]{ visibility: visible !important; display: flex !important; z-index: 999999 !important; }
