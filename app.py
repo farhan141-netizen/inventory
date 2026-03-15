@@ -3253,23 +3253,41 @@ with tab_ops:
 
     with log_col:
         st.markdown('<span class="section-title">📜 Activity</span>', unsafe_allow_html=True)
-        # Compact log row styling
         st.markdown(
             """
             <style>
-            .alog-row{
-                display:flex;align-items:center;justify-content:space-between;
+            /* Kill all vertical gaps inside activity log wrapper */
+            .alog-wrap [data-testid="stHorizontalBlock"] {
                 background:#FFFFFF;border:1px solid #E2E8F0;border-radius:10px;
-                padding:5px 8px;margin-bottom:5px;min-height:32px;
+                padding:0 6px 0 0 !important;margin-bottom:4px !important;
+                align-items:center !important;min-height:0 !important;
                 transition:border-color 150ms ease;
             }
-            .alog-row:hover{border-color:rgba(124,92,252,0.25);}
-            .alog-txt{font-size:12px;color:#1E293B;display:flex;align-items:center;gap:4px;
-                       border-left:3px solid #7C5CFC;padding-left:8px;border-radius:1px;}
-            .alog-undone .alog-txt{border-left-color:#EF4444;opacity:0.55;}
-            .alog-time{font-size:10px;color:#94A3B8;margin-left:4px;}
-            .alog-badge{font-size:8px;color:#EF4444;font-weight:700;margin-left:4px;letter-spacing:0.04em;}
-            .alog-undo-slot{flex-shrink:0;width:30px;height:30px;}
+            .alog-wrap [data-testid="stHorizontalBlock"]:hover {
+                border-color:rgba(124,92,252,0.25);
+            }
+            /* Kill internal streamlit gaps */
+            .alog-wrap [data-testid="stVerticalBlock"] > div {
+                margin:0 !important; padding:0 !important;
+            }
+            .alog-wrap [data-testid="stVerticalBlock"] {
+                gap:0 !important;
+            }
+            /* Undo button: tiny, inside the card */
+            .alog-wrap .stButton > button {
+                min-height:26px !important;height:26px !important;
+                width:26px !important;padding:0 !important;
+                border-radius:6px !important;font-size:12px !important;
+                background:#FFE4E6 !important;border:1px solid #FECDD3 !important;
+                color:#E11D48 !important;box-shadow:none !important;
+                margin:0 !important;
+            }
+            .alog-wrap .stButton > button:hover {
+                background:#FECDD3 !important;border-color:#E11D48 !important;
+            }
+            .alog-wrap .stButton { margin:0 !important; padding:0 !important; }
+            /* Remove default markdown padding */
+            .alog-wrap .stMarkdown { margin:0 !important; padding:0 !important; }
             </style>
             """,
             unsafe_allow_html=True,
@@ -3277,15 +3295,13 @@ with tab_ops:
         logs = load_from_sheet("activity_logs")
         if not logs.empty:
             full_logs = logs.iloc[::-1]
-            items_per_page = 10
+            items_per_page = 12
             total_pages = (len(full_logs) - 1) // items_per_page + 1
             start_idx = st.session_state.log_page * items_per_page
             end_idx = start_idx + items_per_page
             current_logs = full_logs.iloc[start_idx:end_idx]
 
-            # Collect undo-able log IDs for button rendering
-            _undo_ids = []
-            _log_html_parts = []
+            st.markdown('<div class="alog-wrap">', unsafe_allow_html=True)
             for _, row in current_logs.iterrows():
                 is_undone = row.get("Status", "") == "Undone"
                 h_item = row.get("Item", "")
@@ -3295,41 +3311,27 @@ with tab_ops:
                 if len(h_time) > 8:
                     h_time = h_time.split(" ")[-1][:8] if " " in h_time else h_time[:8]
                 _lid = str(row.get("LogID", "")).strip()
-
-                _cls = "alog-undone" if is_undone else ""
-                _badge = "<span class='alog-badge'>UNDONE</span>" if is_undone else ""
-
-                if (not is_undone) and _lid:
-                    _undo_ids.append(_lid)
-
-            # Render each row: HTML text + streamlit button side by side
-            for _, row in current_logs.iterrows():
-                is_undone = row.get("Status", "") == "Undone"
-                h_item = row.get("Item", "")
-                h_qty = row.get("Qty", "")
-                h_day = row.get("Day", "")
-                h_time = str(row.get("Timestamp", ""))
-                if len(h_time) > 8:
-                    h_time = h_time.split(" ")[-1][:8] if " " in h_time else h_time[:8]
-                _lid = str(row.get("LogID", "")).strip()
-                _cls = "alog-undone" if is_undone else ""
-                _badge = "<span class='alog-badge'>UNDONE</span>" if is_undone else ""
                 _can_undo = (not is_undone) and bool(_lid)
 
-                _rc1, _rc2 = st.columns([7, 1])
+                _bcol = "#EF4444" if is_undone else "#7C5CFC"
+                _op = "0.55" if is_undone else "1"
+                _badge = "<span style='font-size:8px;color:#EF4444;font-weight:700;margin-left:3px;'>UNDONE</span>" if is_undone else ""
+
+                _rc1, _rc2 = st.columns([8, 1])
                 with _rc1:
                     st.markdown(
-                        f"<div class='alog-row {_cls}'>"
-                        f"<div class='alog-txt'>"
+                        f"<div style='display:flex;align-items:center;padding:6px 0 6px 8px;"
+                        f"border-left:3px solid {_bcol};opacity:{_op};font-size:12px;'>"
                         f"<b>{h_item}</b>&nbsp;&nbsp;QTY: {h_qty} &nbsp;|&nbsp; D{h_day}"
-                        f"<span class='alog-time'>{h_time}</span>{_badge}"
-                        f"</div></div>",
+                        f"<span style='font-size:10px;color:#94A3B8;margin-left:4px;'>{h_time}</span>"
+                        f"{_badge}</div>",
                         unsafe_allow_html=True,
                     )
                 with _rc2:
                     if _can_undo:
                         if st.button("↩", key=f"rev_{_lid}"):
                             undo_entry(_lid)
+            st.markdown('</div>', unsafe_allow_html=True)
 
             p_prev, p_next = st.columns(2)
             with p_prev:
