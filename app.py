@@ -3414,7 +3414,8 @@ with tab_ops:
         # Only dispatched/completed items = actual consumption
         if not _reqs.empty:
             _reqs = _reqs[_reqs["Status"].isin(["Dispatched", "Completed"])].copy()
-            _reqs["_ts"] = pd.to_datetime(_reqs["Timestamp"], errors="coerce")
+            _reqs["_ts"] = pd.to_datetime(_reqs["Timestamp"], errors="coerce", utc=True)
+            _reqs["_ts"] = _reqs["_ts"].dt.tz_localize(None)  # strip timezone for comparison
             _reqs = _reqs.dropna(subset=["_ts"])
 
         if _reqs.empty or st.session_state.inventory.empty:
