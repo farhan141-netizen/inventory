@@ -530,6 +530,8 @@ def logout_user():
         "user_id", "org_id", "location_id", "memberships", "role",
         "dash_cards", "r01_dash_cards", "inventory", "log_page",
         "bulk_upload_state", "cart", "_show_lss_fullscreen", "_lss_fmt_pending", "_lss_sort", "_lss_fmt",
+        "_show_par_fullscreen", "_par_df_display", "_par_display_cols", "_par_col_config", "_par_caption",
+        "_show_cmp_fullscreen", "_cmp_df_display", "_cmp_display_cols", "_cmp_col_config", "_cmp_caption",
     ]
     for k in keys_to_clear:
         if k in st.session_state:
@@ -2694,6 +2696,8 @@ with _tb2:
 with _tb3:
     if st.button("🔓 Logout", use_container_width=True, key="logout_btn"):
         st.session_state["_show_lss_fullscreen"] = False
+        st.session_state["_show_par_fullscreen"] = False
+        st.session_state["_show_cmp_fullscreen"] = False
         _logout_confirm_dialog()
 
 # ===================== SIDEBAR =====================
@@ -3201,8 +3205,69 @@ if st.session_state.get("_show_lss_fullscreen"):
         _lss_fullscreen_dialog()
     except Exception:
         pass
-    # Clear flag after dialog closes (handles both X button and Close button)
     st.session_state["_show_lss_fullscreen"] = False
+
+
+# --- Fullscreen dialog for Par Stock ---
+@st.dialog("📈 Par Stock — Expanded", width="large")
+def _par_fullscreen_dialog():
+    _data = st.session_state.get("_par_df_display")
+    _cols = st.session_state.get("_par_display_cols")
+    _col_config = st.session_state.get("_par_col_config")
+    _caption = st.session_state.get("_par_caption", "")
+    if _data is None or _cols is None:
+        st.info("No Par data available. Open Par Analysis first.")
+        return
+    st.dataframe(
+        _data[_cols],
+        use_container_width=True,
+        hide_index=True,
+        height=600,
+        column_config=_col_config or {},
+    )
+    if _caption:
+        st.caption(_caption)
+    if st.button("Close", key="close_par_fs", use_container_width=True):
+        st.session_state["_show_par_fullscreen"] = False
+        st.rerun()
+
+if st.session_state.get("_show_par_fullscreen"):
+    try:
+        _par_fullscreen_dialog()
+    except Exception:
+        pass
+    st.session_state["_show_par_fullscreen"] = False
+
+
+# --- Fullscreen dialog for Compare ---
+@st.dialog("🔄 Compare — Expanded", width="large")
+def _cmp_fullscreen_dialog():
+    _data = st.session_state.get("_cmp_df_display")
+    _cols = st.session_state.get("_cmp_display_cols")
+    _col_config = st.session_state.get("_cmp_col_config")
+    _caption = st.session_state.get("_cmp_caption", "")
+    if _data is None or _cols is None:
+        st.info("No Compare data available. Open Compare mode first.")
+        return
+    st.dataframe(
+        _data[_cols],
+        use_container_width=True,
+        hide_index=True,
+        height=600,
+        column_config=_col_config or {},
+    )
+    if _caption:
+        st.caption(_caption)
+    if st.button("Close", key="close_cmp_fs", use_container_width=True):
+        st.session_state["_show_cmp_fullscreen"] = False
+        st.rerun()
+
+if st.session_state.get("_show_cmp_fullscreen"):
+    try:
+        _cmp_fullscreen_dialog()
+    except Exception:
+        pass
+    st.session_state["_show_cmp_fullscreen"] = False
 
 # ===================== OPERATIONS TAB =====================
 with tab_ops:
@@ -3532,25 +3597,48 @@ with tab_ops:
                     _display_cols = ["Product Name", "UOM", "Closing Stock", "Avg Consumption",
                                      "Weekly Usage", "Min", "Max", "Reorder Qty", "Trend", "Status", "Spark"]
 
+                    # Warning for limited data
+                    if _n_periods < 4:
+                        st.warning(
+                            f"⚠️ Limited data — only **{_n_periods} {_par_period.lower()} period(s)** of dispatches. "
+                            f"Par levels will become more accurate with more data. Recommended: at least 4 {_par_period.lower()} periods."
+                        )
+
+                    _par_col_config = {
+                        "Spark": st.column_config.LineChartColumn(
+                            f"Trend ({_par_period})",
+                            width="small",
+                            help=f"Dispatch qty per {_par_period.lower()} period",
+                        ),
+                        "Reorder Qty": st.column_config.NumberColumn(format="%.2f"),
+                        "Avg Consumption": st.column_config.NumberColumn(format="%.2f"),
+                        "Weekly Usage": st.column_config.NumberColumn(format="%.2f"),
+                        "Min": st.column_config.NumberColumn(format="%.2f"),
+                        "Max": st.column_config.NumberColumn(format="%.2f"),
+                    }
+                    _par_caption = f"Based on {_n_periods} {_par_period.lower()} periods | Min={_min_pct}% | Max={_max_pct}%"
+
+                    # Store for fullscreen dialog
+                    st.session_state["_par_df_display"] = _par_df
+                    st.session_state["_par_display_cols"] = _display_cols
+                    st.session_state["_par_col_config"] = _par_col_config
+                    st.session_state["_par_caption"] = _par_caption
+
                     st.dataframe(
                         _par_df[_display_cols],
                         use_container_width=True,
                         hide_index=True,
                         height=350,
-                        column_config={
-                            "Spark": st.column_config.LineChartColumn(
-                                f"Trend ({_par_period})",
-                                width="small",
-                                help=f"Dispatch qty per {_par_period.lower()} period",
-                            ),
-                            "Reorder Qty": st.column_config.NumberColumn(format="%.2f"),
-                            "Avg Consumption": st.column_config.NumberColumn(format="%.2f"),
-                            "Weekly Usage": st.column_config.NumberColumn(format="%.2f"),
-                            "Min": st.column_config.NumberColumn(format="%.2f"),
-                            "Max": st.column_config.NumberColumn(format="%.2f"),
-                        },
+                        column_config=_par_col_config,
                     )
-                    st.caption(f"Based on {_n_periods} {_par_period.lower()} periods | Min={_min_pct}% | Max={_max_pct}%")
+
+                    _pc1, _pc2 = st.columns([6, 1])
+                    with _pc1:
+                        st.caption(_par_caption)
+                    with _pc2:
+                        if st.button("⛶", key="expand_par", help="Expand Par Stock"):
+                            st.session_state["_show_par_fullscreen"] = True
+                            st.rerun()
 
             else:
                 # ══════ COMPARE MODE ══════
@@ -3626,23 +3714,39 @@ with tab_ops:
 
                     _cmp_display = ["Product Name", "UOM", _pa, _pb, "Change", "Change %", "Trend", "Spark"]
 
+                    _cmp_col_config = {
+                        "Spark": st.column_config.LineChartColumn(
+                            f"Trend ({_pa} → {_pb})",
+                            width="small",
+                            help="Monthly dispatch trend between selected periods",
+                        ),
+                        _pa: st.column_config.NumberColumn(format="%.2f"),
+                        _pb: st.column_config.NumberColumn(format="%.2f"),
+                        "Change": st.column_config.NumberColumn(format="%.2f"),
+                    }
+                    _cmp_caption = f"Comparing {_pa} vs {_pb} | Restaurant: {_cmp_rest}"
+
+                    # Store for fullscreen dialog
+                    st.session_state["_cmp_df_display"] = _cmp_df
+                    st.session_state["_cmp_display_cols"] = _cmp_display
+                    st.session_state["_cmp_col_config"] = _cmp_col_config
+                    st.session_state["_cmp_caption"] = _cmp_caption
+
                     st.dataframe(
                         _cmp_df[_cmp_display],
                         use_container_width=True,
                         hide_index=True,
                         height=350,
-                        column_config={
-                            "Spark": st.column_config.LineChartColumn(
-                                f"Trend ({_pa} → {_pb})",
-                                width="small",
-                                help="Monthly dispatch trend between selected periods",
-                            ),
-                            _pa: st.column_config.NumberColumn(format="%.2f"),
-                            _pb: st.column_config.NumberColumn(format="%.2f"),
-                            "Change": st.column_config.NumberColumn(format="%.2f"),
-                        },
+                        column_config=_cmp_col_config,
                     )
-                    st.caption(f"Comparing {_pa} vs {_pb} | Restaurant: {_cmp_rest}")
+
+                    _cc1, _cc2 = st.columns([6, 1])
+                    with _cc1:
+                        st.caption(_cmp_caption)
+                    with _cc2:
+                        if st.button("⛶", key="expand_cmp", help="Expand Compare"):
+                            st.session_state["_show_cmp_fullscreen"] = True
+                            st.rerun()
 
 # ===================== REQUISITIONS TAB =====================
 with tab_req:
