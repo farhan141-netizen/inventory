@@ -531,7 +531,7 @@ def logout_user():
         "dash_cards", "r01_dash_cards", "inventory", "log_page",
         "bulk_upload_state", "cart", "_show_lss_fullscreen", "_lss_fmt_pending", "_lss_sort", "_lss_fmt",
         "_show_par_fullscreen", "_par_reqs_data", "_par_rest_list",
-        "_show_cmp_fullscreen",
+        "_show_cmp_fullscreen", "_show_req_dialog", "_req_dialog_rest", "_req_dialog_date",
     ]
     for k in keys_to_clear:
         if k in st.session_state:
@@ -2698,6 +2698,7 @@ with _tb3:
         st.session_state["_show_lss_fullscreen"] = False
         st.session_state["_show_par_fullscreen"] = False
         st.session_state["_show_cmp_fullscreen"] = False
+        st.session_state["_show_req_dialog"] = False
         _logout_confirm_dialog()
 
 # ===================== SIDEBAR =====================
@@ -3436,6 +3437,213 @@ if st.session_state.get("_show_par_fullscreen"):
         pass
     st.session_state["_show_par_fullscreen"] = False
 
+
+# --- Requisition processing dialog ---
+@st.dialog("🚚 Process Requisitions", width="large")
+def _req_process_dialog():
+    _rest = st.session_state.get("_req_dialog_rest", "")
+    _date_str = st.session_state.get("_req_dialog_date", "")
+    if not _rest or not _date_str:
+        st.info("No restaurant/date selected.")
+        return
+
+    _date = pd.Timestamp(_date_str).date()
+
+    st.markdown(
+        f"<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;'>"
+        f"<span style='font-size:16px;font-weight:700;'>🏪 {_rest}</span>"
+        f"<span style='font-size:13px;color:var(--muted);'>{_date.strftime('%d/%m/%Y')}</span></div>",
+        unsafe_allow_html=True,
+    )
+
+    # Reload fresh data inside dialog
+    _all = load_from_sheet(
+        "restaurant_requisitions",
+        ["ReqID", "Restaurant", "Item", "Qty", "Status", "DispatchQty", "Timestamp", "RequestedDate", "FollowupSent"],
+    )
+    if _all.empty:
+        st.info("No data.")
+        return
+    if "FollowupSent" not in _all.columns:
+        _all["FollowupSent"] = False
+    _all["RequestedDate"] = pd.to_datetime(_all["RequestedDate"], errors="coerce")
+    _all["Qty"] = pd.to_numeric(_all["Qty"], errors="coerce").fillna(0)
+    _all["DispatchQty"] = pd.to_numeric(_all["DispatchQty"], errors="coerce").fillna(0)
+
+    # Filter for this restaurant + date
+    _rd = _all[
+        (_all["Restaurant"].astype(str).str.strip() == _rest) &
+        (_all["RequestedDate"].dt.date == _date)
+    ].copy()
+
+    if _rd.empty:
+        st.info("📭 No items for this date.")
+        return
+
+    # Sort: Pending first, then Dispatched (with remaining), then Completed
+    _status_order = {"Pending": 0, "Dispatched": 1, "Completed": 2}
+    _rd["_sort"] = _rd["Status"].map(_status_order).fillna(3)
+    _rd = _rd.sort_values("_sort")
+
+    # Group by status
+    _pending = _rd[_rd["Status"] == "Pending"]
+    _dispatched = _rd[_rd["Status"] == "Dispatched"]
+    _completed = _rd[_rd["Status"] == "Completed"]
+
+    # ── PENDING SECTION ──
+    if not _pending.empty:
+        st.markdown(
+            f"<div style='font-size:11px;font-weight:700;color:#DC2626;margin:8px 0 4px;"
+            f"border-bottom:2px solid #FECACA;padding-bottom:3px;'>🟡 PENDING ({len(_pending)})</div>",
+            unsafe_allow_html=True,
+        )
+        for idx, row in _pending.iterrows():
+            _item = row["Item"]
+            _rq = float(row["Qty"])
+            _dq = float(row["DispatchQty"])
+            _rem = _rq - _dq
+            _rid = row["ReqID"]
+            _email = row.get("submitted_by_email", "") or ""
+
+            _si = st.session_state.inventory[st.session_state.inventory["Product Name"] == _item]
+            _avail = float(_si["Closing Stock"].values[0]) if not _si.empty else 0.0
+            _email_txt = f" | 👤 {_email}" if _email else ""
+
+            st.markdown(
+                f"<div style='background:#FFFBEB;border:1px solid #FDE68A;border-left:3px solid #7C5CFC;"
+                f"border-radius:8px;padding:5px 10px;font-size:11px;margin-bottom:3px;'>"
+                f"<b>{_item}</b> | Req:{_rq:.0f} | Got:{_dq:.0f} | Rem:{_rem:.0f} | Avail:{_avail:.0f}{_email_txt}</div>",
+                unsafe_allow_html=True,
+            )
+            _ac1, _ac2, _ac3 = st.columns([2, 1, 1])
+            with _ac1:
+                _def_qty = min(_rq, _avail)
+                _dq_input = st.number_input("Qty", min_value=0.0, max_value=max(_avail, 0.01),
+                                            value=_def_qty, step=1.0,
+                                            key=f"dq_{_rid}", label_visibility="collapsed")
+            with _ac2:
+                if st.button("Send", key=f"send_{_rid}", use_container_width=True, type="primary"):
+                    if _dq_input > 0:
+                        _all.at[idx, "DispatchQty"] = _dq_input
+                        _all.at[idx, "Status"] = "Dispatched"
+                        _all.at[idx, "Timestamp"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        inv_df = st.session_state.inventory
+                        inv_match = inv_df[inv_df["Product Name"] == _item]
+                        if not inv_match.empty:
+                            inv_idx = inv_match.index[0]
+                            cc = pd.to_numeric(inv_df.at[inv_idx, "Consumption"], errors="coerce") or 0.0
+                            inv_df.at[inv_idx, "Consumption"] = cc + _dq_input
+                            inv_df = recalculate_item(inv_df, _item)
+                            st.session_state.inventory = inv_df
+                            save_to_sheet(inv_df, "persistent_inventory")
+                        save_to_sheet(_all, "restaurant_requisitions")
+                        st.cache_data.clear()
+                        st.toast(f"✅ Sent {_dq_input:.0f} {_item}")
+            with _ac3:
+                if st.button("Cancel", key=f"cx_{_rid}", use_container_width=True):
+                    _all = _all.drop(idx)
+                    save_to_sheet(_all, "restaurant_requisitions")
+                    st.cache_data.clear()
+                    st.toast(f"❌ Cancelled {_item}")
+
+    # ── DISPATCHED SECTION ──
+    if not _dispatched.empty:
+        st.markdown(
+            f"<div style='font-size:11px;font-weight:700;color:#D97706;margin:10px 0 4px;"
+            f"border-bottom:2px solid #FDE68A;padding-bottom:3px;'>🟠 DISPATCHED ({len(_dispatched)})</div>",
+            unsafe_allow_html=True,
+        )
+        for idx, row in _dispatched.iterrows():
+            _item = row["Item"]
+            _rq = float(row["Qty"])
+            _dq = float(row["DispatchQty"])
+            _rem = _rq - _dq
+            _rid = row["ReqID"]
+            _email = row.get("submitted_by_email", "") or ""
+            _fu = row.get("FollowupSent", False)
+
+            _si = st.session_state.inventory[st.session_state.inventory["Product Name"] == _item]
+            _avail = float(_si["Closing Stock"].values[0]) if not _si.empty else 0.0
+            _email_txt = f" | 👤 {_email}" if _email else ""
+            _fu_txt = " ⚠️" if _fu else ""
+
+            _border_col = "#F59E0B" if _rem > 0 else "#10B981"
+
+            st.markdown(
+                f"<div style='background:#FFF7ED;border:1px solid #FED7AA;border-left:3px solid {_border_col};"
+                f"border-radius:8px;padding:5px 10px;font-size:11px;margin-bottom:3px;'>"
+                f"<b>{_item}</b> | Req:{_rq:.0f} | Got:{_dq:.0f} | Rem:{_rem:.0f} | Avail:{_avail:.0f}{_fu_txt}{_email_txt}</div>",
+                unsafe_allow_html=True,
+            )
+            if _rem > 0:
+                _sc1, _sc2, _sc3 = st.columns([2, 1, 1])
+                with _sc1:
+                    _add_qty = st.number_input("More", min_value=0.0, max_value=min(_rem, _avail),
+                                               value=min(_rem, _avail), step=1.0,
+                                               key=f"more_{_rid}", label_visibility="collapsed")
+                with _sc2:
+                    if st.button("Send More", key=f"sm_{_rid}", use_container_width=True):
+                        if _add_qty > 0:
+                            _new_dq = _dq + _add_qty
+                            _all.at[idx, "DispatchQty"] = _new_dq
+                            if _rq - _new_dq <= 0:
+                                _all.at[idx, "Status"] = "Completed"
+                            _all.at[idx, "Timestamp"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                            inv_df = st.session_state.inventory
+                            inv_match = inv_df[inv_df["Product Name"] == _item]
+                            if not inv_match.empty:
+                                inv_idx = inv_match.index[0]
+                                cc = pd.to_numeric(inv_df.at[inv_idx, "Consumption"], errors="coerce") or 0.0
+                                inv_df.at[inv_idx, "Consumption"] = cc + _add_qty
+                                inv_df = recalculate_item(inv_df, _item)
+                                st.session_state.inventory = inv_df
+                                save_to_sheet(inv_df, "persistent_inventory")
+                            save_to_sheet(_all, "restaurant_requisitions")
+                            st.cache_data.clear()
+                            st.toast(f"✅ Sent {_add_qty:.0f} more {_item}")
+                with _sc3:
+                    if st.button("🚩 Follow-up", key=f"fu_{_rid}", use_container_width=True):
+                        _all.at[idx, "FollowupSent"] = True
+                        _all.at[idx, "Timestamp"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        save_to_sheet(_all, "restaurant_requisitions")
+                        st.cache_data.clear()
+                        st.toast("🚩 Follow-up marked")
+            else:
+                st.markdown(
+                    "<div style='font-size:10px;color:#059669;margin:0 0 4px 12px;'>✅ Fully dispatched</div>",
+                    unsafe_allow_html=True,
+                )
+
+    # ── COMPLETED SECTION ──
+    if not _completed.empty:
+        st.markdown(
+            f"<div style='font-size:11px;font-weight:700;color:#059669;margin:10px 0 4px;"
+            f"border-bottom:2px solid #A7F3D0;padding-bottom:3px;'>🟢 COMPLETED ({len(_completed)})</div>",
+            unsafe_allow_html=True,
+        )
+        for _, row in _completed.iterrows():
+            _item = row["Item"]
+            _rq = float(row["Qty"])
+            _dq = float(row["DispatchQty"])
+            st.markdown(
+                f"<div style='background:#F0FDF4;border:1px solid #BBF7D0;border-left:3px solid #10B981;"
+                f"border-radius:8px;padding:5px 10px;font-size:11px;margin-bottom:3px;opacity:0.8;'>"
+                f"<b>{_item}</b> | Req:{_rq:.0f} | Got:{_dq:.0f} | ✅ Done</div>",
+                unsafe_allow_html=True,
+            )
+
+    st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
+    if st.button("Close", key="close_req_dlg", use_container_width=True):
+        st.session_state["_show_req_dialog"] = False
+        st.rerun()
+
+if st.session_state.get("_show_req_dialog"):
+    try:
+        _req_process_dialog()
+    except Exception:
+        pass
+    st.session_state["_show_req_dialog"] = False
+
 # ===================== OPERATIONS TAB =====================
 with tab_ops:
     col_receipt_main, col_quick_main = st.columns([3, 1])
@@ -3673,11 +3881,14 @@ with tab_ops:
 
 # ===================== REQUISITIONS TAB =====================
 with tab_req:
-    st.markdown('<span class="section-title">🚚 Restaurant Requisitions</span>', unsafe_allow_html=True)
-
-    if st.button("🔄 Refresh Requisitions", use_container_width=True, key="refresh_reqs"):
-        st.cache_data.clear()
-        st.rerun()
+    # ── Small refresh button ──
+    _rq_title, _rq_refresh = st.columns([6, 1])
+    with _rq_title:
+        st.markdown('<span class="section-title">🚚 Restaurant Requisitions</span>', unsafe_allow_html=True)
+    with _rq_refresh:
+        if st.button("🔄", key="refresh_reqs", help="Refresh"):
+            st.cache_data.clear()
+            st.rerun()
 
     all_reqs = load_from_sheet(
         "restaurant_requisitions",
@@ -3687,148 +3898,63 @@ with tab_req:
     if not all_reqs.empty:
         if "FollowupSent" not in all_reqs.columns:
             all_reqs["FollowupSent"] = False
+        all_reqs["RequestedDate"] = pd.to_datetime(all_reqs["RequestedDate"], errors="coerce")
+        all_reqs["Qty"] = pd.to_numeric(all_reqs["Qty"], errors="coerce").fillna(0)
+        all_reqs["DispatchQty"] = pd.to_numeric(all_reqs["DispatchQty"], errors="coerce").fillna(0)
+        all_reqs["Restaurant"] = all_reqs["Restaurant"].fillna("").astype(str).str.strip()
+        all_reqs["Status"] = all_reqs["Status"].fillna("Pending").astype(str).str.strip()
 
-        status_filter = st.selectbox("Filter by Status", ["All", "Pending", "Dispatched", "Completed"], key="req_status_filter", label_visibility="collapsed")
+        _restaurants = sorted(all_reqs["Restaurant"].unique().tolist())
+        _restaurants = [r for r in _restaurants if r]
 
-        display_reqs = all_reqs if status_filter == "All" else all_reqs[all_reqs["Status"] == status_filter]
-
-        if not display_reqs.empty:
-            display_reqs = display_reqs.copy()
-            display_reqs["RequestedDate"] = pd.to_datetime(display_reqs["RequestedDate"], errors="coerce")
-            display_reqs = display_reqs[display_reqs["RequestedDate"].notna()]
-
-            if not display_reqs.empty:
-                display_reqs = display_reqs.sort_values("RequestedDate", ascending=False)
-                unique_dates = sorted(display_reqs["RequestedDate"].unique(), reverse=True)
-
-                for req_date in unique_dates:
-                    try:
-                        date_str = pd.Timestamp(req_date).strftime("%d/%m/%Y")
-                    except Exception:
-                        date_str = "Unknown Date"
-
-                    date_reqs = display_reqs[display_reqs["RequestedDate"] == req_date]
-
-                    with st.expander(f"📅 {date_str} ({len(date_reqs)} items)", expanded=False):
-                        restaurants = date_reqs["Restaurant"].unique()
-
-                        for restaurant in restaurants:
-                            rest_reqs = date_reqs[date_reqs["Restaurant"] == restaurant]
-                            st.write(f"🏪 **{restaurant}** - {len(rest_reqs)} items")
-
-                            for idx, row in rest_reqs.iterrows():
-                                item_name = row["Item"]
-                                req_qty = float(row["Qty"])
-                                status = row["Status"]
-                                dispatch_qty = float(row.get("DispatchQty", 0))
-                                req_id = row["ReqID"]
-                                remaining_qty = req_qty - dispatch_qty
-                                followup_sent = row.get("FollowupSent", False)
-                                submitted_by_email = row.get("submitted_by_email", "") or ""
-
-                                stock_info = st.session_state.inventory[st.session_state.inventory["Product Name"] == item_name]
-                                available_qty = float(stock_info["Closing Stock"].values[0]) if not stock_info.empty else 0.0
-
-                                status_color = "🟡" if status == "Pending" else "🟠" if status == "Dispatched" else "🔵"
-                                followup_text = " ⚠️" if followup_sent else ""
-                                submitter_text = f" | 👤 {submitted_by_email}" if submitted_by_email else ""
-
-                                st.markdown(
-                                    f"""
-                                    <div class="req-box">
-                                        <b>{status_color} {item_name}</b> | Req:{req_qty} | Got:{dispatch_qty} | Rem:{remaining_qty} | Avail:{available_qty}{followup_text}{submitter_text}
-                                    </div>
-                                    """,
-                                    unsafe_allow_html=True,
-                                )
-
-                                if status == "Pending":
-                                    c1, c2, c3 = st.columns([2, 1, 1])
-                                    with c1:
-                                        default_dispatch = min(req_qty, available_qty)
-                                        dispatch_qty_input = st.number_input(
-                                            "Dispatch",
-                                            min_value=0.0,
-                                            max_value=available_qty,
-                                            value=default_dispatch,
-                                            key=f"dispatch_{req_id}",
-                                            label_visibility="collapsed",
-                                        )
-                                    with c2:
-                                        if st.button("🚀 Dispatch", key=f"dispatch_btn_{req_id}", use_container_width=True):
-                                            if dispatch_qty_input > 0:
-                                                all_reqs.at[idx, "DispatchQty"] = dispatch_qty_input
-                                                all_reqs.at[idx, "Status"] = "Dispatched"
-                                                all_reqs.at[idx, "Timestamp"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                                                # Update warehouse consumption
-                                                inv_df = st.session_state.inventory
-                                                inv_match = inv_df[inv_df["Product Name"] == item_name]
-                                                if not inv_match.empty:
-                                                    inv_idx = inv_match.index[0]
-                                                    current_consumption = pd.to_numeric(inv_df.at[inv_idx, "Consumption"], errors="coerce") or 0.0
-                                                    inv_df.at[inv_idx, "Consumption"] = current_consumption + dispatch_qty_input
-                                                    inv_df = recalculate_item(inv_df, item_name)
-                                                    st.session_state.inventory = inv_df
-                                                    save_to_sheet(inv_df, "persistent_inventory")
-                                                if save_to_sheet(all_reqs, "restaurant_requisitions"):
-                                                    st.success(f"✅ Dispatched {dispatch_qty_input}")
-                                                    st.cache_data.clear()
-                                                    st.rerun()
-                                    with c3:
-                                        if st.button("❌ Cancel", key=f"cancel_btn_{req_id}", use_container_width=True):
-                                            all_reqs = all_reqs.drop(idx)
-                                            save_to_sheet(all_reqs, "restaurant_requisitions")
-                                            st.warning("❌ Cancelled")
-                                            st.rerun()
-
-                                elif status == "Dispatched":
-                                    if remaining_qty > 0:
-                                        c1, c2, c3 = st.columns([2, 1, 1])
-                                        with c1:
-                                            additional_dispatch = st.number_input(
-                                                "Additional Dispatch",
-                                                min_value=0.0,
-                                                max_value=min(remaining_qty, available_qty),
-                                                value=min(remaining_qty, available_qty),
-                                                key=f"add_dispatch_{req_id}",
-                                                label_visibility="collapsed",
-                                            )
-                                        with c2:
-                                            if st.button("🚀 Send More", key=f"add_dispatch_btn_{req_id}", use_container_width=True):
-                                                if additional_dispatch > 0:
-                                                    new_total_dispatch = dispatch_qty + additional_dispatch
-                                                    all_reqs.at[idx, "DispatchQty"] = new_total_dispatch
-                                                    new_remaining = req_qty - new_total_dispatch
-                                                    if new_remaining <= 0:
-                                                        all_reqs.at[idx, "Status"] = "Completed"
-                                                    all_reqs.at[idx, "Timestamp"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                                                    # Update warehouse consumption
-                                                    inv_df = st.session_state.inventory
-                                                    inv_match = inv_df[inv_df["Product Name"] == item_name]
-                                                    if not inv_match.empty:
-                                                        inv_idx = inv_match.index[0]
-                                                        current_consumption = pd.to_numeric(inv_df.at[inv_idx, "Consumption"], errors="coerce") or 0.0
-                                                        inv_df.at[inv_idx, "Consumption"] = current_consumption + additional_dispatch
-                                                        inv_df = recalculate_item(inv_df, item_name)
-                                                        st.session_state.inventory = inv_df
-                                                        save_to_sheet(inv_df, "persistent_inventory")
-                                                    if save_to_sheet(all_reqs, "restaurant_requisitions"):
-                                                        st.success(f"✅ Dispatched additional {additional_dispatch}")
-                                                        st.cache_data.clear()
-                                                        st.rerun()
-                                        with c3:
-                                            if st.button("🚩 Follow-up", key=f"followup_{idx}", use_container_width=True):
-                                                all_reqs.at[idx, "FollowupSent"] = True
-                                                all_reqs.at[idx, "Timestamp"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                                                save_to_sheet(all_reqs, "restaurant_requisitions")
-                                                st.success("✅ Follow-up sent!")
-                                                st.rerun()
-                                    else:
-                                        st.caption(f"✅ Fully Dispatched: {dispatch_qty}")
-            else:
-                st.info("📭 No valid dates found in requisitions")
+        if not _restaurants:
+            st.info("📭 No restaurants found in requisitions.")
         else:
-            st.info(f"📭 No {status_filter.lower()} requisitions found")
+            for _rest_name in _restaurants:
+                _rest_reqs = all_reqs[all_reqs["Restaurant"] == _rest_name]
+                _pending_count = len(_rest_reqs[_rest_reqs["Status"] == "Pending"])
+                _dispatched_count = len(_rest_reqs[_rest_reqs["Status"] == "Dispatched"])
+
+                # Available dates for this restaurant
+                _rest_dates = _rest_reqs["RequestedDate"].dropna().dt.date.unique()
+                _rest_dates = sorted(_rest_dates, reverse=True)
+
+                # Badge color
+                _badge_bg = "#FEE2E2" if _pending_count > 0 else "#D1FAE5"
+                _badge_fc = "#DC2626" if _pending_count > 0 else "#059669"
+                _badge_text = f"{_pending_count} pending" if _pending_count > 0 else "✅ done"
+
+                # Restaurant row
+                _rc1, _rc2, _rc3 = st.columns([4, 2, 1])
+                with _rc1:
+                    st.markdown(
+                        f"<div style='display:flex;align-items:center;gap:8px;padding:6px 0;'>"
+                        f"<span style='font-size:13px;font-weight:700;'>🏪 {_rest_name}</span>"
+                        f"<span style='font-size:10px;font-weight:600;background:{_badge_bg};color:{_badge_fc};"
+                        f"padding:2px 8px;border-radius:99px;'>{_badge_text}</span>"
+                        f"</div>",
+                        unsafe_allow_html=True,
+                    )
+                with _rc2:
+                    if _rest_dates:
+                        _sel_date = st.selectbox(
+                            "Date", _rest_dates,
+                            format_func=lambda d: d.strftime("%d/%m/%Y"),
+                            key=f"req_date_{_rest_name}",
+                            label_visibility="collapsed",
+                        )
+                    else:
+                        _sel_date = None
+                        st.caption("No dates")
+                with _rc3:
+                    if _sel_date and st.button("✅ Open", key=f"req_open_{_rest_name}", use_container_width=True):
+                        st.session_state["_req_dialog_rest"] = _rest_name
+                        st.session_state["_req_dialog_date"] = str(_sel_date)
+                        st.session_state["_show_req_dialog"] = True
+                        st.rerun()
+
+                # Thin divider
+                st.markdown("<hr style='margin:4px 0;border:none;border-top:1px solid #E2E8F0;'>", unsafe_allow_html=True)
     else:
         st.info("📭 No requisitions yet")
 
