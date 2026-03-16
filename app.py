@@ -1275,6 +1275,26 @@ st.markdown(
     button[data-testid="stBaseButton-secondary"][kind="secondary"]:has(> div > p:only-child) {
         min-height: auto !important;
     }
+
+    /* ===== Compact requisition dialog inputs & buttons ===== */
+    [data-testid="stDialog"] .stNumberInput input {
+        height: 32px !important;
+        min-height: 32px !important;
+        padding: 4px 8px !important;
+        font-size: 12px !important;
+    }
+    [data-testid="stDialog"] .stNumberInput button {
+        height: 32px !important;
+        min-height: 32px !important;
+        width: 32px !important;
+        padding: 0 !important;
+    }
+    [data-testid="stDialog"] .stButton > button {
+        min-height: 32px !important;
+        height: 32px !important;
+        padding: 4px 12px !important;
+        font-size: 12px !important;
+    }
     </style>
     """,
     unsafe_allow_html=True,
