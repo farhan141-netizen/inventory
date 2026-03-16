@@ -3470,6 +3470,23 @@ def _req_process_dialog():
     _all["Qty"] = pd.to_numeric(_all["Qty"], errors="coerce").fillna(0)
     _all["DispatchQty"] = pd.to_numeric(_all["DispatchQty"], errors="coerce").fillna(0)
 
+    def _save_reqs(_df):
+        """Save requisitions with Timestamp-safe serialization."""
+        _sdf = _df.copy()
+        if "RequestedDate" in _sdf.columns:
+            _sdf["RequestedDate"] = _sdf["RequestedDate"].apply(
+                lambda x: x.strftime("%Y-%m-%d") if hasattr(x, "strftime") else str(x) if pd.notna(x) else None
+            )
+        if "Timestamp" in _sdf.columns:
+            _sdf["Timestamp"] = _sdf["Timestamp"].apply(
+                lambda x: x.strftime("%Y-%m-%d %H:%M:%S") if hasattr(x, "strftime") else str(x) if pd.notna(x) else None
+            )
+        # Drop internal columns
+        for _drop_col in ["_sort"]:
+            if _drop_col in _sdf.columns:
+                _sdf = _sdf.drop(columns=[_drop_col])
+        return save_to_sheet(_sdf, "restaurant_requisitions")
+
     # Filter for this restaurant + date
     _rd = _all[
         (_all["Restaurant"].astype(str).str.strip() == _rest) &
@@ -3537,13 +3554,13 @@ def _req_process_dialog():
                             inv_df = recalculate_item(inv_df, _item)
                             st.session_state.inventory = inv_df
                             save_to_sheet(inv_df, "persistent_inventory")
-                        save_to_sheet(_all, "restaurant_requisitions")
+                        _save_reqs(_all)
                         st.cache_data.clear()
                         st.toast(f"✅ Sent {_dq_input:.0f} {_item}")
             with _ac4:
                 if st.button("Cancel", key=f"cx_{_rid}", use_container_width=True):
                     _all = _all.drop(idx)
-                    save_to_sheet(_all, "restaurant_requisitions")
+                    _save_reqs(_all)
                     st.cache_data.clear()
                     st.toast(f"❌ Cancelled {_item}")
 
@@ -3599,14 +3616,14 @@ def _req_process_dialog():
                                 inv_df = recalculate_item(inv_df, _item)
                                 st.session_state.inventory = inv_df
                                 save_to_sheet(inv_df, "persistent_inventory")
-                            save_to_sheet(_all, "restaurant_requisitions")
+                            _save_reqs(_all)
                             st.cache_data.clear()
                             st.toast(f"✅ Sent {_add_qty:.0f} more {_item}")
                 with _sc4:
                     if st.button("🚩", key=f"fu_{_rid}", use_container_width=True, help="Follow-up"):
                         _all.at[idx, "FollowupSent"] = True
                         _all.at[idx, "Timestamp"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        save_to_sheet(_all, "restaurant_requisitions")
+                        _save_reqs(_all)
                         st.cache_data.clear()
                         st.toast("🚩 Follow-up marked")
             else:
