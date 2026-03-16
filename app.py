@@ -1286,8 +1286,9 @@ st.markdown(
     [data-testid="stDialog"] .stNumberInput button {
         height: 21px !important;
         min-height: 21px !important;
-        width: 32px !important;
+        width: 25px !important;
         padding: 0 !important;
+        align-self: center !important;
     }
     [data-testid="stDialog"] .stButton > button {
         min-height: 21px !important;
