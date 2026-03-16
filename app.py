@@ -3404,23 +3404,244 @@ with tab_ops:
             else:
                 st.warning("⚠️ No data columns available for export")
 
-    with st.expander("📈 Weekly Par Analysis", expanded=False):
-        df_hist = load_from_sheet("monthly_history")
-        if not df_hist.empty and not st.session_state.inventory.empty:
-            df_hist["Consumption"] = pd.to_numeric(df_hist["Consumption"], errors="coerce").fillna(0)
-            avg_cons = df_hist.groupby("Product Name")["Consumption"].mean().reset_index()
-            df_par = pd.merge(
-                st.session_state.inventory[["Product Name", "UOM", "Closing Stock"]],
-                avg_cons,
-                on="Product Name",
-                how="left",
-            ).fillna(0)
-            df_par["Weekly Usage"] = (df_par["Consumption"] / 4.33).round(2)
-            df_par["Min (50%)"] = (df_par["Weekly Usage"] * 0.5).round(2)
-            df_par["Max (150%)"] = (df_par["Weekly Usage"] * 1.5).round(2)
-            st.dataframe(df_par, use_container_width=True, hide_index=True, height=250)
+    with st.expander("📈 Par Analysis & Comparison", expanded=False):
+        # ── Load dispatch data ──
+        _raw_reqs = load_from_sheet(
+            "restaurant_requisitions",
+            ["ReqID", "Restaurant", "Item", "Qty", "DispatchQty", "Status", "Timestamp", "RequestedDate"],
+        )
+        _reqs = _prepare_reqs(_raw_reqs) if not _raw_reqs.empty else pd.DataFrame()
+        # Only dispatched/completed items = actual consumption
+        if not _reqs.empty:
+            _reqs = _reqs[_reqs["Status"].isin(["Dispatched", "Completed"])].copy()
+            _reqs["_ts"] = pd.to_datetime(_reqs["Timestamp"], errors="coerce")
+            _reqs = _reqs.dropna(subset=["_ts"])
+
+        if _reqs.empty or st.session_state.inventory.empty:
+            st.info("📭 Need dispatched requisitions and inventory data for Par Analysis.")
         else:
-            st.info("Historical data required.")
+            # Get restaurant list
+            _rest_list = sorted(_reqs["Restaurant"].dropna().unique().tolist())
+            _rest_list = [r for r in _rest_list if r.strip()]
+
+            # ── Two modes ──
+            _par_mode = st.radio("", ["📊 Par Stock", "🔄 Compare"], horizontal=True, key="par_mode", label_visibility="collapsed")
+
+            if _par_mode == "📊 Par Stock":
+                # ── Filters row ──
+                _pf1, _pf2, _pf3 = st.columns(3)
+                with _pf1:
+                    _par_rest = st.selectbox("Restaurant", ["All"] + _rest_list, key="par_rest")
+                with _pf2:
+                    _par_period = st.selectbox("Period", ["Weekly", "Monthly"], key="par_period")
+                with _pf3:
+                    if _par_period == "Weekly":
+                        _par_range = st.selectbox("Range", ["Last 4 weeks", "Last 8 weeks", "Last 12 weeks"], key="par_range")
+                        _weeks = int(_par_range.split()[1])
+                        _cutoff = pd.Timestamp.now() - pd.Timedelta(weeks=_weeks)
+                    else:
+                        _par_range = st.selectbox("Range", ["Last 3 months", "Last 6 months", "Last 12 months"], key="par_range")
+                        _months = int(_par_range.split()[1])
+                        _cutoff = pd.Timestamp.now() - pd.DateOffset(months=_months)
+
+                _tf1, _tf2 = st.columns(2)
+                with _tf1:
+                    _min_pct = st.number_input("Min %", value=50, min_value=1, max_value=100, step=5, key="par_min_pct")
+                with _tf2:
+                    _max_pct = st.number_input("Max %", value=150, min_value=100, max_value=500, step=10, key="par_max_pct")
+
+                # ── Filter data ──
+                _fd = _reqs[_reqs["_ts"] >= _cutoff].copy()
+                if _par_rest != "All":
+                    _fd = _fd[_fd["Restaurant"] == _par_rest]
+
+                if _fd.empty:
+                    st.warning("No dispatch data found for the selected filters.")
+                else:
+                    # ── Calculate consumption per period ──
+                    if _par_period == "Weekly":
+                        _fd["_period"] = _fd["_ts"].dt.isocalendar().week.astype(int)
+                        _fd["_period_label"] = _fd["_ts"].dt.strftime("W%V")
+                    else:
+                        _fd["_period"] = _fd["_ts"].dt.to_period("M").astype(str)
+                        _fd["_period_label"] = _fd["_period"]
+
+                    # Sum per item per period
+                    _grp = _fd.groupby(["Item", "_period"], as_index=False)["DispatchQty"].sum()
+                    _n_periods = _fd["_period"].nunique()
+
+                    # Avg consumption per period
+                    _avg = _grp.groupby("Item", as_index=False)["DispatchQty"].mean()
+                    _avg.columns = ["Product Name", "Avg Consumption"]
+                    _avg["Avg Consumption"] = _avg["Avg Consumption"].round(2)
+
+                    # Weekly usage
+                    if _par_period == "Monthly":
+                        _avg["Weekly Usage"] = (_avg["Avg Consumption"] / 4.33).round(2)
+                    else:
+                        _avg["Weekly Usage"] = _avg["Avg Consumption"].round(2)
+
+                    # Merge with inventory
+                    _inv_cols = ["Product Name", "UOM", "Closing Stock"]
+                    _inv_sub = st.session_state.inventory[_inv_cols].copy() if all(c in st.session_state.inventory.columns for c in _inv_cols) else pd.DataFrame(columns=_inv_cols)
+                    _par_df = pd.merge(_inv_sub, _avg, on="Product Name", how="inner")
+                    _par_df["Closing Stock"] = pd.to_numeric(_par_df["Closing Stock"], errors="coerce").fillna(0)
+
+                    # Min / Max / Reorder
+                    _par_df["Min"] = (_par_df["Weekly Usage"] * _min_pct / 100).round(2)
+                    _par_df["Max"] = (_par_df["Weekly Usage"] * _max_pct / 100).round(2)
+                    _par_df["Reorder Qty"] = (_par_df["Max"] - _par_df["Closing Stock"]).round(2)
+
+                    # Trend: last period vs avg
+                    _last_period = _fd["_period"].max()
+                    _last_grp = _grp[_grp["_period"] == _last_period].set_index("Item")["DispatchQty"]
+                    _trend_labels = []
+                    for _, r in _par_df.iterrows():
+                        _lv = _last_grp.get(r["Product Name"], 0)
+                        _av = r["Avg Consumption"]
+                        if _av == 0:
+                            _trend_labels.append("→")
+                        elif _lv > _av * 1.1:
+                            _trend_labels.append("↑")
+                        elif _lv < _av * 0.9:
+                            _trend_labels.append("↓")
+                        else:
+                            _trend_labels.append("→")
+                    _par_df["Trend"] = _trend_labels
+
+                    # Spark-line data: consumption per period for each item
+                    _spark_data = {}
+                    _periods_sorted = sorted(_fd["_period"].unique())
+                    for item in _par_df["Product Name"]:
+                        _item_grp = _grp[_grp["Item"] == item].set_index("_period")["DispatchQty"]
+                        _spark_data[item] = [float(_item_grp.get(p, 0)) for p in _periods_sorted]
+                    _par_df["Spark"] = _par_df["Product Name"].map(_spark_data)
+
+                    # Status color
+                    def _par_status(row):
+                        if row["Closing Stock"] < row["Min"]:
+                            return "🔴 Low"
+                        elif row["Closing Stock"] > row["Max"]:
+                            return "🟡 Over"
+                        else:
+                            return "🟢 OK"
+                    _par_df["Status"] = _par_df.apply(_par_status, axis=1)
+
+                    # Display
+                    _display_cols = ["Product Name", "UOM", "Closing Stock", "Avg Consumption",
+                                     "Weekly Usage", "Min", "Max", "Reorder Qty", "Trend", "Status", "Spark"]
+
+                    st.dataframe(
+                        _par_df[_display_cols],
+                        use_container_width=True,
+                        hide_index=True,
+                        height=350,
+                        column_config={
+                            "Spark": st.column_config.LineChartColumn(
+                                f"Trend ({_par_period})",
+                                width="small",
+                                help=f"Dispatch qty per {_par_period.lower()} period",
+                            ),
+                            "Reorder Qty": st.column_config.NumberColumn(format="%.2f"),
+                            "Avg Consumption": st.column_config.NumberColumn(format="%.2f"),
+                            "Weekly Usage": st.column_config.NumberColumn(format="%.2f"),
+                            "Min": st.column_config.NumberColumn(format="%.2f"),
+                            "Max": st.column_config.NumberColumn(format="%.2f"),
+                        },
+                    )
+                    st.caption(f"Based on {_n_periods} {_par_period.lower()} periods | Min={_min_pct}% | Max={_max_pct}%")
+
+            else:
+                # ══════ COMPARE MODE ══════
+                _cf1, _cf2, _cf3 = st.columns(3)
+                with _cf1:
+                    _cmp_rest = st.selectbox("Restaurant", ["All"] + _rest_list, key="cmp_rest")
+
+                # Build month options from available data
+                _reqs["_month"] = _reqs["_ts"].dt.to_period("M")
+                _avail_months = sorted(_reqs["_month"].unique())
+                _month_labels = [str(m) for m in _avail_months]
+
+                if len(_month_labels) < 2:
+                    st.warning("Need at least 2 months of dispatch data to compare.")
+                else:
+                    with _cf2:
+                        _pa = st.selectbox("Period A", _month_labels, index=0, key="cmp_pa")
+                    with _cf3:
+                        _pb = st.selectbox("Period B", _month_labels, index=len(_month_labels) - 1, key="cmp_pb")
+
+                    # Filter
+                    _cd = _reqs.copy()
+                    if _cmp_rest != "All":
+                        _cd = _cd[_cd["Restaurant"] == _cmp_rest]
+
+                    _cd_a = _cd[_cd["_month"].astype(str) == _pa]
+                    _cd_b = _cd[_cd["_month"].astype(str) == _pb]
+
+                    _sum_a = _cd_a.groupby("Item", as_index=False)["DispatchQty"].sum().rename(columns={"Item": "Product Name", "DispatchQty": _pa})
+                    _sum_b = _cd_b.groupby("Item", as_index=False)["DispatchQty"].sum().rename(columns={"Item": "Product Name", "DispatchQty": _pb})
+
+                    # Merge with inventory for UOM
+                    _inv_uom = st.session_state.inventory[["Product Name", "UOM"]].drop_duplicates() if "UOM" in st.session_state.inventory.columns else pd.DataFrame(columns=["Product Name", "UOM"])
+                    _cmp_df = pd.merge(_inv_uom, _sum_a, on="Product Name", how="outer")
+                    _cmp_df = pd.merge(_cmp_df, _sum_b, on="Product Name", how="outer")
+                    _cmp_df = _cmp_df.fillna(0)
+                    _cmp_df["UOM"] = _cmp_df["UOM"].fillna("")
+
+                    _cmp_df[_pa] = pd.to_numeric(_cmp_df[_pa], errors="coerce").fillna(0).round(2)
+                    _cmp_df[_pb] = pd.to_numeric(_cmp_df[_pb], errors="coerce").fillna(0).round(2)
+                    _cmp_df["Change"] = (_cmp_df[_pb] - _cmp_df[_pa]).round(2)
+                    _cmp_df["Change %"] = _cmp_df.apply(
+                        lambda r: f"{(r['Change'] / r[_pa] * 100):+.1f}%" if r[_pa] != 0 else ("NEW" if r[_pb] > 0 else "0%"),
+                        axis=1,
+                    )
+
+                    # Spark-line: monthly trend from Period A to Period B
+                    _pa_period = pd.Period(_pa, "M")
+                    _pb_period = pd.Period(_pb, "M")
+                    _all_months_range = pd.period_range(_pa_period, _pb_period, freq="M")
+                    _month_str_range = [str(m) for m in _all_months_range]
+
+                    _cd_range = _cd[_cd["_month"].isin(_all_months_range)].copy()
+                    _cd_range["_month_str"] = _cd_range["_month"].astype(str)
+                    _cd_monthly = _cd_range.groupby(["Item", "_month_str"], as_index=False)["DispatchQty"].sum()
+
+                    _cmp_spark = {}
+                    for item in _cmp_df["Product Name"]:
+                        _item_data = _cd_monthly[_cd_monthly["Item"] == item]
+                        if not _item_data.empty:
+                            _item_map = dict(zip(_item_data["_month_str"], _item_data["DispatchQty"]))
+                        else:
+                            _item_map = {}
+                        _cmp_spark[item] = [float(_item_map.get(m, 0)) for m in _month_str_range]
+                        _cmp_spark[item] = [float(_item_data.get(m, 0)) for m in _month_str_range]
+                    _cmp_df["Spark"] = _cmp_df["Product Name"].map(_cmp_spark)
+
+                    # Trend arrow
+                    _cmp_df["Trend"] = _cmp_df["Change"].apply(lambda x: "↑" if x > 0 else ("↓" if x < 0 else "→"))
+
+                    # Remove rows where both periods are 0
+                    _cmp_df = _cmp_df[(_cmp_df[_pa] > 0) | (_cmp_df[_pb] > 0)]
+
+                    _cmp_display = ["Product Name", "UOM", _pa, _pb, "Change", "Change %", "Trend", "Spark"]
+
+                    st.dataframe(
+                        _cmp_df[_cmp_display],
+                        use_container_width=True,
+                        hide_index=True,
+                        height=350,
+                        column_config={
+                            "Spark": st.column_config.LineChartColumn(
+                                f"Trend ({_pa} → {_pb})",
+                                width="small",
+                                help="Monthly dispatch trend between selected periods",
+                            ),
+                            _pa: st.column_config.NumberColumn(format="%.2f"),
+                            _pb: st.column_config.NumberColumn(format="%.2f"),
+                            "Change": st.column_config.NumberColumn(format="%.2f"),
+                        },
+                    )
+                    st.caption(f"Comparing {_pa} vs {_pb} | Restaurant: {_cmp_rest}")
 
 # ===================== REQUISITIONS TAB =====================
 with tab_req:
