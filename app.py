@@ -1278,20 +1278,20 @@ st.markdown(
 
     /* ===== Compact requisition dialog inputs & buttons ===== */
     [data-testid="stDialog"] .stNumberInput input {
-        height: 32px !important;
-        min-height: 32px !important;
+        height: 21px !important;
+        min-height: 21px !important;
         padding: 4px 8px !important;
         font-size: 12px !important;
     }
     [data-testid="stDialog"] .stNumberInput button {
-        height: 32px !important;
-        min-height: 32px !important;
+        height: 21px !important;
+        min-height: 21px !important;
         width: 32px !important;
         padding: 0 !important;
     }
     [data-testid="stDialog"] .stButton > button {
-        min-height: 32px !important;
-        height: 32px !important;
+        min-height: 21px !important;
+        height: 21px !important;
         padding: 4px 12px !important;
         font-size: 12px !important;
     }
