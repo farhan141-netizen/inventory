@@ -3509,19 +3509,20 @@ def _req_process_dialog():
             _avail = float(_si["Closing Stock"].values[0]) if not _si.empty else 0.0
             _email_txt = f" | 👤 {_email}" if _email else ""
 
-            st.markdown(
-                f"<div style='background:#FFFBEB;border:1px solid #FDE68A;border-left:3px solid #7C5CFC;"
-                f"border-radius:8px;padding:5px 10px;font-size:11px;margin-bottom:3px;'>"
-                f"<b>{_item}</b> | Req:{_rq:.0f} | Got:{_dq:.0f} | Rem:{_rem:.0f} | Avail:{_avail:.0f}{_email_txt}</div>",
-                unsafe_allow_html=True,
-            )
-            _ac1, _ac2, _ac3 = st.columns([2, 1, 1])
+            _ac1, _ac2, _ac3, _ac4 = st.columns([5, 1.2, 0.8, 0.8])
             with _ac1:
+                st.markdown(
+                    f"<div style='background:#FFFBEB;border:1px solid #FDE68A;border-left:3px solid #7C5CFC;"
+                    f"border-radius:8px;padding:5px 10px;font-size:11px;'>"
+                    f"<b>{_item}</b> | <i>Req:{_rq:.0f} | Got:{_dq:.0f} | Rem:{_rem:.0f} | Avail:{_avail:.0f}</i>{_email_txt}</div>",
+                    unsafe_allow_html=True,
+                )
+            with _ac2:
                 _def_qty = min(_rq, _avail)
-                _dq_input = st.number_input("Qty", min_value=0.0, max_value=max(_avail, 0.01),
+                _dq_input = st.number_input("Q", min_value=0.0, max_value=max(_avail, 0.01),
                                             value=_def_qty, step=1.0,
                                             key=f"dq_{_rid}", label_visibility="collapsed")
-            with _ac2:
+            with _ac3:
                 if st.button("Send", key=f"send_{_rid}", use_container_width=True, type="primary"):
                     if _dq_input > 0:
                         _all.at[idx, "DispatchQty"] = _dq_input
@@ -3539,7 +3540,7 @@ def _req_process_dialog():
                         save_to_sheet(_all, "restaurant_requisitions")
                         st.cache_data.clear()
                         st.toast(f"✅ Sent {_dq_input:.0f} {_item}")
-            with _ac3:
+            with _ac4:
                 if st.button("Cancel", key=f"cx_{_rid}", use_container_width=True):
                     _all = _all.drop(idx)
                     save_to_sheet(_all, "restaurant_requisitions")
@@ -3566,23 +3567,23 @@ def _req_process_dialog():
             _avail = float(_si["Closing Stock"].values[0]) if not _si.empty else 0.0
             _email_txt = f" | 👤 {_email}" if _email else ""
             _fu_txt = " ⚠️" if _fu else ""
-
             _border_col = "#F59E0B" if _rem > 0 else "#10B981"
 
-            st.markdown(
-                f"<div style='background:#FFF7ED;border:1px solid #FED7AA;border-left:3px solid {_border_col};"
-                f"border-radius:8px;padding:5px 10px;font-size:11px;margin-bottom:3px;'>"
-                f"<b>{_item}</b> | Req:{_rq:.0f} | Got:{_dq:.0f} | Rem:{_rem:.0f} | Avail:{_avail:.0f}{_fu_txt}{_email_txt}</div>",
-                unsafe_allow_html=True,
-            )
             if _rem > 0:
-                _sc1, _sc2, _sc3 = st.columns([2, 1, 1])
+                _sc1, _sc2, _sc3, _sc4 = st.columns([5, 1.2, 0.8, 0.8])
                 with _sc1:
-                    _add_qty = st.number_input("More", min_value=0.0, max_value=min(_rem, _avail),
+                    st.markdown(
+                        f"<div style='background:#FFF7ED;border:1px solid #FED7AA;border-left:3px solid {_border_col};"
+                        f"border-radius:8px;padding:5px 10px;font-size:11px;'>"
+                        f"<b>{_item}</b> | <i>Req:{_rq:.0f} | Got:{_dq:.0f} | Rem:{_rem:.0f} | Avail:{_avail:.0f}</i>{_fu_txt}{_email_txt}</div>",
+                        unsafe_allow_html=True,
+                    )
+                with _sc2:
+                    _add_qty = st.number_input("M", min_value=0.0, max_value=min(_rem, _avail),
                                                value=min(_rem, _avail), step=1.0,
                                                key=f"more_{_rid}", label_visibility="collapsed")
-                with _sc2:
-                    if st.button("Send More", key=f"sm_{_rid}", use_container_width=True):
+                with _sc3:
+                    if st.button("Send", key=f"sm_{_rid}", use_container_width=True):
                         if _add_qty > 0:
                             _new_dq = _dq + _add_qty
                             _all.at[idx, "DispatchQty"] = _new_dq
@@ -3601,8 +3602,8 @@ def _req_process_dialog():
                             save_to_sheet(_all, "restaurant_requisitions")
                             st.cache_data.clear()
                             st.toast(f"✅ Sent {_add_qty:.0f} more {_item}")
-                with _sc3:
-                    if st.button("🚩 Follow-up", key=f"fu_{_rid}", use_container_width=True):
+                with _sc4:
+                    if st.button("🚩", key=f"fu_{_rid}", use_container_width=True, help="Follow-up"):
                         _all.at[idx, "FollowupSent"] = True
                         _all.at[idx, "Timestamp"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         save_to_sheet(_all, "restaurant_requisitions")
@@ -3610,7 +3611,9 @@ def _req_process_dialog():
                         st.toast("🚩 Follow-up marked")
             else:
                 st.markdown(
-                    "<div style='font-size:10px;color:#059669;margin:0 0 4px 12px;'>✅ Fully dispatched</div>",
+                    f"<div style='background:#FFF7ED;border:1px solid #FED7AA;border-left:3px solid #10B981;"
+                    f"border-radius:8px;padding:5px 10px;font-size:11px;'>"
+                    f"<b>{_item}</b> | <i>Req:{_rq:.0f} | Got:{_dq:.0f}</i> | ✅ Fully sent</div>",
                     unsafe_allow_html=True,
                 )
 
