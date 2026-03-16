@@ -530,8 +530,8 @@ def logout_user():
         "user_id", "org_id", "location_id", "memberships", "role",
         "dash_cards", "r01_dash_cards", "inventory", "log_page",
         "bulk_upload_state", "cart", "_show_lss_fullscreen", "_lss_fmt_pending", "_lss_sort", "_lss_fmt",
-        "_show_par_fullscreen", "_par_df_display", "_par_display_cols", "_par_col_config", "_par_caption",
-        "_show_cmp_fullscreen", "_cmp_df_display", "_cmp_display_cols", "_cmp_col_config", "_cmp_caption",
+        "_show_par_fullscreen", "_par_reqs_data", "_par_rest_list",
+        "_show_cmp_fullscreen",
     ]
     for k in keys_to_clear:
         if k in st.session_state:
@@ -3208,66 +3208,233 @@ if st.session_state.get("_show_lss_fullscreen"):
     st.session_state["_show_lss_fullscreen"] = False
 
 
-# --- Fullscreen dialog for Par Stock ---
-@st.dialog("📈 Par Stock — Expanded", width="large")
-def _par_fullscreen_dialog():
-    _data = st.session_state.get("_par_df_display")
-    _cols = st.session_state.get("_par_display_cols")
-    _col_config = st.session_state.get("_par_col_config")
-    _caption = st.session_state.get("_par_caption", "")
-    if _data is None or _cols is None:
-        st.info("No Par data available. Open Par Analysis first.")
+# --- Shared Par Analysis engine (used in both expander and dialog) ---
+def _render_par_engine(reqs_df, rest_list, inventory_df, key_sfx="", mode=None):
+    """Render full Par Stock or Compare UI. key_sfx differentiates widget keys."""
+    if mode is None:
+        _par_mode = st.radio("", ["📊 Par Stock", "🔄 Compare"], horizontal=True, key=f"par_mode_{key_sfx}", label_visibility="collapsed")
+    else:
+        _par_mode = mode
+
+    if _par_mode == "📊 Par Stock":
+        _pf1, _pf2, _pf3 = st.columns(3)
+        with _pf1:
+            _par_rest = st.selectbox("Restaurant", ["All"] + rest_list, key=f"par_rest_{key_sfx}")
+        with _pf2:
+            _par_period = st.selectbox("Period", ["Weekly", "Monthly"], key=f"par_period_{key_sfx}")
+        with _pf3:
+            if _par_period == "Weekly":
+                _par_range = st.selectbox("Range", ["Last 4 weeks", "Last 8 weeks", "Last 12 weeks"], key=f"par_range_{key_sfx}")
+                _weeks = int(_par_range.split()[1])
+                _cutoff = pd.Timestamp.now() - pd.Timedelta(weeks=_weeks)
+            else:
+                _par_range = st.selectbox("Range", ["Last 3 months", "Last 6 months", "Last 12 months"], key=f"par_range_{key_sfx}")
+                _months = int(_par_range.split()[1])
+                _cutoff = pd.Timestamp.now() - pd.DateOffset(months=_months)
+
+        _tf1, _tf2 = st.columns(2)
+        with _tf1:
+            _min_pct = st.number_input("Min %", value=50, min_value=1, max_value=100, step=5, key=f"par_min_pct_{key_sfx}")
+        with _tf2:
+            _max_pct = st.number_input("Max %", value=150, min_value=100, max_value=500, step=10, key=f"par_max_pct_{key_sfx}")
+
+        _fd = reqs_df[reqs_df["_ts"] >= _cutoff].copy()
+        if _par_rest != "All":
+            _fd = _fd[_fd["Restaurant"] == _par_rest]
+
+        if _fd.empty:
+            st.warning("No dispatch data found for the selected filters.")
+            return
+
+        if _par_period == "Weekly":
+            _fd["_period"] = _fd["_ts"].dt.isocalendar().week.astype(int)
+        else:
+            _fd["_period"] = _fd["_ts"].dt.to_period("M").astype(str)
+
+        _grp = _fd.groupby(["Item", "_period"], as_index=False)["DispatchQty"].sum()
+        _n_periods = _fd["_period"].nunique()
+
+        _avg = _grp.groupby("Item", as_index=False)["DispatchQty"].mean()
+        _avg.columns = ["Product Name", "Avg Consumption"]
+        _avg["Avg Consumption"] = _avg["Avg Consumption"].round(2)
+
+        if _par_period == "Monthly":
+            _avg["Weekly Usage"] = (_avg["Avg Consumption"] / 4.33).round(2)
+        else:
+            _avg["Weekly Usage"] = _avg["Avg Consumption"].round(2)
+
+        _inv_cols = ["Product Name", "UOM", "Closing Stock"]
+        _inv_sub = inventory_df[_inv_cols].copy() if all(c in inventory_df.columns for c in _inv_cols) else pd.DataFrame(columns=_inv_cols)
+        _par_df = pd.merge(_inv_sub, _avg, on="Product Name", how="inner")
+        _par_df["Closing Stock"] = pd.to_numeric(_par_df["Closing Stock"], errors="coerce").fillna(0)
+
+        _par_df["Min"] = (_par_df["Weekly Usage"] * _min_pct / 100).round(2)
+        _par_df["Max"] = (_par_df["Weekly Usage"] * _max_pct / 100).round(2)
+        _par_df["Reorder Qty"] = (_par_df["Max"] - _par_df["Closing Stock"]).round(2)
+
+        _last_period = _fd["_period"].max()
+        _last_grp = _grp[_grp["_period"] == _last_period].set_index("Item")["DispatchQty"]
+        _trend_labels = []
+        for _, r in _par_df.iterrows():
+            _lv = _last_grp.get(r["Product Name"], 0)
+            _av = r["Avg Consumption"]
+            if _av == 0:
+                _trend_labels.append("→")
+            elif _lv > _av * 1.1:
+                _trend_labels.append("↑")
+            elif _lv < _av * 0.9:
+                _trend_labels.append("↓")
+            else:
+                _trend_labels.append("→")
+        _par_df["Trend"] = _trend_labels
+
+        _spark_data = {}
+        _periods_sorted = sorted(_fd["_period"].unique())
+        for item in _par_df["Product Name"]:
+            _item_grp = _grp[_grp["Item"] == item].set_index("_period")["DispatchQty"]
+            _spark_data[item] = [float(_item_grp.get(p, 0)) for p in _periods_sorted]
+        _par_df["Spark"] = _par_df["Product Name"].map(_spark_data)
+
+        def _par_status(row):
+            if row["Closing Stock"] < row["Min"]:
+                return "🔴 Low"
+            elif row["Closing Stock"] > row["Max"]:
+                return "🟡 Over"
+            else:
+                return "🟢 OK"
+        _par_df["Status"] = _par_df.apply(_par_status, axis=1)
+
+        _display_cols = ["Product Name", "UOM", "Closing Stock", "Avg Consumption",
+                         "Weekly Usage", "Min", "Max", "Reorder Qty", "Trend", "Status", "Spark"]
+
+        if _n_periods < 4:
+            st.warning(
+                f"⚠️ Limited data — only **{_n_periods} {_par_period.lower()} period(s)** of dispatches. "
+                f"Par levels will become more accurate with more data. Recommended: at least 4 {_par_period.lower()} periods."
+            )
+
+        _tbl_height = 600 if key_sfx == "fs" else 350
+        st.dataframe(
+            _par_df[_display_cols],
+            use_container_width=True,
+            hide_index=True,
+            height=_tbl_height,
+            column_config={
+                "Spark": st.column_config.LineChartColumn(
+                    f"Trend ({_par_period})", width="small",
+                    help=f"Dispatch qty per {_par_period.lower()} period",
+                ),
+                "Reorder Qty": st.column_config.NumberColumn(format="%.2f"),
+                "Avg Consumption": st.column_config.NumberColumn(format="%.2f"),
+                "Weekly Usage": st.column_config.NumberColumn(format="%.2f"),
+                "Min": st.column_config.NumberColumn(format="%.2f"),
+                "Max": st.column_config.NumberColumn(format="%.2f"),
+            },
+        )
+        st.caption(f"Based on {_n_periods} {_par_period.lower()} periods | Min={_min_pct}% | Max={_max_pct}%")
+
+    else:
+        # ══════ COMPARE MODE ══════
+        _cf1, _cf2, _cf3 = st.columns(3)
+        with _cf1:
+            _cmp_rest = st.selectbox("Restaurant", ["All"] + rest_list, key=f"cmp_rest_{key_sfx}")
+
+        reqs_df["_month"] = reqs_df["_ts"].dt.to_period("M")
+        _avail_months = sorted(reqs_df["_month"].unique())
+        _month_labels = [str(m) for m in _avail_months]
+
+        if len(_month_labels) < 2:
+            st.warning("Need at least 2 months of dispatch data to compare.")
+            return
+
+        with _cf2:
+            _pa = st.selectbox("Period A", _month_labels, index=0, key=f"cmp_pa_{key_sfx}")
+        with _cf3:
+            _pb = st.selectbox("Period B", _month_labels, index=len(_month_labels) - 1, key=f"cmp_pb_{key_sfx}")
+
+        _cd = reqs_df.copy()
+        if _cmp_rest != "All":
+            _cd = _cd[_cd["Restaurant"] == _cmp_rest]
+
+        _cd_a = _cd[_cd["_month"].astype(str) == _pa]
+        _cd_b = _cd[_cd["_month"].astype(str) == _pb]
+
+        _sum_a = _cd_a.groupby("Item", as_index=False)["DispatchQty"].sum().rename(columns={"Item": "Product Name", "DispatchQty": _pa})
+        _sum_b = _cd_b.groupby("Item", as_index=False)["DispatchQty"].sum().rename(columns={"Item": "Product Name", "DispatchQty": _pb})
+
+        _inv_uom = inventory_df[["Product Name", "UOM"]].drop_duplicates() if "UOM" in inventory_df.columns else pd.DataFrame(columns=["Product Name", "UOM"])
+        _cmp_df = pd.merge(_inv_uom, _sum_a, on="Product Name", how="outer")
+        _cmp_df = pd.merge(_cmp_df, _sum_b, on="Product Name", how="outer")
+        _cmp_df = _cmp_df.fillna(0)
+        _cmp_df["UOM"] = _cmp_df["UOM"].fillna("")
+
+        _cmp_df[_pa] = pd.to_numeric(_cmp_df[_pa], errors="coerce").fillna(0).round(2)
+        _cmp_df[_pb] = pd.to_numeric(_cmp_df[_pb], errors="coerce").fillna(0).round(2)
+        _cmp_df["Change"] = (_cmp_df[_pb] - _cmp_df[_pa]).round(2)
+        _cmp_df["Change %"] = _cmp_df.apply(
+            lambda r: f"{(r['Change'] / r[_pa] * 100):+.1f}%" if r[_pa] != 0 else ("NEW" if r[_pb] > 0 else "0%"),
+            axis=1,
+        )
+
+        _pa_period = pd.Period(_pa, "M")
+        _pb_period = pd.Period(_pb, "M")
+        _all_months_range = pd.period_range(_pa_period, _pb_period, freq="M")
+        _month_str_range = [str(m) for m in _all_months_range]
+
+        _cd_range = _cd[_cd["_month"].isin(_all_months_range)].copy()
+        _cd_range["_month_str"] = _cd_range["_month"].astype(str)
+        _cd_monthly = _cd_range.groupby(["Item", "_month_str"], as_index=False)["DispatchQty"].sum()
+
+        _cmp_spark = {}
+        for item in _cmp_df["Product Name"]:
+            _item_data = _cd_monthly[_cd_monthly["Item"] == item]
+            _item_map = dict(zip(_item_data["_month_str"], _item_data["DispatchQty"])) if not _item_data.empty else {}
+            _cmp_spark[item] = [float(_item_map.get(m, 0)) for m in _month_str_range]
+        _cmp_df["Spark"] = _cmp_df["Product Name"].map(_cmp_spark)
+
+        _cmp_df["Trend"] = _cmp_df["Change"].apply(lambda x: "↑" if x > 0 else ("↓" if x < 0 else "→"))
+        _cmp_df = _cmp_df[(_cmp_df[_pa] > 0) | (_cmp_df[_pb] > 0)]
+
+        _cmp_display = ["Product Name", "UOM", _pa, _pb, "Change", "Change %", "Trend", "Spark"]
+        _tbl_height = 600 if key_sfx == "fs" else 350
+        st.dataframe(
+            _cmp_df[_cmp_display],
+            use_container_width=True,
+            hide_index=True,
+            height=_tbl_height,
+            column_config={
+                "Spark": st.column_config.LineChartColumn(
+                    f"Trend ({_pa} → {_pb})", width="small",
+                    help="Monthly dispatch trend between selected periods",
+                ),
+                _pa: st.column_config.NumberColumn(format="%.2f"),
+                _pb: st.column_config.NumberColumn(format="%.2f"),
+                "Change": st.column_config.NumberColumn(format="%.2f"),
+            },
+        )
+        st.caption(f"Comparing {_pa} vs {_pb} | Restaurant: {_cmp_rest}")
+
+
+# --- Fullscreen dialog for Par Analysis ---
+@st.dialog("📈 Par Analysis — Expanded", width="large")
+def _par_fullscreen_dialog_v2():
+    _reqs = st.session_state.get("_par_reqs_data")
+    _rest_list = st.session_state.get("_par_rest_list", [])
+    _inv = st.session_state.get("inventory")
+    if _reqs is None or _inv is None or _reqs.empty or _inv.empty:
+        st.info("No data available. Open Par Analysis first.")
         return
-    st.dataframe(
-        _data[_cols],
-        use_container_width=True,
-        hide_index=True,
-        height=600,
-        column_config=_col_config or {},
-    )
-    if _caption:
-        st.caption(_caption)
-    if st.button("Close", key="close_par_fs", use_container_width=True):
+    _render_par_engine(_reqs, _rest_list, _inv, key_sfx="fs")
+    if st.button("Close", key="close_par_fs_v2", use_container_width=True):
         st.session_state["_show_par_fullscreen"] = False
         st.rerun()
 
 if st.session_state.get("_show_par_fullscreen"):
     try:
-        _par_fullscreen_dialog()
+        _par_fullscreen_dialog_v2()
     except Exception:
         pass
     st.session_state["_show_par_fullscreen"] = False
-
-
-# --- Fullscreen dialog for Compare ---
-@st.dialog("🔄 Compare — Expanded", width="large")
-def _cmp_fullscreen_dialog():
-    _data = st.session_state.get("_cmp_df_display")
-    _cols = st.session_state.get("_cmp_display_cols")
-    _col_config = st.session_state.get("_cmp_col_config")
-    _caption = st.session_state.get("_cmp_caption", "")
-    if _data is None or _cols is None:
-        st.info("No Compare data available. Open Compare mode first.")
-        return
-    st.dataframe(
-        _data[_cols],
-        use_container_width=True,
-        hide_index=True,
-        height=600,
-        column_config=_col_config or {},
-    )
-    if _caption:
-        st.caption(_caption)
-    if st.button("Close", key="close_cmp_fs", use_container_width=True):
-        st.session_state["_show_cmp_fullscreen"] = False
-        st.rerun()
-
-if st.session_state.get("_show_cmp_fullscreen"):
-    try:
-        _cmp_fullscreen_dialog()
-    except Exception:
-        pass
-    st.session_state["_show_cmp_fullscreen"] = False
 
 # ===================== OPERATIONS TAB =====================
 with tab_ops:
@@ -3476,277 +3643,33 @@ with tab_ops:
             ["ReqID", "Restaurant", "Item", "Qty", "DispatchQty", "Status", "Timestamp", "RequestedDate"],
         )
         _reqs = _prepare_reqs(_raw_reqs) if not _raw_reqs.empty else pd.DataFrame()
-        # Only dispatched/completed items = actual consumption
         if not _reqs.empty:
             _reqs = _reqs[_reqs["Status"].isin(["Dispatched", "Completed"])].copy()
             _reqs["_ts"] = pd.to_datetime(_reqs["Timestamp"], errors="coerce", utc=True)
-            _reqs["_ts"] = _reqs["_ts"].dt.tz_localize(None)  # strip timezone for comparison
+            _reqs["_ts"] = _reqs["_ts"].dt.tz_localize(None)
             _reqs = _reqs.dropna(subset=["_ts"])
 
         if _reqs.empty or st.session_state.inventory.empty:
             st.info("📭 Need dispatched requisitions and inventory data for Par Analysis.")
         else:
-            # Get restaurant list
             _rest_list = sorted(_reqs["Restaurant"].dropna().unique().tolist())
             _rest_list = [r for r in _rest_list if r.strip()]
 
-            # ── Two modes ──
-            _par_mode = st.radio("", ["📊 Par Stock", "🔄 Compare"], horizontal=True, key="par_mode", label_visibility="collapsed")
+            # Store for fullscreen dialog
+            st.session_state["_par_reqs_data"] = _reqs
+            st.session_state["_par_rest_list"] = _rest_list
 
-            if _par_mode == "📊 Par Stock":
-                # ── Filters row ──
-                _pf1, _pf2, _pf3 = st.columns(3)
-                with _pf1:
-                    _par_rest = st.selectbox("Restaurant", ["All"] + _rest_list, key="par_rest")
-                with _pf2:
-                    _par_period = st.selectbox("Period", ["Weekly", "Monthly"], key="par_period")
-                with _pf3:
-                    if _par_period == "Weekly":
-                        _par_range = st.selectbox("Range", ["Last 4 weeks", "Last 8 weeks", "Last 12 weeks"], key="par_range")
-                        _weeks = int(_par_range.split()[1])
-                        _cutoff = pd.Timestamp.now() - pd.Timedelta(weeks=_weeks)
-                    else:
-                        _par_range = st.selectbox("Range", ["Last 3 months", "Last 6 months", "Last 12 months"], key="par_range")
-                        _months = int(_par_range.split()[1])
-                        _cutoff = pd.Timestamp.now() - pd.DateOffset(months=_months)
+            # Expand button next to radio on same line
+            _pr1, _pr2 = st.columns([6, 1])
+            with _pr1:
+                _par_mode_sm = st.radio("", ["📊 Par Stock", "🔄 Compare"], horizontal=True, key="par_mode_sm", label_visibility="collapsed")
+            with _pr2:
+                if st.button("⛶", key="expand_par", help="Expand fullscreen"):
+                    st.session_state["_show_par_fullscreen"] = True
+                    st.rerun()
 
-                _tf1, _tf2 = st.columns(2)
-                with _tf1:
-                    _min_pct = st.number_input("Min %", value=50, min_value=1, max_value=100, step=5, key="par_min_pct")
-                with _tf2:
-                    _max_pct = st.number_input("Max %", value=150, min_value=100, max_value=500, step=10, key="par_max_pct")
-
-                # ── Filter data ──
-                _fd = _reqs[_reqs["_ts"] >= _cutoff].copy()
-                if _par_rest != "All":
-                    _fd = _fd[_fd["Restaurant"] == _par_rest]
-
-                if _fd.empty:
-                    st.warning("No dispatch data found for the selected filters.")
-                else:
-                    # ── Calculate consumption per period ──
-                    if _par_period == "Weekly":
-                        _fd["_period"] = _fd["_ts"].dt.isocalendar().week.astype(int)
-                        _fd["_period_label"] = _fd["_ts"].dt.strftime("W%V")
-                    else:
-                        _fd["_period"] = _fd["_ts"].dt.to_period("M").astype(str)
-                        _fd["_period_label"] = _fd["_period"]
-
-                    # Sum per item per period
-                    _grp = _fd.groupby(["Item", "_period"], as_index=False)["DispatchQty"].sum()
-                    _n_periods = _fd["_period"].nunique()
-
-                    # Avg consumption per period
-                    _avg = _grp.groupby("Item", as_index=False)["DispatchQty"].mean()
-                    _avg.columns = ["Product Name", "Avg Consumption"]
-                    _avg["Avg Consumption"] = _avg["Avg Consumption"].round(2)
-
-                    # Weekly usage
-                    if _par_period == "Monthly":
-                        _avg["Weekly Usage"] = (_avg["Avg Consumption"] / 4.33).round(2)
-                    else:
-                        _avg["Weekly Usage"] = _avg["Avg Consumption"].round(2)
-
-                    # Merge with inventory
-                    _inv_cols = ["Product Name", "UOM", "Closing Stock"]
-                    _inv_sub = st.session_state.inventory[_inv_cols].copy() if all(c in st.session_state.inventory.columns for c in _inv_cols) else pd.DataFrame(columns=_inv_cols)
-                    _par_df = pd.merge(_inv_sub, _avg, on="Product Name", how="inner")
-                    _par_df["Closing Stock"] = pd.to_numeric(_par_df["Closing Stock"], errors="coerce").fillna(0)
-
-                    # Min / Max / Reorder
-                    _par_df["Min"] = (_par_df["Weekly Usage"] * _min_pct / 100).round(2)
-                    _par_df["Max"] = (_par_df["Weekly Usage"] * _max_pct / 100).round(2)
-                    _par_df["Reorder Qty"] = (_par_df["Max"] - _par_df["Closing Stock"]).round(2)
-
-                    # Trend: last period vs avg
-                    _last_period = _fd["_period"].max()
-                    _last_grp = _grp[_grp["_period"] == _last_period].set_index("Item")["DispatchQty"]
-                    _trend_labels = []
-                    for _, r in _par_df.iterrows():
-                        _lv = _last_grp.get(r["Product Name"], 0)
-                        _av = r["Avg Consumption"]
-                        if _av == 0:
-                            _trend_labels.append("→")
-                        elif _lv > _av * 1.1:
-                            _trend_labels.append("↑")
-                        elif _lv < _av * 0.9:
-                            _trend_labels.append("↓")
-                        else:
-                            _trend_labels.append("→")
-                    _par_df["Trend"] = _trend_labels
-
-                    # Spark-line data: consumption per period for each item
-                    _spark_data = {}
-                    _periods_sorted = sorted(_fd["_period"].unique())
-                    for item in _par_df["Product Name"]:
-                        _item_grp = _grp[_grp["Item"] == item].set_index("_period")["DispatchQty"]
-                        _spark_data[item] = [float(_item_grp.get(p, 0)) for p in _periods_sorted]
-                    _par_df["Spark"] = _par_df["Product Name"].map(_spark_data)
-
-                    # Status color
-                    def _par_status(row):
-                        if row["Closing Stock"] < row["Min"]:
-                            return "🔴 Low"
-                        elif row["Closing Stock"] > row["Max"]:
-                            return "🟡 Over"
-                        else:
-                            return "🟢 OK"
-                    _par_df["Status"] = _par_df.apply(_par_status, axis=1)
-
-                    # Display
-                    _display_cols = ["Product Name", "UOM", "Closing Stock", "Avg Consumption",
-                                     "Weekly Usage", "Min", "Max", "Reorder Qty", "Trend", "Status", "Spark"]
-
-                    # Warning for limited data
-                    if _n_periods < 4:
-                        st.warning(
-                            f"⚠️ Limited data — only **{_n_periods} {_par_period.lower()} period(s)** of dispatches. "
-                            f"Par levels will become more accurate with more data. Recommended: at least 4 {_par_period.lower()} periods."
-                        )
-
-                    _par_col_config = {
-                        "Spark": st.column_config.LineChartColumn(
-                            f"Trend ({_par_period})",
-                            width="small",
-                            help=f"Dispatch qty per {_par_period.lower()} period",
-                        ),
-                        "Reorder Qty": st.column_config.NumberColumn(format="%.2f"),
-                        "Avg Consumption": st.column_config.NumberColumn(format="%.2f"),
-                        "Weekly Usage": st.column_config.NumberColumn(format="%.2f"),
-                        "Min": st.column_config.NumberColumn(format="%.2f"),
-                        "Max": st.column_config.NumberColumn(format="%.2f"),
-                    }
-                    _par_caption = f"Based on {_n_periods} {_par_period.lower()} periods | Min={_min_pct}% | Max={_max_pct}%"
-
-                    # Store for fullscreen dialog
-                    st.session_state["_par_df_display"] = _par_df
-                    st.session_state["_par_display_cols"] = _display_cols
-                    st.session_state["_par_col_config"] = _par_col_config
-                    st.session_state["_par_caption"] = _par_caption
-
-                    st.dataframe(
-                        _par_df[_display_cols],
-                        use_container_width=True,
-                        hide_index=True,
-                        height=350,
-                        column_config=_par_col_config,
-                    )
-
-                    _pc1, _pc2 = st.columns([6, 1])
-                    with _pc1:
-                        st.caption(_par_caption)
-                    with _pc2:
-                        if st.button("⛶", key="expand_par", help="Expand Par Stock"):
-                            st.session_state["_show_par_fullscreen"] = True
-                            st.rerun()
-
-            else:
-                # ══════ COMPARE MODE ══════
-                _cf1, _cf2, _cf3 = st.columns(3)
-                with _cf1:
-                    _cmp_rest = st.selectbox("Restaurant", ["All"] + _rest_list, key="cmp_rest")
-
-                # Build month options from available data
-                _reqs["_month"] = _reqs["_ts"].dt.to_period("M")
-                _avail_months = sorted(_reqs["_month"].unique())
-                _month_labels = [str(m) for m in _avail_months]
-
-                if len(_month_labels) < 2:
-                    st.warning("Need at least 2 months of dispatch data to compare.")
-                else:
-                    with _cf2:
-                        _pa = st.selectbox("Period A", _month_labels, index=0, key="cmp_pa")
-                    with _cf3:
-                        _pb = st.selectbox("Period B", _month_labels, index=len(_month_labels) - 1, key="cmp_pb")
-
-                    # Filter
-                    _cd = _reqs.copy()
-                    if _cmp_rest != "All":
-                        _cd = _cd[_cd["Restaurant"] == _cmp_rest]
-
-                    _cd_a = _cd[_cd["_month"].astype(str) == _pa]
-                    _cd_b = _cd[_cd["_month"].astype(str) == _pb]
-
-                    _sum_a = _cd_a.groupby("Item", as_index=False)["DispatchQty"].sum().rename(columns={"Item": "Product Name", "DispatchQty": _pa})
-                    _sum_b = _cd_b.groupby("Item", as_index=False)["DispatchQty"].sum().rename(columns={"Item": "Product Name", "DispatchQty": _pb})
-
-                    # Merge with inventory for UOM
-                    _inv_uom = st.session_state.inventory[["Product Name", "UOM"]].drop_duplicates() if "UOM" in st.session_state.inventory.columns else pd.DataFrame(columns=["Product Name", "UOM"])
-                    _cmp_df = pd.merge(_inv_uom, _sum_a, on="Product Name", how="outer")
-                    _cmp_df = pd.merge(_cmp_df, _sum_b, on="Product Name", how="outer")
-                    _cmp_df = _cmp_df.fillna(0)
-                    _cmp_df["UOM"] = _cmp_df["UOM"].fillna("")
-
-                    _cmp_df[_pa] = pd.to_numeric(_cmp_df[_pa], errors="coerce").fillna(0).round(2)
-                    _cmp_df[_pb] = pd.to_numeric(_cmp_df[_pb], errors="coerce").fillna(0).round(2)
-                    _cmp_df["Change"] = (_cmp_df[_pb] - _cmp_df[_pa]).round(2)
-                    _cmp_df["Change %"] = _cmp_df.apply(
-                        lambda r: f"{(r['Change'] / r[_pa] * 100):+.1f}%" if r[_pa] != 0 else ("NEW" if r[_pb] > 0 else "0%"),
-                        axis=1,
-                    )
-
-                    # Spark-line: monthly trend from Period A to Period B
-                    _pa_period = pd.Period(_pa, "M")
-                    _pb_period = pd.Period(_pb, "M")
-                    _all_months_range = pd.period_range(_pa_period, _pb_period, freq="M")
-                    _month_str_range = [str(m) for m in _all_months_range]
-
-                    _cd_range = _cd[_cd["_month"].isin(_all_months_range)].copy()
-                    _cd_range["_month_str"] = _cd_range["_month"].astype(str)
-                    _cd_monthly = _cd_range.groupby(["Item", "_month_str"], as_index=False)["DispatchQty"].sum()
-
-                    _cmp_spark = {}
-                    for item in _cmp_df["Product Name"]:
-                        _item_data = _cd_monthly[_cd_monthly["Item"] == item]
-                        if not _item_data.empty:
-                            _item_map = dict(zip(_item_data["_month_str"], _item_data["DispatchQty"]))
-                        else:
-                            _item_map = {}
-                        _cmp_spark[item] = [float(_item_map.get(m, 0)) for m in _month_str_range]
-                        _cmp_spark[item] = [float(_item_data.get(m, 0)) for m in _month_str_range]
-                    _cmp_df["Spark"] = _cmp_df["Product Name"].map(_cmp_spark)
-
-                    # Trend arrow
-                    _cmp_df["Trend"] = _cmp_df["Change"].apply(lambda x: "↑" if x > 0 else ("↓" if x < 0 else "→"))
-
-                    # Remove rows where both periods are 0
-                    _cmp_df = _cmp_df[(_cmp_df[_pa] > 0) | (_cmp_df[_pb] > 0)]
-
-                    _cmp_display = ["Product Name", "UOM", _pa, _pb, "Change", "Change %", "Trend", "Spark"]
-
-                    _cmp_col_config = {
-                        "Spark": st.column_config.LineChartColumn(
-                            f"Trend ({_pa} → {_pb})",
-                            width="small",
-                            help="Monthly dispatch trend between selected periods",
-                        ),
-                        _pa: st.column_config.NumberColumn(format="%.2f"),
-                        _pb: st.column_config.NumberColumn(format="%.2f"),
-                        "Change": st.column_config.NumberColumn(format="%.2f"),
-                    }
-                    _cmp_caption = f"Comparing {_pa} vs {_pb} | Restaurant: {_cmp_rest}"
-
-                    # Store for fullscreen dialog
-                    st.session_state["_cmp_df_display"] = _cmp_df
-                    st.session_state["_cmp_display_cols"] = _cmp_display
-                    st.session_state["_cmp_col_config"] = _cmp_col_config
-                    st.session_state["_cmp_caption"] = _cmp_caption
-
-                    st.dataframe(
-                        _cmp_df[_cmp_display],
-                        use_container_width=True,
-                        hide_index=True,
-                        height=350,
-                        column_config=_cmp_col_config,
-                    )
-
-                    _cc1, _cc2 = st.columns([6, 1])
-                    with _cc1:
-                        st.caption(_cmp_caption)
-                    with _cc2:
-                        if st.button("⛶", key="expand_cmp", help="Expand Compare"):
-                            st.session_state["_show_cmp_fullscreen"] = True
-                            st.rerun()
+            # Render using shared engine (skip its internal radio)
+            _render_par_engine(_reqs, _rest_list, st.session_state.inventory, key_sfx="sm", mode=_par_mode_sm)
 
 # ===================== REQUISITIONS TAB =====================
 with tab_req:
