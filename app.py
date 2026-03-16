@@ -1292,8 +1292,8 @@ st.markdown(
         align-self: center !important;
     }
     [data-testid="stDialog"] .stButton > button {
-        min-height: 21px !important;
-        height: 21px !important;
+        min-height: 28px !important;
+        height: 28px !important;
         padding: 4px 12px !important;
         font-size: 12px !important;
         align-self: center !important;
