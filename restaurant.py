@@ -484,6 +484,69 @@ def _r01_show_fullscreen_card(title: str, df: pd.DataFrame, label_col: str, valu
         st.error(f"Chart error: {e}")
         st.dataframe(df, use_container_width=True, hide_index=True)
 
+@st.dialog("📊 Live Stock Status — Full View", width="large")
+def _show_live_stock_fullscreen(inv_df: pd.DataFrame):
+    """Show full live stock table with Price, Amount, Grand Total in a dialog."""
+    if inv_df is None or inv_df.empty:
+        st.info("📭 No inventory data.")
+        return
+
+    # Filter out meta rows (CATEGORY_ / SUPPLIER_ prefixes)
+    df = inv_df[
+        ~inv_df["Product Name"].astype(str).str.startswith("CATEGORY_") &
+        ~inv_df["Product Name"].astype(str).str.startswith("SUPPLIER_")
+    ].copy()
+
+    if df.empty:
+        st.info("📭 No valid inventory items.")
+        return
+
+    # Only show meaningful columns: Product Name, Category, UOM, Closing Stock, Price, Amount
+    df["Closing Stock"] = pd.to_numeric(df.get("Closing Stock", 0), errors="coerce").fillna(0)
+    df["Price"]         = pd.to_numeric(df.get("Price", 0),         errors="coerce").fillna(0)
+    df["Amount"]        = (df["Closing Stock"] * df["Price"]).round(2)
+
+    live_cols = ["Product Name", "Category", "UOM", "Closing Stock", "Price", "Amount"]
+    live_cols = [c for c in live_cols if c in df.columns or c in ["Amount"]]
+    display_df = df[live_cols].copy()
+
+    grand_total = df["Amount"].sum()
+
+    # Compact column config for single-page view
+    col_cfg = {
+        "Product Name":  st.column_config.TextColumn("Product",       width=180),
+        "Category":      st.column_config.TextColumn("Category",      width=100),
+        "UOM":           st.column_config.TextColumn("UOM",           width=60),
+        "Closing Stock": st.column_config.NumberColumn("Closing Stk", width=90,  format="%.1f"),
+        "Price":         st.column_config.NumberColumn("Price",       width=80,  format="%.2f"),
+        "Amount":        st.column_config.NumberColumn("Amount",      width=90,  format="%.2f"),
+    }
+
+    # Dynamic height — show all rows without internal scroll
+    row_height = 35
+    header_h   = 40
+    table_h    = min(650, header_h + len(display_df) * row_height)
+
+    st.dataframe(
+        display_df,
+        use_container_width=True,
+        hide_index=True,
+        height=table_h,
+        column_config=col_cfg,
+    )
+
+    # Grand total row
+    st.markdown(
+        f"<div style='display:flex;justify-content:flex-end;margin-top:10px;'>"
+        f"<div style='background:linear-gradient(135deg,#F97316,#F59E0B);color:white;"
+        f"padding:10px 22px;border-radius:10px;font-size:14px;font-weight:700;"
+        f"box-shadow:0 4px 14px rgba(249,115,22,0.3);'>"
+        f"🧾 Grand Total: &nbsp;<span style='font-family:monospace;font-size:16px;'>"
+        f"{grand_total:,.2f}</span></div></div>",
+        unsafe_allow_html=True,
+    )
+
+
 def _show_rest_login_page():
     """Login / register page for the restaurant app (orange theme)."""
     st.markdown(
@@ -1367,10 +1430,14 @@ tab_inv, tab_req, tab_pending, tab_received, tab_history, tab_dash = st.tabs(["�
 # ===================== INVENTORY TAB =====================
 with tab_inv:
     st.markdown('<div class="section-title">📊 Daily Stock Take</div>', unsafe_allow_html=True)
-    
+
     if not st.session_state.inventory.empty:
         # Ensure standard columns exist
-        standard_cols = ["Product Name", "Category", "UOM", "Opening Stock"] + [str(i) for i in range(1, 32)] + ["Total Received", "Consumption", "Closing Stock", "Physical Count", "Variance"]
+        standard_cols = (
+            ["Product Name", "Category", "UOM", "Opening Stock"]
+            + [str(i) for i in range(1, 32)]
+            + ["Total Received", "Consumption", "Closing Stock", "Physical Count", "Variance"]
+        )
         for col in standard_cols:
             if col not in st.session_state.inventory.columns:
                 if col == "Category":
@@ -1378,57 +1445,130 @@ with tab_inv:
                 elif col == "UOM":
                     st.session_state.inventory[col] = "pcs"
                 else:
-                    st.session_state.inventory[col] = 0.0 if col not in ["Physical Count"] else None
-        
-        # Category filter
-        cats = ["All"] + sorted(st.session_state.inventory["Category"].unique().tolist())
-        sel_cat = st.selectbox("Filter Category", cats, key="inv_cat", label_visibility="collapsed")
-        
-        display_df = st.session_state.inventory.copy()
+                    st.session_state.inventory[col] = 0.0 if col != "Physical Count" else None
+
+        # ── Filter out meta/system rows (CATEGORY_ / SUPPLIER_ prefixes) ──────
+        _inv_clean = st.session_state.inventory[
+            ~st.session_state.inventory["Product Name"].astype(str).str.startswith("CATEGORY_") &
+            ~st.session_state.inventory["Product Name"].astype(str).str.startswith("SUPPLIER_")
+        ].copy()
+
+        # ── Filter row: compact selectbox + Expand button side by side ─────────
+        _filt_col, _expand_col = st.columns([4, 1])
+        with _filt_col:
+            _raw_cats = sorted(_inv_clean["Category"].dropna().unique().tolist())
+            _cats = ["All"] + _raw_cats
+            sel_cat = st.selectbox(
+                "Category",
+                _cats,
+                key="inv_cat",
+                label_visibility="collapsed",
+            )
+        with _expand_col:
+            if st.button("⛶ Expand", key="expand_live_stock", use_container_width=True):
+                _filtered_for_expand = (
+                    _inv_clean if sel_cat == "All"
+                    else _inv_clean[_inv_clean["Category"] == sel_cat]
+                )
+                _show_live_stock_fullscreen(_filtered_for_expand)
+
+        # Apply category filter
+        display_df = _inv_clean.copy()
         if sel_cat != "All":
             display_df = display_df[display_df["Category"] == sel_cat]
-        
-        # Display columns
+
+        # Display columns for the editable daily count table
         day_cols = [str(i) for i in range(1, 32)]
-        display_cols = ["Product Name", "Category", "UOM", "Opening Stock"] + day_cols + ["Total Received", "Consumption", "Closing Stock", "Physical Count", "Variance"]
+        display_cols = (
+            ["Product Name", "Category", "UOM", "Opening Stock"]
+            + day_cols
+            + ["Total Received", "Consumption", "Closing Stock", "Physical Count", "Variance"]
+        )
         display_cols_filtered = [c for c in display_cols if c in display_df.columns]
-        
+
         edited_inv = st.data_editor(
             display_df[display_cols_filtered],
             use_container_width=True,
             disabled=["Product Name", "Category", "UOM", "Opening Stock", "Total Received", "Closing Stock", "Variance"],
             hide_index=True,
             key="inv_editor",
-            height=300
+            height=300,
         )
-        
+
+        # ── Live Stock Status summary (Price + Amount + Grand Total) ───────────
+        with st.expander("💰 Live Stock Status (Price × Closing Stock)", expanded=False):
+            _live_df = _inv_clean.copy()
+            if sel_cat != "All":
+                _live_df = _live_df[_live_df["Category"] == sel_cat]
+            _live_df["Closing Stock"] = pd.to_numeric(_live_df.get("Closing Stock", 0), errors="coerce").fillna(0)
+            if "Price" not in _live_df.columns:
+                _live_df["Price"] = 0.0
+            _live_df["Price"]  = pd.to_numeric(_live_df["Price"],  errors="coerce").fillna(0)
+            _live_df["Amount"] = (_live_df["Closing Stock"] * _live_df["Price"]).round(2)
+            _grand_total = _live_df["Amount"].sum()
+
+            _live_display = _live_df[["Product Name", "Category", "UOM", "Closing Stock", "Price", "Amount"]].copy()
+            st.dataframe(
+                _live_display,
+                use_container_width=True,
+                hide_index=True,
+                height=min(400, 40 + len(_live_display) * 35),
+                column_config={
+                    "Product Name":  st.column_config.TextColumn("Product",       width=200),
+                    "Category":      st.column_config.TextColumn("Category",      width=100),
+                    "UOM":           st.column_config.TextColumn("UOM",           width=60),
+                    "Closing Stock": st.column_config.NumberColumn("Closing Stk", width=100, format="%.1f"),
+                    "Price":         st.column_config.NumberColumn("Price",       width=80,  format="%.2f"),
+                    "Amount":        st.column_config.NumberColumn("Amount",      width=100, format="%.2f"),
+                },
+            )
+            st.markdown(
+                f"<div style='display:flex;justify-content:flex-end;margin-top:8px;'>"
+                f"<div style='background:linear-gradient(135deg,#F97316,#F59E0B);color:white;"
+                f"padding:8px 20px;border-radius:10px;font-size:13px;font-weight:700;"
+                f"box-shadow:0 4px 14px rgba(249,115,22,0.25);'>"
+                f"🧾 Grand Total: &nbsp;<span style='font-family:monospace;font-size:15px;'>"
+                f"{_grand_total:,.2f}</span></div></div>",
+                unsafe_allow_html=True,
+            )
+
+        # ── Action buttons ─────────────────────────────────────────────────────
         col1, col2, col3 = st.columns(3)
-        
+
         with col1:
             if _rest_read_only:
                 st.warning("🔒 Read-only mode — saving is disabled.")
             elif st.button("💾 Save Daily Count", type="primary", use_container_width=True, key="save_inv"):
-                # Get the edited values and update the main inventory
                 for col in edited_inv.columns:
                     if col not in ["Product Name", "Category", "UOM", "Opening Stock", "Total Received", "Closing Stock", "Variance"]:
-                        # Only update editable columns
                         for edited_idx in edited_inv.index:
-                            if edited_idx in st.session_state.inventory.index:
-                                st.session_state.inventory.at[edited_idx, col] = edited_inv.at[edited_idx, col]
-                
+                            # Map back to main inventory via Product Name
+                            pname = edited_inv.at[edited_idx, "Product Name"] if "Product Name" in edited_inv.columns else None
+                            if pname is not None:
+                                main_idx = st.session_state.inventory[st.session_state.inventory["Product Name"] == pname].index
+                                if len(main_idx) > 0:
+                                    st.session_state.inventory.at[main_idx[0], col] = edited_inv.at[edited_idx, col]
+
                 st.session_state.inventory = recalculate_inventory(st.session_state.inventory)
                 if save_to_sheet(st.session_state.inventory, "rest_01_inventory"):
                     st.success("✅ Inventory saved!")
                     st.rerun()
-        
+
         with col2:
             buf = io.BytesIO()
             with pd.ExcelWriter(buf, engine='xlsxwriter') as writer:
                 st.session_state.inventory[display_cols_filtered].to_excel(writer, index=False, sheet_name='Inventory')
-            st.download_button("📥 Download Inventory", data=buf.getvalue(), file_name="Inventory_Count.xlsx", use_container_width=True, key="dl_inv")
-        
+            st.download_button(
+                "📥 Download Inventory",
+                data=buf.getvalue(),
+                file_name="Inventory_Count.xlsx",
+                use_container_width=True,
+                key="dl_inv",
+            )
+
         with col3:
-            st.info(f"📊 Total Items: {len(st.session_state.inventory)}")
+            st.info(f"📊 {len(display_df)} item(s) shown")
+
     else:
         st.warning("⚠️ No inventory found. Please upload template from Settings.")
 
