@@ -4594,22 +4594,56 @@ with tab_restaurants:
                         unsafe_allow_html=True,
                     )
 
-                # Invite codes for this location
+                # ── Invite Code Section ──────────────────────────────────
+                import datetime as _dt
                 _codes = get_invite_codes_for_location(_lid)
                 _active_codes = [c for c in _codes if c.get("active")]
+                _members = get_location_members_with_email(_lid)
+                _actual_count = len(_members)
+                _max_uses = _rest.get("max_uses") or (_active_codes[0]["max_uses"] if _active_codes else 5)
+
                 if _active_codes:
                     _c = _active_codes[0]
+                    # Calculate expiry countdown
+                    _expiry_str = ""
+                    _code_expired = False
+                    _expires_at = _c.get("expires_at")
+                    if _expires_at:
+                        try:
+                            _exp_dt = _dt.datetime.fromisoformat(str(_expires_at).replace("Z", ""))
+                            _mins_left = int((_exp_dt - _dt.datetime.utcnow()).total_seconds() / 60)
+                            if _mins_left > 0:
+                                _expiry_str = f" &nbsp;|&nbsp; ⏱️ Expires in {_mins_left}m"
+                            else:
+                                _code_expired = True
+                                _expiry_str = " &nbsp;|&nbsp; ⌛ Expired"
+                        except Exception:
+                            pass
+                    if _code_expired:
+                        st.markdown(
+                            f"<span style='font-size:13px;color:#EF4444;'>⌛ Invite code expired — generate a new one below.</span>",
+                            unsafe_allow_html=True,
+                        )
+                    else:
+                        st.markdown(
+                            f"📋 **Invite Code:** "
+                            f"<code style='font-size:14px;font-weight:700;color:#7C5CFC;"
+                            f"background:#F3F0FF;padding:2px 8px;border-radius:6px;'>{_c['code']}</code>"
+                            f" &nbsp;|&nbsp; 👥 Managers: **{_actual_count}/{_c['max_uses']}**"
+                            f"{_expiry_str}"
+                            f"<br><span style='font-size:11px;color:#64748B;'>🔒 Single-use · Share with one manager only</span>",
+                            unsafe_allow_html=True,
+                        )
+                else:
                     st.markdown(
-                        f"📋 **Invite Code:** `{_c['code']}` &nbsp;|&nbsp; "
-                        f"Uses: {_c['used_count']}/{_c['max_uses']}",
+                        f"<span style='font-size:13px;color:#94A3B8;'>No active invite code — "
+                        f"click <b>Generate Invite Code</b> below to invite a manager.</span>"
+                        f"<br><span style='font-size:11px;color:#64748B;'>👥 Managers: <b>{_actual_count}/{_max_uses}</b></span>",
                         unsafe_allow_html=True,
                     )
-                else:
-                    st.caption("No active invite code.")
 
                 # ── Members Section ──────────────────────────────────────
-                _members = get_location_members_with_email(_lid)
-                st.markdown(f"👥 **{len(_members)} manager(s) linked**")
+                st.markdown(f"👥 **{_actual_count} manager(s) linked**")
 
                 if _members:
                     for _mem in _members:
@@ -4684,52 +4718,21 @@ with tab_restaurants:
                 # ── Restaurant Action Buttons ────────────────────────────
                 btn_c1, btn_c2, btn_c3 = st.columns(3)
                 with btn_c1:
-                    _regen_confirm_key = f"regen_confirm_{_lid}"
-                    _regen_timer_key   = f"regen_timer_{_lid}"
+                    _regen_ask_key = f"regen_ask_{_lid}"
+                    _regen_asking  = st.session_state.get(_regen_ask_key, False)
 
-                    # State: 0 = idle, 1 = counting down, 2 = ready to confirm
-                    _regen_state = st.session_state.get(_regen_confirm_key, 0)
-
-                    if _regen_state == 0:
-                        # Normal button — first click starts the 2-min timer
-                        if st.button("🔄 Regenerate Code", key=f"regen_{_lid}", use_container_width=True):
-                            import time as _time
-                            st.session_state[_regen_confirm_key] = 1
-                            st.session_state[_regen_timer_key] = _time.time()
+                    if not _regen_asking:
+                        _btn_label = "📨 Generate Invite Code" if not _active_codes else "🔄 New Invite Code"
+                        if st.button(_btn_label, key=f"regen_{_lid}", use_container_width=True):
+                            st.session_state[_regen_ask_key] = True
                             st.rerun()
-
-                    elif _regen_state == 1:
-                        # Counting down — show remaining seconds
-                        import time as _time
-                        _elapsed = _time.time() - st.session_state.get(_regen_timer_key, _time.time())
-                        _remaining = max(0, 120 - int(_elapsed))
-                        if _remaining > 0:
-                            st.markdown(
-                                f"<div style='text-align:center;font-size:12px;color:#F59E0B;"
-                                f"font-weight:600;padding:8px;border:1px solid #F59E0B44;"
-                                f"border-radius:10px;background:#FFFBEB;'>"
-                                f"⏳ Wait {_remaining}s to confirm regenerate…</div>",
-                                unsafe_allow_html=True,
-                            )
-                            # Cancel button
-                            if st.button("✖ Cancel", key=f"regen_cancel_{_lid}", use_container_width=True):
-                                st.session_state[_regen_confirm_key] = 0
-                                st.rerun()
-                            # Auto-advance when timer expires
-                            import time as _time2
-                            _time2.sleep(1)
-                            st.rerun()
-                        else:
-                            st.session_state[_regen_confirm_key] = 2
-                            st.rerun()
-
-                    elif _regen_state == 2:
-                        # Timer expired — show final confirm button
+                    else:
+                        # Show warning + confirm / cancel inline
                         st.markdown(
-                            "<div style='text-align:center;font-size:12px;color:#EF4444;"
-                            "font-weight:600;padding:4px 8px;border:1px solid #EF444444;"
-                            "border-radius:10px;background:#FEF2F2;margin-bottom:4px;'>"
-                            "⚠️ Current code will be deactivated!</div>",
+                            "<div style='font-size:12px;color:#EF4444;font-weight:600;"
+                            "padding:6px 10px;border:1px solid #EF444430;border-radius:10px;"
+                            "background:#FEF2F2;margin-bottom:6px;'>"
+                            "⚠️ Old code will be deactivated immediately.</div>",
                             unsafe_allow_html=True,
                         )
                         rc1, rc2 = st.columns(2)
@@ -4739,17 +4742,21 @@ with tab_restaurants:
                                     org_id=_mgr_org_id,
                                     location_id=_lid,
                                     created_by=_mgr_user_id,
+                                    max_uses=_c["max_uses"] if _active_codes else 5,
                                 )
-                                st.session_state[_regen_confirm_key] = 0
+                                st.session_state[_regen_ask_key] = False
                                 if _new_code:
-                                    st.success(f"✅ New code: **{_new_code['code']}**")
+                                    st.success(
+                                        f"✅ New invite code: **{_new_code['code']}** · "
+                                        f"Valid for 30 minutes · Single use only"
+                                    )
                                     st.cache_data.clear()
                                     st.rerun()
                                 else:
-                                    st.error("❌ Failed to regenerate code.")
+                                    st.error("❌ Failed to generate code.")
                         with rc2:
-                            if st.button("✖ Cancel", key=f"regen_cancel2_{_lid}", use_container_width=True):
-                                st.session_state[_regen_confirm_key] = 0
+                            if st.button("✖ Cancel", key=f"regen_cancel_{_lid}", use_container_width=True):
+                                st.session_state[_regen_ask_key] = False
                                 st.rerun()
 
                 with btn_c2:
@@ -4770,6 +4777,7 @@ with tab_restaurants:
                             else:
                                 st.error("❌ Failed to reactivate.")
                 with btn_c3:
-                    if _active_codes:
+                    # Show copy-friendly code only if active and not expired
+                    if _active_codes and not _code_expired:
                         _copy_code = _active_codes[0]["code"]
                         st.code(_copy_code, language=None)
