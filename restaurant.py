@@ -1779,7 +1779,6 @@ with tab_req:
             _req_df = items[["Product Name", "UOM", "Closing Stock"]].copy().reset_index(drop=True)
             _req_df = _req_df.rename(columns={"Closing Stock": "Stock"})
             _req_df["Qty"] = 0.0
-            _req_df["Add"] = False
 
             _edited_req = st.data_editor(
                 _req_df,
@@ -1791,21 +1790,31 @@ with tab_req:
                     "UOM":          st.column_config.TextColumn("UOM",     width=50),
                     "Stock":        st.column_config.NumberColumn("Stock",  width=70,  format="%.1f"),
                     "Qty":          st.column_config.NumberColumn("Qty",    width=80,  min_value=0.0, step=1.0),
-                    "Add":          st.column_config.CheckboxColumn("Add ➕", width=60),
                 },
                 disabled=["Product Name", "UOM", "Stock"],
                 height=min(600, 40 + len(_req_df) * 35),
             )
 
-            # Process checked rows
-            _added = _edited_req[(_edited_req["Add"] == True) & (_edited_req["Qty"] > 0)]
-            if not _added.empty:
-                for _, _ar in _added.iterrows():
+            # Single submit button below the table — no checkbox loop
+            _rows_with_qty = _edited_req[_edited_req["Qty"] > 0]
+            _n_selected = len(_rows_with_qty)
+            if st.button(
+                f"🛒 Add {_n_selected} item(s) to Cart" if _n_selected > 0 else "🛒 Add to Cart",
+                type="primary",
+                use_container_width=True,
+                key=f"req_add_btn_{search_item}",
+                disabled=(_n_selected == 0),
+            ):
+                for _, _ar in _rows_with_qty.iterrows():
                     st.session_state.cart.append({
                         "name": _ar["Product Name"],
                         "qty":  float(_ar["Qty"]),
                         "uom":  _ar["UOM"],
                     })
+                # Clear the editor state so qty resets to 0
+                _ekey = f"req_editor_{search_item}"
+                if _ekey in st.session_state:
+                    del st.session_state[_ekey]
                 st.rerun()
 
     with col_r:
