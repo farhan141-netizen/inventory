@@ -1359,6 +1359,17 @@ def _build_inventory_from_catalogue() -> pd.DataFrame:
         "category":     "Category",
     })
 
+    # FIX: Strip meta/system rows (CATEGORY_ / SUPPLIER_ header rows added by
+    # the warehouse app). These are not real products and should never appear
+    # in the restaurant inventory or daily stock count.
+    cat_df = cat_df[
+        ~cat_df["Product Name"].astype(str).str.startswith("CATEGORY_") &
+        ~cat_df["Product Name"].astype(str).str.startswith("SUPPLIER_")
+    ].reset_index(drop=True)
+
+    if cat_df.empty:
+        return pd.DataFrame()
+
     # 2. Load existing restaurant inventory (has day columns + consumption etc.)
     existing = load_from_sheet("rest_01_inventory")
 
@@ -1801,134 +1812,137 @@ with tab_pending:
 with tab_received:
     st.markdown('<div class="section-title">📦 Received Items - Accept Dispatches</div>', unsafe_allow_html=True)
     all_reqs = load_from_sheet("restaurant_requisitions")
-    
+
     if not all_reqs.empty:
-        all_reqs["Remaining"] = all_reqs["Qty"] - all_reqs["DispatchQty"]
-        # Add AcceptedQty column if missing
+        # Ensure AcceptedQty column exists and is numeric
         if "AcceptedQty" not in all_reqs.columns:
             all_reqs["AcceptedQty"] = 0.0
-        all_reqs["AcceptedQty"] = pd.to_numeric(all_reqs["AcceptedQty"], errors='coerce').fillna(0.0)
+        all_reqs["AcceptedQty"]  = pd.to_numeric(all_reqs["AcceptedQty"],  errors="coerce").fillna(0.0)
+        all_reqs["DispatchQty"]  = pd.to_numeric(all_reqs["DispatchQty"],  errors="coerce").fillna(0.0)
+        all_reqs["Qty"]          = pd.to_numeric(all_reqs["Qty"],          errors="coerce").fillna(0.0)
+
+        # FIX: Show ALL dispatched rows where DispatchQty > AcceptedQty
+        # This catches BOTH full dispatches AND partial second-round dispatches
         my_dispatched = all_reqs[
             (all_reqs["Restaurant"] == st.session_state.get("restaurant_name", "")) &
-            (all_reqs["Status"] == "Dispatched") &
+            (all_reqs["DispatchQty"] > 0) &
             (all_reqs["AcceptedQty"] < all_reqs["DispatchQty"])
-        ]
-        
+        ].copy()
+
         if not my_dispatched.empty:
-            # Convert RequestedDate safely
-            my_dispatched = my_dispatched.copy()
-            my_dispatched["RequestedDate"] = pd.to_datetime(my_dispatched["RequestedDate"], errors='coerce')
+            my_dispatched["RequestedDate"] = pd.to_datetime(my_dispatched["RequestedDate"], errors="coerce")
             my_dispatched = my_dispatched[my_dispatched["RequestedDate"].notna()]
-            
-            if not my_dispatched.empty:
-                my_dispatched = my_dispatched.sort_values("RequestedDate", ascending=False)
-                unique_dates = sorted(my_dispatched["RequestedDate"].unique(), reverse=True)
-                
-                st.metric("Total Dispatched Items", len(my_dispatched))
-                
-                for req_date in unique_dates:
-                    try:
-                        date_str = pd.Timestamp(req_date).strftime("%d/%m/%Y")
-                    except:
-                        date_str = "Unknown Date"
-                    
-                    date_reqs = my_dispatched[my_dispatched["RequestedDate"] == req_date]
-                    
-                    with st.expander(f"📅 {date_str} ({len(date_reqs)} items)", expanded=False):
-                        for recv_idx, (original_idx, row) in enumerate(date_reqs.iterrows()):
-                            item_name = row["Item"]
-                            dispatch_qty = float(row["DispatchQty"])
-                            req_qty = float(row["Qty"])
-                            req_id = row["ReqID"]
-                            remaining_qty = req_qty - dispatch_qty
-                            accepted_qty = float(row.get("AcceptedQty", 0)) if pd.notna(row.get("AcceptedQty", 0)) else 0.0
-                            accept_amount = dispatch_qty - accepted_qty
-                            
-                            # Color based on whether all items are received
-                            status_indicator = "🟢" if accept_amount <= 0 else "🟡"
-                            
-                            # Create item box with buttons inside
-                            col_item, col_accept, col_reject = st.columns([2, 1, 1])
-                            
-                            with col_item:
-                                st.markdown(f"""
-                                <div class="req-item status-dispatched">
-                                    <div class="req-item-content">
-                                        <b>{status_indicator} {item_name}</b><br>
-                                        Req:{req_qty} | Dispatched:{dispatch_qty} | Accepted:{accepted_qty} | To Accept:{accept_amount}
-                                    </div>
+
+        if not my_dispatched.empty:
+            my_dispatched = my_dispatched.sort_values("RequestedDate", ascending=False)
+            unique_dates  = sorted(my_dispatched["RequestedDate"].unique(), reverse=True)
+
+            st.metric("Total Dispatched Items", len(my_dispatched))
+
+            # Session state key to remember which date expanders are open
+            if "_recv_open_dates" not in st.session_state:
+                st.session_state["_recv_open_dates"] = set()
+
+            for req_date in unique_dates:
+                try:
+                    date_str = pd.Timestamp(req_date).strftime("%d/%m/%Y")
+                except Exception:
+                    date_str = "Unknown Date"
+
+                date_reqs    = my_dispatched[my_dispatched["RequestedDate"] == req_date]
+                _exp_key     = f"recv_exp_{date_str}"
+                # Keep expander open if it was previously opened or has pending items
+                _is_expanded = (date_str in st.session_state["_recv_open_dates"])
+
+                with st.expander(f"📅 {date_str} ({len(date_reqs)} items)", expanded=_is_expanded):
+                    # Mark this expander as open while we render items inside it
+                    st.session_state["_recv_open_dates"].add(date_str)
+
+                    for recv_idx, (original_idx, row) in enumerate(date_reqs.iterrows()):
+                        item_name    = row["Item"]
+                        dispatch_qty = float(row["DispatchQty"])
+                        req_qty      = float(row["Qty"])
+                        req_id       = row["ReqID"]
+                        accepted_qty = float(row.get("AcceptedQty", 0)) if pd.notna(row.get("AcceptedQty", 0)) else 0.0
+                        accept_amount = dispatch_qty - accepted_qty   # qty still to accept this round
+                        # remaining = original qty not yet dispatched at all
+                        remaining_qty = req_qty - dispatch_qty
+
+                        status_indicator = "🟢" if accept_amount <= 0 else "🟡"
+
+                        col_item, col_accept, col_reject = st.columns([2, 1, 1])
+
+                        with col_item:
+                            st.markdown(f"""
+                            <div class="req-item status-dispatched">
+                                <div class="req-item-content">
+                                    <b>{status_indicator} {item_name}</b><br>
+                                    Req:{req_qty:.0f} | Dispatched:{dispatch_qty:.0f} | Accepted:{accepted_qty:.0f} | To Accept:{accept_amount:.0f}
                                 </div>
-                                """, unsafe_allow_html=True)
-                            
-                            with col_accept:
-                                if accept_amount <= 0:
-                                    st.caption("✅ Accepted")
-                                elif _rest_read_only:
-                                    st.caption("🔒 Read-only")
-                                else:
-                                    if st.button(f"✅", key=f"accept_{recv_idx}_{req_id}", use_container_width=True, help="Accept & Add to Inventory"):
-                                        try:
-                                            # Mark this dispatch as accepted
-                                            all_reqs.at[original_idx, "AcceptedQty"] = dispatch_qty
-                                            
-                                            # If fully dispatched AND accepted, mark complete
-                                            if remaining_qty <= 0:
-                                                all_reqs.at[original_idx, "Status"] = "Completed"
-                                            
-                                            # Add to restaurant inventory - add to today's column
-                                            today = datetime.datetime.now().day
-                                            day_col = str(today)
-                                            
-                                            # Normalize item name for matching
-                                            item_name_clean = item_name.strip().lower()
-                                            inv_match = st.session_state.inventory[
-                                                st.session_state.inventory["Product Name"].str.strip().str.lower() == item_name_clean
-                                            ]
-                                            
-                                            if not inv_match.empty:
-                                                idx_val = inv_match.index[0]
-                                                
-                                                # Ensure day column is numeric
-                                                if day_col in st.session_state.inventory.columns:
-                                                    st.session_state.inventory[day_col] = pd.to_numeric(
-                                                        st.session_state.inventory[day_col], errors='coerce'
-                                                    ).fillna(0.0)
-                                                
-                                                # Add only unaccepted amount to today's day column
-                                                current_day_qty = float(st.session_state.inventory.at[idx_val, day_col]) if pd.notna(st.session_state.inventory.at[idx_val, day_col]) else 0.0
-                                                st.session_state.inventory.at[idx_val, day_col] = current_day_qty + accept_amount
-                                                
-                                                # Recalculate all totals for this item
-                                                st.session_state.inventory = recalculate_inventory(st.session_state.inventory)
-                                            else:
-                                                st.warning(f"⚠️ Item '{item_name}' not found in inventory. Cannot update stock.")
-                                            
-                                            # Save both
-                                            save_to_sheet(all_reqs, "restaurant_requisitions")
-                                            save_to_sheet(st.session_state.inventory, "rest_01_inventory")
-                                            
-                                            st.success(f"✅ Accepted {accept_amount} units!")
-                                            st.rerun()
-                                        except Exception as e:
-                                            st.error(f"❌ Error: {str(e)}")
-                            
-                            with col_reject:
-                                if _rest_read_only:
-                                    st.caption("🔒")
-                                elif st.button(f"❌", key=f"reject_{recv_idx}_{req_id}", use_container_width=True, help="Reject"):
+                            </div>
+                            """, unsafe_allow_html=True)
+
+                        with col_accept:
+                            if accept_amount <= 0:
+                                st.caption("✅ Accepted")
+                            elif _rest_read_only:
+                                st.caption("🔒 Read-only")
+                            else:
+                                if st.button("✅", key=f"accept_{recv_idx}_{req_id}", use_container_width=True, help="Accept & Add to Inventory"):
                                     try:
-                                        all_reqs.at[original_idx, "Status"] = "Pending"
-                                        all_reqs.at[original_idx, "DispatchQty"] = 0
-                                        all_reqs.at[original_idx, "AcceptedQty"] = 0.0
+                                        # Mark accepted qty = full dispatch qty for this row
+                                        all_reqs.at[original_idx, "AcceptedQty"] = dispatch_qty
+
+                                        # Only mark Completed if NOTHING more is remaining to dispatch
+                                        if remaining_qty <= 0:
+                                            all_reqs.at[original_idx, "Status"] = "Completed"
+
+                                        # Add to restaurant inventory → today's day column
+                                        today   = datetime.datetime.now().day
+                                        day_col = str(today)
+                                        item_name_clean = item_name.strip().lower()
+                                        inv_match = st.session_state.inventory[
+                                            st.session_state.inventory["Product Name"].str.strip().str.lower() == item_name_clean
+                                        ]
+                                        if not inv_match.empty:
+                                            idx_val = inv_match.index[0]
+                                            if day_col in st.session_state.inventory.columns:
+                                                st.session_state.inventory[day_col] = pd.to_numeric(
+                                                    st.session_state.inventory[day_col], errors="coerce"
+                                                ).fillna(0.0)
+                                            current_day_qty = float(
+                                                st.session_state.inventory.at[idx_val, day_col]
+                                            ) if pd.notna(st.session_state.inventory.at[idx_val, day_col]) else 0.0
+                                            st.session_state.inventory.at[idx_val, day_col] = current_day_qty + accept_amount
+                                            st.session_state.inventory = recalculate_inventory(st.session_state.inventory)
+                                        else:
+                                            st.warning(f"⚠️ '{item_name}' not found in inventory.")
+
                                         save_to_sheet(all_reqs, "restaurant_requisitions")
-                                        st.warning(f"❌ Returned to pending")
-                                        st.rerun()
+                                        save_to_sheet(st.session_state.inventory, "rest_01_inventory")
+                                        st.success(f"✅ Accepted {accept_amount:.0f} units of {item_name}!")
+                                        # Do NOT rerun — keep the expander open
+                                        # Just reload data on next interaction
+
                                     except Exception as e:
                                         st.error(f"❌ Error: {str(e)}")
-            else:
-                st.info("📭 No dispatched items")
+
+                        with col_reject:
+                            if _rest_read_only:
+                                st.caption("🔒")
+                            elif st.button("❌", key=f"reject_{recv_idx}_{req_id}", use_container_width=True, help="Reject"):
+                                try:
+                                    all_reqs.at[original_idx, "Status"]      = "Pending"
+                                    all_reqs.at[original_idx, "DispatchQty"] = 0
+                                    all_reqs.at[original_idx, "AcceptedQty"] = 0.0
+                                    save_to_sheet(all_reqs, "restaurant_requisitions")
+                                    st.warning("❌ Returned to pending")
+                                except Exception as e:
+                                    st.error(f"❌ Error: {str(e)}")
         else:
-            st.info("📭 No dispatched items")
+            # Clear open-dates state when nothing to show
+            st.session_state["_recv_open_dates"] = set()
+            st.info("📭 No dispatched items awaiting acceptance.")
     else:
         st.info("📭 No orders found")
 
@@ -2096,66 +2110,110 @@ with tab_dash:
         _inv_sih["_val"]   = pd.to_numeric(_inv_sih["Closing Stock"], errors="coerce").fillna(0) * _inv_sih["_price"]
         _kpi_stock_value   = _inv_sih["_val"].sum()
 
-    # Pending Orders count + detail list
-    _pending_df = pd.DataFrame()
+    # Pending: fully pending + partial (dispatched but remainder still unfulfilled)
+    _pending_full_df = pd.DataFrame()
+    _pending_part_df = pd.DataFrame()
     if not req_filtered.empty and "Status" in req_filtered.columns:
-        _pending_df = req_filtered[req_filtered["Status"] == "Pending"].copy()
-    _kpi_pending_count = len(_pending_df)
+        _pending_full_df = req_filtered[req_filtered["Status"] == "Pending"].copy()
+        _disp = req_filtered[req_filtered["Status"] == "Dispatched"].copy()
+        if not _disp.empty:
+            _disp["_remaining"] = (
+                pd.to_numeric(_disp["Qty"], errors="coerce").fillna(0) -
+                pd.to_numeric(_disp["DispatchQty"], errors="coerce").fillna(0)
+            )
+            _pending_part_df = _disp[_disp["_remaining"] > 0].copy()
+    _kpi_pending_count = len(_pending_full_df) + len(_pending_part_df)
 
-    # ── KPI row HTML ─────────────────────────────────────────────────────────
-    st.markdown(f"""
-    <div class="r01-dash-kpi-row">
+    # ── KPI row — 4 static boxes + 1 clickable pending button ────────────────
+    kpi_c1, kpi_c2, kpi_c3, kpi_c4, kpi_c5 = st.columns(5)
+
+    with kpi_c1:
+        st.markdown(f"""
         <div class="r01-dash-kpi-box">
             <div class="kpi-icon">📥</div>
             <div class="kpi-label">Total Received</div>
             <div class="kpi-value">{_kpi_total_received_amt:,.0f}</div>
-        </div>
+        </div>""", unsafe_allow_html=True)
+
+    with kpi_c2:
+        st.markdown(f"""
         <div class="r01-dash-kpi-box">
             <div class="kpi-icon">💸</div>
             <div class="kpi-label">Sold (Amount)</div>
             <div class="kpi-value">{_kpi_sold_amt:,.0f}</div>
-        </div>
+        </div>""", unsafe_allow_html=True)
+
+    with kpi_c3:
+        st.markdown(f"""
         <div class="r01-dash-kpi-box">
             <div class="kpi-icon">📈</div>
             <div class="kpi-label">P&amp;L</div>
             <div class="kpi-value" style="color:{_pnl_color};">{_pnl_sign}{_kpi_pnl:,.0f}</div>
-        </div>
+        </div>""", unsafe_allow_html=True)
+
+    with kpi_c4:
+        st.markdown(f"""
         <div class="r01-dash-kpi-box">
             <div class="kpi-icon">🏦</div>
             <div class="kpi-label">Stock In Hand</div>
             <div class="kpi-value">{_kpi_stock_value:,.0f}</div>
-        </div>
-        <div class="r01-dash-kpi-box" id="kpi_pending_box" style="cursor:pointer;">
-            <div class="kpi-icon">⏳</div>
-            <div class="kpi-label">Pending Orders</div>
-            <div class="kpi-value {'bad' if _kpi_pending_count > 0 else 'good'}">{_kpi_pending_count}</div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+        </div>""", unsafe_allow_html=True)
 
-    # Pending Orders popup — Streamlit button to open dialog
-    if st.button(
-        f"📋 View {_kpi_pending_count} Pending Order(s)",
-        key="dash_view_pending",
-        disabled=(_kpi_pending_count == 0),
-        help="Click to see all pending orders",
-    ):
-        @st.dialog("⏳ Pending Orders", width="large")
-        def _show_pending_popup():
-            if _pending_df.empty:
-                st.info("✅ No pending orders.")
-                return
-            _pd_show = _pending_df[["Item", "Qty", "RequestedDate", "Restaurant"]].copy()
-            _pd_show["RequestedDate"] = pd.to_datetime(_pd_show["RequestedDate"], errors="coerce").dt.strftime("%d/%m/%Y")
-            _pd_show = _pd_show.rename(columns={"RequestedDate": "Order Date", "Qty": "Qty Ordered"})
-            st.dataframe(_pd_show, use_container_width=True, hide_index=True,
-                         column_config={
-                             "Item":        st.column_config.TextColumn("Item",       width=200),
-                             "Qty Ordered": st.column_config.NumberColumn("Qty",      width=80, format="%.1f"),
-                             "Order Date":  st.column_config.TextColumn("Order Date", width=110),
-                         })
-            st.caption(f"Total: {len(_pending_df)} pending lines | Date range: {start_date} → {end_date}")
-        _show_pending_popup()
+    with kpi_c5:
+        # Pending Orders as a styled clickable button matching KPI box height
+        _pend_color = "#EF4444" if _kpi_pending_count > 0 else "#10B981"
+        st.markdown(f"""
+        <div class="r01-dash-kpi-box" style="padding:0;">
+            <div style="padding:18px 14px 6px;text-align:center;">
+                <div class="kpi-icon">⏳</div>
+                <div class="kpi-label">Pending Orders</div>
+                <div class="kpi-value" style="color:{_pend_color};">{_kpi_pending_count}</div>
+            </div>
+        </div>""", unsafe_allow_html=True)
+        if st.button(
+            "📋 View Details",
+            key="dash_view_pending",
+            use_container_width=True,
+            disabled=(_kpi_pending_count == 0),
+        ):
+            @st.dialog("⏳ Pending & Partially Fulfilled Orders", width="large")
+            def _show_pending_popup():
+                if _pending_full_df.empty and _pending_part_df.empty:
+                    st.info("✅ No pending orders.")
+                    return
+
+                if not _pending_full_df.empty:
+                    st.markdown("### 🟡 Fully Pending (not dispatched yet)")
+                    _p1 = _pending_full_df[["Item", "Qty", "RequestedDate"]].copy()
+                    _p1["RequestedDate"] = pd.to_datetime(_p1["RequestedDate"], errors="coerce").dt.strftime("%d/%m/%Y")
+                    _p1 = _p1.rename(columns={"RequestedDate": "Order Date", "Qty": "Qty Ordered"})
+                    st.dataframe(_p1, use_container_width=True, hide_index=True,
+                                 column_config={
+                                     "Item":        st.column_config.TextColumn("Item",       width=220),
+                                     "Qty Ordered": st.column_config.NumberColumn("Qty",      width=80, format="%.0f"),
+                                     "Order Date":  st.column_config.TextColumn("Order Date", width=110),
+                                 })
+
+                if not _pending_part_df.empty:
+                    st.markdown("### 🟠 Partially Dispatched (balance still pending)")
+                    _p2 = _pending_part_df[["Item", "Qty", "DispatchQty", "_remaining", "RequestedDate"]].copy()
+                    _p2["RequestedDate"] = pd.to_datetime(_p2["RequestedDate"], errors="coerce").dt.strftime("%d/%m/%Y")
+                    _p2 = _p2.rename(columns={
+                        "RequestedDate": "Order Date",
+                        "Qty":           "Qty Ordered",
+                        "DispatchQty":   "Dispatched",
+                        "_remaining":    "Balance Pending",
+                    })
+                    st.dataframe(_p2, use_container_width=True, hide_index=True,
+                                 column_config={
+                                     "Item":            st.column_config.TextColumn("Item",            width=200),
+                                     "Qty Ordered":     st.column_config.NumberColumn("Qty Ordered",   width=90, format="%.0f"),
+                                     "Dispatched":      st.column_config.NumberColumn("Dispatched",    width=90, format="%.0f"),
+                                     "Balance Pending": st.column_config.NumberColumn("Balance Pending", width=110, format="%.0f"),
+                                     "Order Date":      st.column_config.TextColumn("Order Date",      width=110),
+                                 })
+                st.caption(f"Date range: {start_date} → {end_date}")
+            _show_pending_popup()
 
     st.markdown("---")
 
@@ -2301,31 +2359,35 @@ with tab_dash:
 
     with row4_l:
         with st.container(border=True):
-            st.markdown('<div class="r01-card-title">📅 Daily Requisition Trend <span class="meta">requests over time</span></div>', unsafe_allow_html=True)
+            st.markdown('<div class="r01-card-title">📅 Daily Requisition Trend <span class="meta">purchase amount over time</span></div>', unsafe_allow_html=True)
             _asc7, _topn7, chart7 = _r01_card_settings("trend", default_chart="Bar Chart")
-            trend_df = pd.DataFrame(columns=["Date", "Total Qty"])
-            if not req_filtered.empty and "RequestedDate" in req_filtered.columns and "Qty" in req_filtered.columns:
-                _trend_src = req_filtered.copy()
-                _trend_src["_date"] = pd.to_datetime(_trend_src["RequestedDate"], errors="coerce").dt.date
-                _trend_src = _trend_src.dropna(subset=["_date"])
-                trend_df = (
-                    _trend_src.groupby("_date", as_index=False)["Qty"]
-                    .sum()
-                    .rename(columns={"_date": "Date", "Qty": "Total Qty"})
-                    .sort_values("Date", ascending=not _asc7)
-                    .head(_topn7)
-                    .sort_values("Date")
-                )
+            trend_df = pd.DataFrame(columns=["Date", "Total Amount"])
+            if not req_filtered.empty and "RequestedDate" in req_filtered.columns and "DispatchQty" in req_filtered.columns:
+                _trend_src = req_filtered[req_filtered["Status"].isin(["Dispatched", "Completed"])].copy()
+                if not _trend_src.empty:
+                    _trend_src["_price"]  = _trend_src["Item"].apply(lambda x: _price_map.get(str(x).strip(), 0))
+                    _trend_src["_amount"] = pd.to_numeric(_trend_src["DispatchQty"], errors="coerce").fillna(0) * _trend_src["_price"]
+                    _trend_src["_date"]   = pd.to_datetime(_trend_src["RequestedDate"], errors="coerce").dt.date
+                    _trend_src = _trend_src.dropna(subset=["_date"])
+                    trend_df = (
+                        _trend_src.groupby("_date", as_index=False)["_amount"]
+                        .sum()
+                        .rename(columns={"_date": "Date", "_amount": "Total Amount"})
+                        .sort_values("Date", ascending=not _asc7)
+                        .head(_topn7)
+                        .sort_values("Date")
+                    )
             if not trend_df.empty:
                 if chart7 == "Table":
-                    st.dataframe(trend_df, use_container_width=True, hide_index=True, height=260)
+                    st.dataframe(trend_df, use_container_width=True, hide_index=True, height=260,
+                                 column_config={"Total Amount": st.column_config.NumberColumn("Total Amount", format="%.2f")})
                 elif chart7 == "Pie Chart":
-                    _r01_make_pie(trend_df, "Date", "Total Qty")
+                    _r01_make_pie(trend_df, "Date", "Total Amount")
                 else:
                     try:
                         fig_trend = px.bar(
-                            trend_df, x="Date", y="Total Qty",
-                            color_discrete_sequence=["rgba(124,92,252,0.75)"],
+                            trend_df, x="Date", y="Total Amount",
+                            color_discrete_sequence=["rgba(249,115,22,0.75)"],
                         )
                         fig_trend.update_layout(
                             paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
@@ -2340,7 +2402,7 @@ with tab_dash:
             else:
                 st.info("📭 No trend data in selected range.")
             if st.button("⛶ Expand", key="expand_r01_trend", use_container_width=True):
-                _r01_show_fullscreen_card("Daily Requisition Trend", trend_df, "Date", "Total Qty", chart7)
+                _r01_show_fullscreen_card("Daily Requisition Trend", trend_df, "Date", "Total Amount", chart7)
 
     with row4_r:
         with st.container(border=True):
