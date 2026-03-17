@@ -228,6 +228,10 @@ def load_from_sheet(table_name, default_cols=None):
         st.warning(f"Table '{table_name}' not found or empty: {e}")
         return pd.DataFrame(columns=default_cols) if default_cols else pd.DataFrame()
 
+# Columns that exist in session_state inventory for display/calc
+# but are NOT in the rest_01_inventory DB schema — must be stripped before saving
+_REST_INVENTORY_UI_ONLY_COLS = frozenset(["Price", "Amount", "Physical Count"])
+
 def save_to_sheet(df, table_name):
     """Upsert DataFrame rows into a Supabase table with org/location isolation."""
     try:
@@ -237,12 +241,18 @@ def save_to_sheet(df, table_name):
 
         df = df.copy()
         df = _clean_for_supabase(df)
-        
+
+        # Strip UI-only / computed columns that don't exist in the DB schema
+        if table_name == "rest_01_inventory":
+            drop_cols = [c for c in _REST_INVENTORY_UI_ONLY_COLS if c in df.columns]
+            if drop_cols:
+                df = df.drop(columns=drop_cols)
+
         # Inject org_id only for tables that have that column
         org_id = st.session_state.get("org_id")
         if org_id and table_name in _ORG_SCOPED_TABLES:
             df["org_id"] = org_id
-            
+
         # Inject location using the correct column name for each table
         location_id = st.session_state.get("location_id")
         if location_id and table_name in _LOCATION_COL:
@@ -257,8 +267,6 @@ def save_to_sheet(df, table_name):
         df = df.where(pd.notnull(df), None)
 
         records = df.to_dict(orient="records")
-        # Sanitize any remaining float NaN/Inf values (e.g. from float64 columns where
-        # df.where(notnull, None) coerces None back to NaN) so they serialise as JSON null.
         records = [
             {k: (None if isinstance(v, float) and not math.isfinite(v) else v)
              for k, v in rec.items()}
@@ -2052,147 +2060,241 @@ with tab_dash:
             (all_reqs_dash["RequestedDate"] <= pd.Timestamp(end_date))
         ]
 
-    # --- KPI row ---
-    total_items      = len(inv_dash) if not inv_dash.empty else 0
-    total_req_qty    = int(pd.to_numeric(req_filtered["Qty"], errors="coerce").sum()) if not req_filtered.empty and "Qty" in req_filtered.columns else 0
-    total_dispatched = int(pd.to_numeric(req_filtered["DispatchQty"], errors="coerce").sum()) if not req_filtered.empty and "DispatchQty" in req_filtered.columns else 0
-    pending_count    = int((req_filtered["Status"] == "Pending").sum()) if not req_filtered.empty and "Status" in req_filtered.columns else 0
-    total_stock      = float(pd.to_numeric(inv_dash["Closing Stock"], errors="coerce").sum()) if not inv_dash.empty and "Closing Stock" in inv_dash.columns else 0.0
-    fulfillment_pct  = round((total_dispatched / total_req_qty * 100), 1) if total_req_qty > 0 else 0.0
-    fulf_class       = "good" if fulfillment_pct >= 80 else ("bad" if fulfillment_pct < 50 else "")
+    # ── Prepare price lookup from inventory (Product Name → Price) ─────────────
+    _price_map = {}
+    if not inv_dash.empty and "Product Name" in inv_dash.columns and "Price" in inv_dash.columns:
+        for _, _pr in inv_dash[["Product Name", "Price"]].dropna().iterrows():
+            _price_map[str(_pr["Product Name"]).strip()] = float(pd.to_numeric(_pr["Price"], errors="coerce") or 0)
 
+    # ── KPI calculations ─────────────────────────────────────────────────────
+    # Total Received (amount) = sum(DispatchQty * Price) for Dispatched/Completed
+    _recv_df = pd.DataFrame()
+    if not req_filtered.empty and "DispatchQty" in req_filtered.columns:
+        _recv_df = req_filtered[req_filtered["Status"].isin(["Dispatched", "Completed"])].copy()
+        _recv_df["_price"] = _recv_df["Item"].apply(lambda x: _price_map.get(str(x).strip(), 0))
+        _recv_df["_amount"] = pd.to_numeric(_recv_df["DispatchQty"], errors="coerce").fillna(0) * _recv_df["_price"]
+    _kpi_total_received_amt = _recv_df["_amount"].sum() if not _recv_df.empty and "_amount" in _recv_df.columns else 0.0
+
+    # Sold (amount) = Consumption × Price (from inventory)
+    _kpi_sold_amt = 0.0
+    if not inv_dash.empty and "Consumption" in inv_dash.columns:
+        _inv_sold = inv_dash[["Product Name", "Consumption"]].copy()
+        _inv_sold["_price"] = _inv_sold["Product Name"].apply(lambda x: _price_map.get(str(x).strip(), 0))
+        _inv_sold["_amount"] = pd.to_numeric(_inv_sold["Consumption"], errors="coerce").fillna(0) * _inv_sold["_price"]
+        _kpi_sold_amt = _inv_sold["_amount"].sum()
+
+    # P&L = Sales (sold) − Purchase (received)
+    _kpi_pnl = _kpi_sold_amt - _kpi_total_received_amt
+    _pnl_color = "#10B981" if _kpi_pnl >= 0 else "#EF4444"
+    _pnl_sign  = "+" if _kpi_pnl >= 0 else ""
+
+    # Stock In Hand (value) = Closing Stock × Price
+    _kpi_stock_value = 0.0
+    if not inv_dash.empty and "Closing Stock" in inv_dash.columns:
+        _inv_sih = inv_dash[["Product Name", "Closing Stock"]].copy()
+        _inv_sih["_price"] = _inv_sih["Product Name"].apply(lambda x: _price_map.get(str(x).strip(), 0))
+        _inv_sih["_val"]   = pd.to_numeric(_inv_sih["Closing Stock"], errors="coerce").fillna(0) * _inv_sih["_price"]
+        _kpi_stock_value   = _inv_sih["_val"].sum()
+
+    # Pending Orders count + detail list
+    _pending_df = pd.DataFrame()
+    if not req_filtered.empty and "Status" in req_filtered.columns:
+        _pending_df = req_filtered[req_filtered["Status"] == "Pending"].copy()
+    _kpi_pending_count = len(_pending_df)
+
+    # ── KPI row HTML ─────────────────────────────────────────────────────────
     st.markdown(f"""
     <div class="r01-dash-kpi-row">
-        <div class="r01-dash-kpi-box"><div class="kpi-icon">📦</div><div class="kpi-label">Total Products</div><div class="kpi-value">{total_items}</div></div>
-        <div class="r01-dash-kpi-box"><div class="kpi-icon">🛒</div><div class="kpi-label">Total Requested</div><div class="kpi-value">{total_req_qty}</div></div>
-        <div class="r01-dash-kpi-box"><div class="kpi-icon">🚚</div><div class="kpi-label">Total Dispatched</div><div class="kpi-value">{total_dispatched}</div></div>
-        <div class="r01-dash-kpi-box"><div class="kpi-icon">⏳</div><div class="kpi-label">Pending Orders</div><div class="kpi-value {'bad' if pending_count > 0 else ''}">{pending_count}</div></div>
-        <div class="r01-dash-kpi-box"><div class="kpi-icon">📊</div><div class="kpi-label">Total Stock</div><div class="kpi-value">{total_stock:,.1f}</div></div>
-        <div class="r01-dash-kpi-box"><div class="kpi-icon">✅</div><div class="kpi-label">Fulfillment %</div><div class="kpi-value {fulf_class}">{fulfillment_pct}%</div></div>
+        <div class="r01-dash-kpi-box">
+            <div class="kpi-icon">📥</div>
+            <div class="kpi-label">Total Received</div>
+            <div class="kpi-value">{_kpi_total_received_amt:,.0f}</div>
+        </div>
+        <div class="r01-dash-kpi-box">
+            <div class="kpi-icon">💸</div>
+            <div class="kpi-label">Sold (Amount)</div>
+            <div class="kpi-value">{_kpi_sold_amt:,.0f}</div>
+        </div>
+        <div class="r01-dash-kpi-box">
+            <div class="kpi-icon">📈</div>
+            <div class="kpi-label">P&amp;L</div>
+            <div class="kpi-value" style="color:{_pnl_color};">{_pnl_sign}{_kpi_pnl:,.0f}</div>
+        </div>
+        <div class="r01-dash-kpi-box">
+            <div class="kpi-icon">🏦</div>
+            <div class="kpi-label">Stock In Hand</div>
+            <div class="kpi-value">{_kpi_stock_value:,.0f}</div>
+        </div>
+        <div class="r01-dash-kpi-box" id="kpi_pending_box" style="cursor:pointer;">
+            <div class="kpi-icon">⏳</div>
+            <div class="kpi-label">Pending Orders</div>
+            <div class="kpi-value {'bad' if _kpi_pending_count > 0 else 'good'}">{_kpi_pending_count}</div>
+        </div>
     </div>
     """, unsafe_allow_html=True)
 
+    # Pending Orders popup — Streamlit button to open dialog
+    if st.button(
+        f"📋 View {_kpi_pending_count} Pending Order(s)",
+        key="dash_view_pending",
+        disabled=(_kpi_pending_count == 0),
+        help="Click to see all pending orders",
+    ):
+        @st.dialog("⏳ Pending Orders", width="large")
+        def _show_pending_popup():
+            if _pending_df.empty:
+                st.info("✅ No pending orders.")
+                return
+            _pd_show = _pending_df[["Item", "Qty", "RequestedDate", "Restaurant"]].copy()
+            _pd_show["RequestedDate"] = pd.to_datetime(_pd_show["RequestedDate"], errors="coerce").dt.strftime("%d/%m/%Y")
+            _pd_show = _pd_show.rename(columns={"RequestedDate": "Order Date", "Qty": "Qty Ordered"})
+            st.dataframe(_pd_show, use_container_width=True, hide_index=True,
+                         column_config={
+                             "Item":        st.column_config.TextColumn("Item",       width=200),
+                             "Qty Ordered": st.column_config.NumberColumn("Qty",      width=80, format="%.1f"),
+                             "Order Date":  st.column_config.TextColumn("Order Date", width=110),
+                         })
+            st.caption(f"Total: {len(_pending_df)} pending lines | Date range: {start_date} → {end_date}")
+        _show_pending_popup()
+
     st.markdown("---")
 
-    # --- Row 1: Most Requested | Most Received ---
+    # ── Row 1: Top Purchased QTY | Top Selling QTY ───────────────────────────
     row1_l, row1_r = st.columns(2, gap="small")
 
     with row1_l:
         with st.container(border=True):
-            st.markdown('<div class="r01-card-title">🛒 Most Requested Items <span class="meta">by qty</span></div>', unsafe_allow_html=True)
-            asc1, topn1, chart1 = _r01_card_settings("most_req")
-            most_req = pd.DataFrame(columns=["Item", "Requested Qty"])
-            if not req_filtered.empty and "Item" in req_filtered.columns and "Qty" in req_filtered.columns:
-                most_req = (
-                    req_filtered.groupby("Item", as_index=False)["Qty"]
-                    .sum()
-                    .rename(columns={"Qty": "Requested Qty"})
-                    .sort_values("Requested Qty", ascending=asc1)
-                    .head(topn1)
-                )
-            _r01_render_card(most_req, "Item", "Requested Qty", chart1)
-            if st.button("⛶ Expand", key="expand_r01_most_requested", use_container_width=True):
-                _r01_show_fullscreen_card("Most Requested Items", most_req, "Item", "Requested Qty", chart1)
+            st.markdown('<div class="r01-card-title">📥 Top Purchased <span class="meta">by qty</span></div>', unsafe_allow_html=True)
+            asc1, topn1, chart1 = _r01_card_settings("top_purch_qty")
+            top_purch_qty = pd.DataFrame(columns=["Item", "Purchased Qty"])
+            if not req_filtered.empty and "Item" in req_filtered.columns and "DispatchQty" in req_filtered.columns:
+                _pq = req_filtered[req_filtered["Status"].isin(["Dispatched", "Completed"])].copy()
+                if not _pq.empty:
+                    top_purch_qty = (
+                        _pq.groupby("Item", as_index=False)["DispatchQty"]
+                        .sum()
+                        .rename(columns={"DispatchQty": "Purchased Qty"})
+                        .sort_values("Purchased Qty", ascending=asc1)
+                        .head(topn1)
+                    )
+            _r01_render_card(top_purch_qty, "Item", "Purchased Qty", chart1)
+            if st.button("⛶ Expand", key="expand_top_purch_qty", use_container_width=True):
+                _r01_show_fullscreen_card("Top Purchased Items (Qty)", top_purch_qty, "Item", "Purchased Qty", chart1)
 
     with row1_r:
         with st.container(border=True):
-            st.markdown('<div class="r01-card-title">📦 Most Received Items <span class="meta">dispatched qty</span></div>', unsafe_allow_html=True)
-            asc2, topn2, chart2 = _r01_card_settings("most_recv")
-            most_recv = pd.DataFrame(columns=["Item", "Received Qty"])
-            if not req_filtered.empty and "DispatchQty" in req_filtered.columns:
-                disp = req_filtered[req_filtered["Status"].isin(["Dispatched", "Completed"])]
-                if not disp.empty:
-                    most_recv = (
-                        disp.groupby("Item", as_index=False)["DispatchQty"]
-                        .sum()
-                        .rename(columns={"DispatchQty": "Received Qty"})
-                        .sort_values("Received Qty", ascending=asc2)
-                        .head(topn2)
-                    )
-            _r01_render_card(most_recv, "Item", "Received Qty", chart2)
-            if st.button("⛶ Expand", key="expand_r01_most_received", use_container_width=True):
-                _r01_show_fullscreen_card("Most Received Items", most_recv, "Item", "Received Qty", chart2)
+            st.markdown('<div class="r01-card-title">💸 Top Selling <span class="meta">by qty (consumption)</span></div>', unsafe_allow_html=True)
+            asc2, topn2, chart2 = _r01_card_settings("top_sell_qty")
+            top_sell_qty = pd.DataFrame(columns=["Product Name", "Consumption"])
+            if not inv_dash.empty and "Consumption" in inv_dash.columns:
+                top_sell_qty = (
+                    inv_dash[["Product Name", "Consumption"]]
+                    .copy()
+                    .assign(Consumption=lambda d: pd.to_numeric(d["Consumption"], errors="coerce").fillna(0))
+                    .query("Consumption > 0")
+                    .sort_values("Consumption", ascending=asc2)
+                    .head(topn2)
+                )
+            _r01_render_card(top_sell_qty, "Product Name", "Consumption", chart2)
+            if st.button("⛶ Expand", key="expand_top_sell_qty", use_container_width=True):
+                _r01_show_fullscreen_card("Top Selling Items (Qty)", top_sell_qty, "Product Name", "Consumption", chart2)
 
-    # --- Row 2: Current Stock Balance | Low Stock Alert ---
+    # ── Row 2: Top Purchased Amount | Top Selling Amount ─────────────────────
     row2_l, row2_r = st.columns(2, gap="small")
 
     with row2_l:
         with st.container(border=True):
-            st.markdown('<div class="r01-card-title">📊 Current Stock Balance <span class="meta">closing stock</span></div>', unsafe_allow_html=True)
-            asc3, topn3, chart3 = _r01_card_settings("stock_bal")
-            stock_bal = pd.DataFrame(columns=["Product Name", "Closing Stock"])
-            if not inv_dash.empty and "Closing Stock" in inv_dash.columns:
-                stock_bal = (
-                    inv_dash[["Product Name", "Closing Stock"]]
-                    .copy()
-                    .assign(**{"Closing Stock": lambda d: pd.to_numeric(d["Closing Stock"], errors="coerce").fillna(0)})
-                    .sort_values("Closing Stock", ascending=asc3)
-                    .head(topn3)
-                )
-            _r01_render_card(stock_bal, "Product Name", "Closing Stock", chart3)
-            if st.button("⛶ Expand", key="expand_r01_stock_balance", use_container_width=True):
-                _r01_show_fullscreen_card("Current Stock Balance", stock_bal, "Product Name", "Closing Stock", chart3)
+            st.markdown('<div class="r01-card-title">💰 Top Purchased <span class="meta">by amount</span></div>', unsafe_allow_html=True)
+            asc3, topn3, chart3 = _r01_card_settings("top_purch_amt")
+            top_purch_amt = pd.DataFrame(columns=["Item", "Purchase Amount"])
+            if not req_filtered.empty and "Item" in req_filtered.columns and "DispatchQty" in req_filtered.columns:
+                _pa = req_filtered[req_filtered["Status"].isin(["Dispatched", "Completed"])].copy()
+                if not _pa.empty:
+                    _pa["_price"]  = _pa["Item"].apply(lambda x: _price_map.get(str(x).strip(), 0))
+                    _pa["_amount"] = pd.to_numeric(_pa["DispatchQty"], errors="coerce").fillna(0) * _pa["_price"]
+                    top_purch_amt = (
+                        _pa.groupby("Item", as_index=False)["_amount"]
+                        .sum()
+                        .rename(columns={"_amount": "Purchase Amount"})
+                        .sort_values("Purchase Amount", ascending=asc3)
+                        .head(topn3)
+                    )
+            _r01_render_card(top_purch_amt, "Item", "Purchase Amount", chart3)
+            if st.button("⛶ Expand", key="expand_top_purch_amt", use_container_width=True):
+                _r01_show_fullscreen_card("Top Purchased Items (Amount)", top_purch_amt, "Item", "Purchase Amount", chart3)
 
     with row2_r:
         with st.container(border=True):
-            st.markdown('<div class="r01-card-title">⚠️ Low / Zero Stock Items <span class="meta">needs reorder</span></div>', unsafe_allow_html=True)
-            _asc4, topn4, chart4 = _r01_card_settings("low_stock", default_sort="Low → High")
-            low_stock = pd.DataFrame(columns=["Product Name", "Closing Stock"])
-            if not inv_dash.empty and "Closing Stock" in inv_dash.columns:
-                low_stock = (
-                    inv_dash[["Product Name", "Closing Stock"]]
-                    .copy()
-                    .assign(**{"Closing Stock": lambda d: pd.to_numeric(d["Closing Stock"], errors="coerce").fillna(0)})
-                    .query("`Closing Stock` <= 5")
-                    .sort_values("Closing Stock", ascending=_asc4)
+            st.markdown('<div class="r01-card-title">💵 Top Selling <span class="meta">by amount</span></div>', unsafe_allow_html=True)
+            asc4, topn4, chart4 = _r01_card_settings("top_sell_amt")
+            top_sell_amt = pd.DataFrame(columns=["Product Name", "Sales Amount"])
+            if not inv_dash.empty and "Consumption" in inv_dash.columns:
+                _sa = inv_dash[["Product Name", "Consumption"]].copy()
+                _sa["_price"]  = _sa["Product Name"].apply(lambda x: _price_map.get(str(x).strip(), 0))
+                _sa["_cons"]   = pd.to_numeric(_sa["Consumption"], errors="coerce").fillna(0)
+                _sa["Sales Amount"] = _sa["_cons"] * _sa["_price"]
+                top_sell_amt = (
+                    _sa[_sa["Sales Amount"] > 0][["Product Name", "Sales Amount"]]
+                    .sort_values("Sales Amount", ascending=asc4)
                     .head(topn4)
                 )
-            if low_stock.empty:
-                st.success("✅ All items have sufficient stock!")
-            else:
-                st.warning(f"⚠️ {len(low_stock)} items with low/zero stock")
-                _r01_render_card(low_stock, "Product Name", "Closing Stock", chart4)
-                if st.button("⛶ Expand", key="expand_r01_low_stock", use_container_width=True):
-                    _r01_show_fullscreen_card("Low / Zero Stock Items", low_stock, "Product Name", "Closing Stock", chart4)
+            _r01_render_card(top_sell_amt, "Product Name", "Sales Amount", chart4)
+            if st.button("⛶ Expand", key="expand_top_sell_amt", use_container_width=True):
+                _r01_show_fullscreen_card("Top Selling Items (Amount)", top_sell_amt, "Product Name", "Sales Amount", chart4)
 
-    # --- Row 3: Requisition Status Breakdown | Top Pending Items ---
+    # ── Row 3: Total Purchase From Supplier | Low / Zero Stock ───────────────
     row3_l, row3_r = st.columns(2, gap="small")
 
     with row3_l:
         with st.container(border=True):
-            st.markdown('<div class="r01-card-title">🔵 Requisition Status Breakdown <span class="meta">by count</span></div>', unsafe_allow_html=True)
-            asc5, topn5, chart5 = _r01_card_settings("req_status")
-            status_breakdown = pd.DataFrame(columns=["Status", "Count"])
-            if not req_filtered.empty and "Status" in req_filtered.columns:
-                status_breakdown = (
-                    req_filtered.groupby("Status", as_index=False)
-                    .size()
-                    .rename(columns={"size": "Count"})
-                    .sort_values("Count", ascending=asc5)
-                    .head(topn5)
-                )
-            _r01_render_card(status_breakdown, "Status", "Count", chart5)
-            if st.button("⛶ Expand", key="expand_r01_req_status", use_container_width=True):
-                _r01_show_fullscreen_card("Requisition Status Breakdown", status_breakdown, "Status", "Count", chart5)
+            st.markdown('<div class="r01-card-title">🏭 Total Purchase From Supplier <span class="meta">by amount</span></div>', unsafe_allow_html=True)
+            asc5, topn5, chart5 = _r01_card_settings("supplier_purchase")
+            supplier_purchase = pd.DataFrame(columns=["Item", "Total Amount"])
+            if not req_filtered.empty and "Item" in req_filtered.columns and "DispatchQty" in req_filtered.columns:
+                _sp = req_filtered[req_filtered["Status"].isin(["Dispatched", "Completed"])].copy()
+                if not _sp.empty:
+                    _sp["_price"]  = _sp["Item"].apply(lambda x: _price_map.get(str(x).strip(), 0))
+                    _sp["_amount"] = pd.to_numeric(_sp["DispatchQty"], errors="coerce").fillna(0) * _sp["_price"]
+                    supplier_purchase = (
+                        _sp.groupby("Item", as_index=False)["_amount"]
+                        .sum()
+                        .rename(columns={"_amount": "Total Amount"})
+                        .sort_values("Total Amount", ascending=asc5)
+                        .head(topn5)
+                    )
+            _r01_render_card(supplier_purchase, "Item", "Total Amount", chart5)
+            if st.button("⛶ Expand", key="expand_supplier_purchase", use_container_width=True):
+                _r01_show_fullscreen_card("Total Purchase From Supplier", supplier_purchase, "Item", "Total Amount", chart5)
 
     with row3_r:
         with st.container(border=True):
-            st.markdown('<div class="r01-card-title">⏳ Top Pending Items <span class="meta">unfulfilled qty</span></div>', unsafe_allow_html=True)
-            asc6, topn6, chart6 = _r01_card_settings("pending_items")
-            pending_items = pd.DataFrame(columns=["Item", "Pending Qty"])
-            if not req_filtered.empty and "Status" in req_filtered.columns:
-                pend_df = req_filtered[req_filtered["Status"] == "Pending"].copy()
-                if not pend_df.empty and "Qty" in pend_df.columns:
-                    pending_items = (
-                        pend_df.groupby("Item", as_index=False)["Qty"]
-                        .sum()
-                        .rename(columns={"Qty": "Pending Qty"})
-                        .sort_values("Pending Qty", ascending=asc6)
-                        .head(topn6)
-                    )
-            _r01_render_card(pending_items, "Item", "Pending Qty", chart6)
-            if st.button("⛶ Expand", key="expand_r01_pending_items", use_container_width=True):
-                _r01_show_fullscreen_card("Top Pending Items", pending_items, "Item", "Pending Qty", chart6)
+            st.markdown('<div class="r01-card-title">⚠️ Low / Zero Stock Items <span class="meta">needs reorder</span></div>', unsafe_allow_html=True)
+            _inv_clean_dash = inv_dash[
+                ~inv_dash["Product Name"].astype(str).str.startswith("CATEGORY_") &
+                ~inv_dash["Product Name"].astype(str).str.startswith("SUPPLIER_")
+            ] if not inv_dash.empty else inv_dash
+            low_stock = pd.DataFrame(columns=["Product Name", "Closing Stock"])
+            if not _inv_clean_dash.empty and "Closing Stock" in _inv_clean_dash.columns:
+                low_stock = (
+                    _inv_clean_dash[["Product Name", "Closing Stock"]]
+                    .copy()
+                    .assign(**{"Closing Stock": lambda d: pd.to_numeric(d["Closing Stock"], errors="coerce").fillna(0)})
+                    .query("`Closing Stock` <= 5")
+                    .sort_values("Closing Stock")
+                )
+            if low_stock.empty:
+                st.success("✅ All items have sufficient stock!")
+            else:
+                st.warning(f"⚠️ {len(low_stock)} item(s) with low/zero stock")
+                st.dataframe(
+                    low_stock,
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "Product Name":  st.column_config.TextColumn("Product",      width=200),
+                        "Closing Stock": st.column_config.NumberColumn("Stock Left", width=100, format="%.1f"),
+                    },
+                )
 
     # --- Row 4: Daily Requisition Trend | Category Stock Distribution ---
     row4_l, row4_r = st.columns(2, gap="small")
