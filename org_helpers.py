@@ -229,3 +229,64 @@ def get_location_members(location_id: str) -> list:
         return resp.data or []
     except Exception:
         return []
+
+
+def get_member_email(user_id: str) -> str:
+    """
+    Try to fetch a user's email from the profiles table first,
+    then user_memberships.user_email column,
+    then returns a shortened user_id as fallback.
+    """
+    # Try profiles table (common Supabase pattern)
+    try:
+        resp = conn.table("profiles").select("email").eq("id", user_id).execute()
+        if resp.data and resp.data[0].get("email"):
+            return resp.data[0]["email"]
+    except Exception:
+        pass
+
+    # Try user_memberships user_email column
+    try:
+        resp = (
+            conn.table("user_memberships")
+            .select("user_email")
+            .eq("user_id", user_id)
+            .limit(1)
+            .execute()
+        )
+        if resp.data and resp.data[0].get("user_email"):
+            return resp.data[0]["user_email"]
+    except Exception:
+        pass
+
+    # Fallback: show partial user ID
+    return f"user-{str(user_id)[:8]}…"
+
+
+def get_location_members_with_email(location_id: str) -> list:
+    """
+    Get all memberships for a location, enriched with user email.
+    Returns list of dicts with extra key: 'email'
+    """
+    members = get_location_members(location_id)
+    for m in members:
+        m["email"] = get_member_email(m.get("user_id", ""))
+    return members
+
+
+def update_member_role(membership_id: str, new_role: str) -> bool:
+    """Update the role of a membership (e.g. 'restaurant', 'read_only', 'held')."""
+    try:
+        conn.table("user_memberships").update({"role": new_role}).eq("id", membership_id).execute()
+        return True
+    except Exception:
+        return False
+
+
+def delete_membership(membership_id: str) -> bool:
+    """Permanently delete a membership record."""
+    try:
+        conn.table("user_memberships").delete().eq("id", membership_id).execute()
+        return True
+    except Exception:
+        return False
