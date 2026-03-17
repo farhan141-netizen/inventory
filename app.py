@@ -17,6 +17,9 @@ from org_helpers import (
     reactivate_restaurant,
     regenerate_invite_code,
     get_location_members,
+    get_location_members_with_email,
+    update_member_role,
+    delete_membership,
 )
 
 # --- 1. CLOUD CONNECTION ---
@@ -4604,11 +4607,81 @@ with tab_restaurants:
                 else:
                     st.caption("No active invite code.")
 
-                # Members count
-                _members = get_location_members(_lid)
-                st.caption(f"👥 {len(_members)} manager(s) linked")
+                # ── Members Section ──────────────────────────────────────
+                _members = get_location_members_with_email(_lid)
+                st.markdown(f"👥 **{len(_members)} manager(s) linked**")
 
-                # Action buttons
+                if _members:
+                    for _mem in _members:
+                        _mem_id    = _mem.get("id", "")
+                        _mem_role  = _mem.get("role", "restaurant")
+                        _mem_email = _mem.get("email", _mem.get("user_id", "unknown"))
+
+                        # Role badge colour + label
+                        if _mem_role == "held":
+                            _role_color = "#F59E0B"
+                            _role_label = "⏸️ On Hold"
+                        elif _mem_role == "read_only":
+                            _role_color = "#6366F1"
+                            _role_label = "👁️ Read Only"
+                        else:
+                            _role_color = "#10B981"
+                            _role_label = "✅ Full Access"
+
+                        mc1, mc2, mc3, mc4 = st.columns([3, 1.4, 1.4, 1.2])
+                        with mc1:
+                            st.markdown(
+                                f"<div style='display:flex;align-items:center;gap:10px;padding:6px 0;'>"
+                                f"<span style='font-size:13px;color:#1E293B;'>📧 <b>{_mem_email}</b></span>"
+                                f"&nbsp;"
+                                f"<span style='font-size:11px;font-weight:600;color:{_role_color};"
+                                f"background:{_role_color}18;padding:2px 9px;border-radius:999px;"
+                                f"border:1px solid {_role_color}44;'>{_role_label}</span>"
+                                f"</div>",
+                                unsafe_allow_html=True,
+                            )
+                        with mc2:
+                            # Toggle Hold / Restore
+                            if _mem_role == "held":
+                                _hold_btn_label = "▶️ Restore"
+                                _hold_new_role  = "restaurant"
+                            else:
+                                _hold_btn_label = "⏸️ Hold"
+                                _hold_new_role  = "held"
+                            if st.button(_hold_btn_label, key=f"hold_{_mem_id}_{_lid}", use_container_width=True):
+                                if update_member_role(_mem_id, _hold_new_role):
+                                    st.cache_data.clear()
+                                    st.rerun()
+                                else:
+                                    st.error("❌ Failed to update access.")
+                        with mc3:
+                            # Toggle Read-Only / Full Access
+                            if _mem_role == "read_only":
+                                _ro_btn_label = "✅ Full Access"
+                                _ro_new_role  = "restaurant"
+                            else:
+                                _ro_btn_label = "👁️ Read Only"
+                                _ro_new_role  = "read_only"
+                            if st.button(_ro_btn_label, key=f"ro_{_mem_id}_{_lid}", use_container_width=True):
+                                if update_member_role(_mem_id, _ro_new_role):
+                                    st.cache_data.clear()
+                                    st.rerun()
+                                else:
+                                    st.error("❌ Failed to update access.")
+                        with mc4:
+                            if st.button("🗑️ Remove", key=f"del_{_mem_id}_{_lid}", use_container_width=True):
+                                if delete_membership(_mem_id):
+                                    st.warning(f"🗑️ Access removed for **{_mem_email}**")
+                                    st.cache_data.clear()
+                                    st.rerun()
+                                else:
+                                    st.error("❌ Failed to remove access.")
+                else:
+                    st.caption("No managers linked yet.")
+
+                st.divider()
+
+                # ── Restaurant Action Buttons ────────────────────────────
                 btn_c1, btn_c2, btn_c3 = st.columns(3)
                 with btn_c1:
                     if st.button("🔄 Regenerate Code", key=f"regen_{_lid}", use_container_width=True):
