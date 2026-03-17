@@ -114,6 +114,7 @@ def validate_invite_code(code: str) -> Optional[dict]:
 def redeem_invite_code(code: str, user_id: str, user_email: str = "") -> Optional[dict]:
     """
     Redeem an invite code: create membership + increment used_count.
+    Stores user_email in the membership row so it can be displayed in the admin UI.
     Returns the membership dict or None on failure.
     """
     invite = validate_invite_code(code)
@@ -126,13 +127,23 @@ def redeem_invite_code(code: str, user_id: str, user_email: str = "") -> Optiona
         if m.get("location_id") == invite["location_id"]:
             return m  # Already a member, return existing membership
 
-    # Create membership
-    mem = add_membership(
-        user_id=user_id,
-        org_id=invite["org_id"],
-        location_id=invite["location_id"],
-        role=invite.get("role", "restaurant"),
-    )
+    # Build membership payload — always store user_email for admin display
+    payload = {
+        "user_id": user_id,
+        "org_id": invite["org_id"],
+        "location_id": invite["location_id"],
+        "role": invite.get("role", "restaurant"),
+    }
+    if user_email:
+        payload["user_email"] = user_email
+
+    try:
+        resp = conn.table("user_memberships").insert(payload).execute()
+        mem = resp.data[0] if resp.data else None
+    except Exception as e:
+        st.error(f"Failed to create membership: {e}")
+        return None
+
     if not mem:
         return None
 
@@ -194,9 +205,21 @@ def is_location_active(location_id: str) -> bool:
 
 
 def regenerate_invite_code(org_id: str, location_id: str, created_by: str, max_uses: int = 5) -> Optional[dict]:
-    """Generate a new invite code for a location (deactivates old ones)."""
+    """
+    Generate a new invite code for a location (deactivates old ones).
+    The new code's used_count reflects the number of managers already linked,
+    so the Uses counter stays accurate and doesn't reset to 0/5.
+    """
+    # Count how many managers are already linked to this location
+    actual_member_count = 0
     try:
-        # Deactivate existing codes for this location
+        resp = conn.table("user_memberships").select("id", count="exact").eq("location_id", location_id).execute()
+        actual_member_count = resp.count if resp.count is not None else len(resp.data or [])
+    except Exception:
+        pass
+
+    # Deactivate existing codes for this location
+    try:
         conn.table("invite_codes").update({"active": False}).eq("location_id", location_id).execute()
     except Exception:
         pass
@@ -210,7 +233,7 @@ def regenerate_invite_code(org_id: str, location_id: str, created_by: str, max_u
                 "code": code,
                 "role": "restaurant",
                 "max_uses": max_uses,
-                "used_count": 0,
+                "used_count": actual_member_count,  # carry over existing member count
                 "active": True,
                 "created_by": created_by,
             }
@@ -233,24 +256,18 @@ def get_location_members(location_id: str) -> list:
 
 def get_member_email(user_id: str) -> str:
     """
-    Try to fetch a user's email from the profiles table first,
-    then user_memberships.user_email column,
-    then returns a shortened user_id as fallback.
+    Try to fetch a user's email. Checks in this order:
+    1. user_memberships.user_email column (fastest, stored at redeem time)
+    2. profiles table (standard Supabase pattern)
+    3. Returns shortened user_id as last resort fallback.
     """
-    # Try profiles table (common Supabase pattern)
-    try:
-        resp = conn.table("profiles").select("email").eq("id", user_id).execute()
-        if resp.data and resp.data[0].get("email"):
-            return resp.data[0]["email"]
-    except Exception:
-        pass
-
-    # Try user_memberships user_email column
+    # 1. Check user_memberships.user_email — stored when user redeems invite code
     try:
         resp = (
             conn.table("user_memberships")
             .select("user_email")
             .eq("user_id", user_id)
+            .not_.is_("user_email", "null")
             .limit(1)
             .execute()
         )
@@ -259,7 +276,15 @@ def get_member_email(user_id: str) -> str:
     except Exception:
         pass
 
-    # Fallback: show partial user ID
+    # 2. Try profiles table (common Supabase pattern)
+    try:
+        resp = conn.table("profiles").select("email").eq("id", user_id).execute()
+        if resp.data and resp.data[0].get("email"):
+            return resp.data[0]["email"]
+    except Exception:
+        pass
+
+    # 3. Fallback: show partial user ID
     return f"user-{str(user_id)[:8]}…"
 
 
