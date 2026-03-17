@@ -492,6 +492,103 @@ def _r01_show_fullscreen_card(title: str, df: pd.DataFrame, label_col: str, valu
         st.error(f"Chart error: {e}")
         st.dataframe(df, use_container_width=True, hide_index=True)
 
+@st.dialog("📅 Month Close", width="large")
+def _rest_close_month_modal():
+    """Month close with physical count, variance preview, and rollover. Mirrors app.py."""
+    inv = st.session_state.inventory.copy()
+    if inv.empty:
+        st.info("No inventory data to close."); return
+
+    month_label = st.text_input(
+        "📅 Month Label",
+        value=datetime.datetime.now().strftime("%b %Y"),
+        key="rest_month_label_input",
+    )
+    st.markdown(
+        "<div style='font-size:12px;color:#64748B;margin:4px 0 8px;'>"
+        "Enter the <b>actual physical count</b> for each item. "
+        "Variance = Physical Count − Closing Stock. After confirming, "
+        "Physical Count becomes the new Opening Stock for next month.</div>",
+        unsafe_allow_html=True,
+    )
+
+    for c in ["Product Name", "Closing Stock", "Physical Count"]:
+        if c not in inv.columns:
+            inv[c] = 0.0
+    inv["Closing Stock"]  = pd.to_numeric(inv["Closing Stock"],  errors="coerce").fillna(0.0)
+    inv["Physical Count"] = pd.to_numeric(inv["Physical Count"], errors="coerce").fillna(0.0)
+    # Pre-fill Physical Count with Closing Stock where zero
+    inv.loc[inv["Physical Count"] == 0, "Physical Count"] = inv["Closing Stock"]
+
+    # Filter out meta rows
+    inv = inv[
+        ~inv["Product Name"].astype(str).str.startswith("CATEGORY_") &
+        ~inv["Product Name"].astype(str).str.startswith("SUPPLIER_")
+    ].reset_index(drop=True)
+
+    st.markdown("**📋 Enter Physical Counts:**")
+    edited_close = st.data_editor(
+        inv[["Product Name", "Closing Stock", "Physical Count"]],
+        height=350, use_container_width=True,
+        disabled=["Product Name", "Closing Stock"],
+        hide_index=True, key="rest_close_month_editor",
+    )
+
+    _preview = edited_close.copy()
+    _preview["Closing Stock"]  = pd.to_numeric(_preview["Closing Stock"],  errors="coerce").fillna(0.0)
+    _preview["Physical Count"] = pd.to_numeric(_preview["Physical Count"], errors="coerce").fillna(0.0)
+    _preview["Variance"]       = _preview["Physical Count"] - _preview["Closing Stock"]
+
+    _has_var = (_preview["Variance"] != 0).any()
+    if _has_var:
+        _var_items = _preview[_preview["Variance"] != 0][["Product Name", "Closing Stock", "Physical Count", "Variance"]]
+        st.markdown("**⚠️ Items with Variance:**")
+        st.dataframe(_var_items, use_container_width=True, hide_index=True, height=min(200, 40 + len(_var_items) * 35))
+    else:
+        st.success("✅ All Physical Counts match Closing Stock — no variance.")
+
+    total_variance = _preview["Variance"].sum()
+    _vc = "#EF4444" if total_variance < 0 else "#10B981"
+    st.markdown(
+        f"<div style='font-size:13px;margin:8px 0;'>📊 <b>Total Variance:</b> "
+        f"<span style='color:{_vc};font-weight:700;'>{total_variance:,.2f}</span></div>",
+        unsafe_allow_html=True,
+    )
+    st.warning("⚠️ This will archive the current month and start a new one. Physical Count → new Opening Stock.")
+
+    mc1, mc2 = st.columns(2)
+    with mc1:
+        if st.button("✅ Confirm Close Month", type="primary", use_container_width=True, key="rest_close_month_confirm"):
+            df = st.session_state.inventory.copy()
+            for _, prow in edited_close.iterrows():
+                pname = prow["Product Name"]
+                match = df[df["Product Name"] == pname].index
+                if len(match) > 0:
+                    df.at[match[0], "Physical Count"] = float(prow["Physical Count"])
+            df["Physical Count"] = pd.to_numeric(df["Physical Count"], errors="coerce").fillna(0.0)
+            df["Closing Stock"]  = pd.to_numeric(df["Closing Stock"],  errors="coerce").fillna(0.0)
+            df["Variance"]       = df["Physical Count"] - df["Closing Stock"]
+            save_to_sheet(df, "rest_01_inventory")
+            # Rollover
+            new_df = df.copy()
+            for _d in [str(i) for i in range(1, 32)]:
+                if _d in new_df.columns:
+                    new_df[_d] = 0.0
+            new_df["Opening Stock"]  = new_df["Physical Count"]
+            new_df["Total Received"] = 0.0
+            new_df["Consumption"]    = 0.0
+            new_df["Closing Stock"]  = new_df["Opening Stock"]
+            new_df["Physical Count"] = 0.0
+            new_df["Variance"]       = 0.0
+            save_to_sheet(new_df, "rest_01_inventory")
+            st.session_state.inventory = new_df
+            st.success(f"✅ Month **{month_label}** closed! New month started.")
+            st.balloons()
+    with mc2:
+        if st.button("❌ Cancel", use_container_width=True, key="rest_close_month_cancel"):
+            st.rerun()
+
+
 @st.dialog("📊 Live Stock Status — Full View", width="large")
 def _show_live_stock_fullscreen(inv_df: pd.DataFrame):
     """Show full live stock table with Price, Amount, Grand Total in a dialog."""
@@ -1459,95 +1556,60 @@ tab_inv, tab_req, tab_pending, tab_received, tab_history, tab_dash = st.tabs(["�
 # ===================== INVENTORY TAB =====================
 with tab_inv:
 
-    # ── Daily Receipt Portal (compact) ────────────────────────────────────────
-    _today_day = datetime.datetime.now().day
-    _today_str = datetime.datetime.now().strftime("%d %b %Y")
-    _all_reqs_inv = load_from_sheet("restaurant_requisitions")
-    _rest_name_inv = st.session_state.get("restaurant_name", "")
+    # ── Daily Receipt Portal ──────────────────────────────────────────────────
+    st.markdown('<div class="section-title">📥 Daily Receipt Portal</div>', unsafe_allow_html=True)
 
-    # Compute today receipts
-    _recv_today_qty = 0.0
-    _recv_today_amt = 0.0
-    if not _all_reqs_inv.empty:
-        _r = _all_reqs_inv[
-            (_all_reqs_inv.get("Restaurant", pd.Series()) == _rest_name_inv) &
-            (_all_reqs_inv["Status"].isin(["Dispatched", "Completed"]))
-        ].copy() if "Restaurant" in _all_reqs_inv.columns else pd.DataFrame()
-        if not _r.empty and "RequestedDate" in _r.columns:
-            _r["_rd"] = pd.to_datetime(_r["RequestedDate"], errors="coerce").dt.day
-            _r_today = _r[_r["_rd"] == _today_day]
-            _recv_today_qty = pd.to_numeric(_r_today.get("DispatchQty", pd.Series()), errors="coerce").sum()
-
-    # Compute month receipts
-    _recv_month_qty = 0.0
-    if not _all_reqs_inv.empty and "Restaurant" in _all_reqs_inv.columns:
-        _rm = _all_reqs_inv[
-            (_all_reqs_inv["Restaurant"] == _rest_name_inv) &
-            (_all_reqs_inv["Status"].isin(["Dispatched", "Completed"]))
-        ].copy()
-        _recv_month_qty = pd.to_numeric(_rm.get("DispatchQty", pd.Series()), errors="coerce").sum()
-
-    _dr_title, _dr_expand, _dr_close = st.columns([5, 1, 1])
-    with _dr_title:
-        st.markdown(
-            f"<div style='font-size:12px;font-weight:700;color:#F97316;letter-spacing:0.04em;"
-            f"padding:4px 0 2px;border-bottom:2px solid rgba(249,115,22,0.15);'>"
-            f"📦 DAILY RECEIPT PORTAL &nbsp;·&nbsp; "
-            f"<span style='color:#64748B;font-weight:500;'>{_today_str}</span>"
-            f"&nbsp;&nbsp;|&nbsp;&nbsp;"
-            f"Today Received: <b style='color:#1E293B;'>{_recv_today_qty:.0f} units</b>"
-            f"&nbsp;&nbsp;|&nbsp;&nbsp;"
-            f"Month Total: <b style='color:#1E293B;'>{_recv_month_qty:.0f} units</b>"
-            f"</div>",
-            unsafe_allow_html=True,
+    if not st.session_state.inventory.empty:
+        _inv_items = sorted(
+            st.session_state.inventory[
+                ~st.session_state.inventory["Product Name"].astype(str).str.startswith("CATEGORY_") &
+                ~st.session_state.inventory["Product Name"].astype(str).str.startswith("SUPPLIER_")
+            ]["Product Name"].unique().tolist()
         )
-    with _dr_expand:
-        if st.button("⛶ Explorer", key="receipt_portal_expand", use_container_width=True):
-            @st.dialog("📦 Daily Receipt Explorer", width="large")
-            def _show_receipt_explorer():
-                if _all_reqs_inv.empty or "Restaurant" not in _all_reqs_inv.columns:
-                    st.info("No receipt data."); return
-                _re = _all_reqs_inv[
-                    (_all_reqs_inv["Restaurant"] == _rest_name_inv) &
-                    (_all_reqs_inv["Status"].isin(["Dispatched", "Completed"]))
-                ].copy()
-                if _re.empty:
-                    st.info("No receipts yet."); return
-                _re["RequestedDate"] = pd.to_datetime(_re["RequestedDate"], errors="coerce")
-                _re = _re.dropna(subset=["RequestedDate"])
-                _re["Month"] = _re["RequestedDate"].dt.strftime("%Y-%m")
-                months = sorted(_re["Month"].unique(), reverse=True)
-                sel_month = st.selectbox("Select Month", months, key="re_month_sel")
-                _re_m = _re[_re["Month"] == sel_month]
-                _re_m = _re_m[["Item", "DispatchQty", "RequestedDate", "Status"]].copy()
-                _re_m["RequestedDate"] = _re_m["RequestedDate"].dt.strftime("%d/%m/%Y")
-                _re_m = _re_m.rename(columns={"DispatchQty": "Qty Received", "RequestedDate": "Date"})
-                st.dataframe(_re_m.sort_values("Date", ascending=False), use_container_width=True, hide_index=True)
-                st.caption(f"Total items: {len(_re_m)} | Total qty: {pd.to_numeric(_re_m['Qty Received'], errors='coerce').sum():.0f}")
-            _show_receipt_explorer()
-    with _dr_close:
-        if st.button("📅 Month Close", key="receipt_portal_close", use_container_width=True):
-            @st.dialog("📅 Month Close", width="small")
-            def _show_month_close_confirm():
-                st.warning("This will reset Opening Stock to current Closing Stock and clear all day columns.")
-                if st.button("✅ Confirm Month Close", type="primary", use_container_width=True, key="mc_confirm"):
-                    inv = st.session_state.inventory.copy()
-                    inv["Opening Stock"] = pd.to_numeric(inv.get("Closing Stock", 0), errors="coerce").fillna(0)
-                    for _d in [str(i) for i in range(1, 32)]:
-                        if _d in inv.columns:
-                            inv[_d] = 0.0
-                    inv["Total Received"] = 0.0
-                    inv["Consumption"]    = 0.0
-                    inv = recalculate_inventory(inv)
-                    st.session_state.inventory = inv
-                    save_to_sheet(inv, "rest_01_inventory")
-                    st.success("✅ Month closed! Opening Stock updated.")
-                    st.rerun()
-                if st.button("✖ Cancel", use_container_width=True, key="mc_cancel"):
-                    st.rerun()
-            _show_month_close_confirm()
+        _rp_c1, _rp_c2, _rp_c3, _rp_c4, _rp_c5 = st.columns([3, 0.8, 0.8, 0.8, 0.8])
+        with _rp_c1:
+            _rp_item = st.selectbox(
+                "Item", options=[""] + _inv_items,
+                key="rest_receipt_item", label_visibility="collapsed",
+            )
+        with _rp_c2:
+            _rp_day = st.number_input(
+                "Day", min_value=1, max_value=31,
+                value=datetime.datetime.now().day,
+                key="rest_receipt_day", label_visibility="collapsed",
+            )
+        with _rp_c3:
+            _rp_qty = st.number_input(
+                "Qty", min_value=0.0, step=1.0,
+                key="rest_receipt_qty", label_visibility="collapsed",
+            )
+        with _rp_c4:
+            if st.button("✅ Confirm", key="rest_receipt_confirm", use_container_width=True, type="primary"):
+                if _rp_item and _rp_qty > 0:
+                    _day_col = str(int(_rp_day))
+                    _inv = st.session_state.inventory
+                    _match = _inv[_inv["Product Name"] == _rp_item].index
+                    if len(_match) > 0:
+                        _ix = _match[0]
+                        if _day_col not in _inv.columns:
+                            _inv[_day_col] = 0.0
+                        _inv[_day_col] = pd.to_numeric(_inv[_day_col], errors="coerce").fillna(0.0)
+                        _inv.at[_ix, _day_col] = float(_inv.at[_ix, _day_col]) + float(_rp_qty)
+                        st.session_state.inventory = recalculate_inventory(_inv)
+                        save_to_sheet(st.session_state.inventory, "rest_01_inventory")
+                        st.success(f"✅ Added {_rp_qty:.0f} × {_rp_item} on Day {_rp_day}")
+                        st.rerun()
+                    else:
+                        st.error("Item not found in inventory.")
+                else:
+                    st.warning("Select an item and enter qty > 0.")
+        with _rp_c5:
+            if st.button("📅 Month Close", key="rest_month_close_btn", use_container_width=True):
+                _rest_close_month_modal()
+    else:
+        st.info("⚠️ No inventory loaded.")
 
-    st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
 
     # ── Daily Stock Take ──────────────────────────────────────────────────────
     st.markdown('<div class="section-title">📊 Daily Stock Take</div>', unsafe_allow_html=True)
@@ -1718,39 +1780,25 @@ with tab_req:
                 uom           = row["UOM"]
                 closing_stock = row.get("Closing Stock", 0)
 
-                # Compact single-line layout: Name | − qty + | ➕
-                rc1, rc2, rc3, rc4, rc5 = st.columns([4, 0.5, 1.2, 0.5, 0.7])
+                # Clean 3-column: text | qty input | ➕  (no − + buttons that misalign)
+                rc1, rc2, rc3 = st.columns([4, 1.2, 0.7])
                 rc1.markdown(
-                    f"<div style='font-size:13px;padding:6px 0;'>"
+                    f"<div style='font-size:12px;padding:4px 0;border-bottom:1px solid #F1F5F9;line-height:1.5;'>"
                     f"<b>{product_name}</b> "
-                    f"<span style='color:#94A3B8;font-size:11px;'>({uom}) Stock: {float(closing_stock):.1f}</span>"
+                    f"<span style='color:#94A3B8;font-size:11px;'>({uom}) · Stock: {float(closing_stock):.1f}</span>"
                     f"</div>",
                     unsafe_allow_html=True,
                 )
                 with rc2:
-                    if st.button("−", key=f"req_dec_{item_idx}_{search_item}", use_container_width=True):
-                        _k = f"req_qty_val_{item_idx}_{search_item}"
-                        st.session_state[_k] = max(0.0, st.session_state.get(_k, 0.0) - 1.0)
-                        st.rerun()
-                with rc3:
-                    _qty_key = f"req_qty_val_{item_idx}_{search_item}"
                     qty = st.number_input(
-                        "q", min_value=0.0, step=1.0,
-                        value=st.session_state.get(_qty_key, 0.0),
+                        "q", min_value=0.0, step=1.0, value=0.0,
                         key=f"req_qty_{item_idx}_{search_item}",
                         label_visibility="collapsed",
                     )
-                    st.session_state[_qty_key] = qty
-                with rc4:
-                    if st.button("+", key=f"req_inc_{item_idx}_{search_item}", use_container_width=True):
-                        _k = f"req_qty_val_{item_idx}_{search_item}"
-                        st.session_state[_k] = st.session_state.get(_k, 0.0) + 1.0
-                        st.rerun()
-                with rc5:
+                with rc3:
                     if st.button("➕", key=f"btn_add_{item_idx}_{search_item}", use_container_width=True):
                         if qty > 0:
                             st.session_state.cart.append({"name": product_name, "qty": qty, "uom": uom})
-                            st.session_state[f"req_qty_val_{item_idx}_{search_item}"] = 0.0
                             st.toast(f"✅ Added {product_name}")
                             st.rerun()
 
@@ -1884,27 +1932,19 @@ with tab_pending:
                         followup_sent = row.get("FollowupSent", False)
                         date_str      = pd.Timestamp(row["RequestedDate"]).strftime("%d/%m")
 
-                        if status == "Pending":
-                            si, sc, bc = "🟡", "Pending",          "status-pending"
-                        elif status == "Dispatched":
-                            si, sc, bc = "🟠", "Partial",          "status-dispatched"
-                        else:
-                            si, sc, bc = "🟢", "Completed",        "status-completed"
+                        si = "🟡" if status == "Pending" else ("🟠" if status == "Dispatched" else "🟢")
+                        sc = "Pending" if status == "Pending" else ("Partial" if status == "Dispatched" else "Completed")
+                        _fup = " ⚠️" if followup_sent else ""
 
-                        # Compact single row: status badge | item info | 🚩 | ✅
-                        pc1, pc2, pc3, pc4 = st.columns([0.5, 4, 0.6, 0.6])
-                        with pc1:
-                            st.markdown(f"<div style='font-size:18px;padding:4px 0;text-align:center;'>{si}</div>", unsafe_allow_html=True)
-                        with pc2:
-                            _fup_badge = " ⚠️" if followup_sent else ""
-                            st.markdown(
-                                f"<div style='font-size:12px;padding:2px 0;line-height:1.4;'>"
-                                f"<b>{item_name}</b>{_fup_badge} "
-                                f"<span style='color:#94A3B8;'>{date_str} · Req:{req_qty:.0f} Got:{dispatch_qty:.0f} Rem:{remaining_qty:.0f} · {sc}</span>"
-                                f"</div>",
-                                unsafe_allow_html=True,
-                            )
-                        with pc3:
+                        _tc1, _tc2, _tc3 = st.columns([6, 0.55, 0.55])
+                        _tc1.markdown(
+                            f"<div style='font-size:12px;padding:3px 0;border-bottom:1px solid #F1F5F9;line-height:1.5;'>"
+                            f"{si} <b>{item_name}</b>{_fup} "
+                            f"<span style='color:#94A3B8;'>{date_str} · Req:{req_qty:.0f} Got:{dispatch_qty:.0f} Rem:{remaining_qty:.0f} · {sc}</span>"
+                            f"</div>",
+                            unsafe_allow_html=True,
+                        )
+                        with _tc2:
                             if st.button("🚩", key=f"followup_{idx}_{req_id}", use_container_width=True, help="Follow-up"):
                                 try:
                                     all_reqs.at[idx, "FollowupSent"] = True
@@ -1913,7 +1953,7 @@ with tab_pending:
                                     st.rerun()
                                 except Exception as e:
                                     st.error(str(e))
-                        with pc4:
+                        with _tc3:
                             if st.button("✅", key=f"complete_{idx}_{req_id}", use_container_width=True, help="Mark Complete"):
                                 try:
                                     if remaining_qty <= 0:
@@ -1991,23 +2031,20 @@ with tab_received:
 
                         status_indicator = "🟢" if accept_amount <= 0 else "🟡"
 
-                        col_item, col_accept, col_reject = st.columns([2, 1, 1])
+                        _ri_c1, _ri_c2, _ri_c3 = st.columns([6, 0.55, 0.55])
+                        _ri_c1.markdown(
+                            f"<div style='font-size:12px;padding:3px 0;border-bottom:1px solid #F1F5F9;line-height:1.5;'>"
+                            f"{status_indicator} <b>{item_name}</b> "
+                            f"<span style='color:#94A3B8;'>Req:{req_qty:.0f} Disp:{dispatch_qty:.0f} Acc:{accepted_qty:.0f} ToAcc:{accept_amount:.0f}</span>"
+                            f"</div>",
+                            unsafe_allow_html=True,
+                        )
 
-                        with col_item:
-                            st.markdown(f"""
-                            <div class="req-item status-dispatched">
-                                <div class="req-item-content">
-                                    <b>{status_indicator} {item_name}</b><br>
-                                    Req:{req_qty:.0f} | Dispatched:{dispatch_qty:.0f} | Accepted:{accepted_qty:.0f} | To Accept:{accept_amount:.0f}
-                                </div>
-                            </div>
-                            """, unsafe_allow_html=True)
-
-                        with col_accept:
+                        with _ri_c2:
                             if accept_amount <= 0:
-                                st.caption("✅ Accepted")
+                                st.caption("✅")
                             elif _rest_read_only:
-                                st.caption("🔒 Read-only")
+                                st.caption("🔒")
                             else:
                                 if st.button("✅", key=f"accept_{recv_idx}_{req_id}", use_container_width=True, help="Accept & Add to Inventory"):
                                     try:
@@ -2048,7 +2085,7 @@ with tab_received:
                                     except Exception as e:
                                         st.error(f"❌ Error: {str(e)}")
 
-                        with col_reject:
+                        with _ri_c3:
                             if _rest_read_only:
                                 st.caption("🔒")
                             elif st.button("❌", key=f"reject_{recv_idx}_{req_id}", use_container_width=True, help="Reject"):
