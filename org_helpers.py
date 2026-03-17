@@ -2,10 +2,12 @@ import random
 import streamlit as st
 from st_supabase_connection import SupabaseConnection
 from typing import Optional
+import datetime
 
 # Reuse a Supabase connection inside this helper module.
-# It's okay that app.py also creates a connection; this module establishes its own.
 conn = st.connection("supabase", type=SupabaseConnection)
+
+INVITE_CODE_EXPIRY_MINUTES = 30  # codes expire after 30 minutes even if unused
 
 
 def create_organization(owner_user_id: str, org_name: str) -> Optional[dict]:
@@ -56,16 +58,36 @@ def generate_invite_code_string() -> str:
     return str(random.randint(100000, 999999))
 
 
+def _make_expires_at() -> str:
+    """Return ISO timestamp 30 minutes from now (UTC)."""
+    expiry = datetime.datetime.utcnow() + datetime.timedelta(minutes=INVITE_CODE_EXPIRY_MINUTES)
+    return expiry.strftime("%Y-%m-%dT%H:%M:%S")
+
+
+def _count_location_members(location_id: str) -> int:
+    """Return the actual number of managers linked to a location."""
+    try:
+        resp = (
+            conn.table("user_memberships")
+            .select("id", count="exact")
+            .eq("location_id", location_id)
+            .execute()
+        )
+        return resp.count if resp.count is not None else len(resp.data or [])
+    except Exception:
+        return 0
+
+
 def create_restaurant_with_invite(org_id: str, restaurant_name: str, created_by: str, max_uses: int = 5) -> Optional[dict]:
     """
     Create a restaurant location + invite code in one call.
+    The invite code is single-use and expires in 30 minutes.
     Returns {"location": {...}, "invite_code": {...}} or None on failure.
     """
     loc = create_location(org_id=org_id, name=restaurant_name, loc_type="restaurant")
     if not loc:
         return None
 
-    # Generate a unique 6-digit code (retry if collision)
     for _ in range(10):
         code = generate_invite_code_string()
         try:
@@ -78,12 +100,13 @@ def create_restaurant_with_invite(org_id: str, restaurant_name: str, created_by:
                 "used_count": 0,
                 "active": True,
                 "created_by": created_by,
+                "expires_at": _make_expires_at(),
             }
             resp = conn.table("invite_codes").insert(payload).execute()
             if resp.data:
                 return {"location": loc, "invite_code": resp.data[0]}
         except Exception:
-            continue  # code collision, retry
+            continue
 
     st.error("Failed to generate unique invite code after multiple attempts.")
     return None
@@ -92,20 +115,44 @@ def create_restaurant_with_invite(org_id: str, restaurant_name: str, created_by:
 def validate_invite_code(code: str) -> Optional[dict]:
     """
     Validate an invite code. Returns the invite_code row dict if valid, None otherwise.
-    Checks: exists, active, used_count < max_uses, and location is active.
+    Checks:
+      - exists and is active
+      - not expired (expires_at > now)
+      - location has not hit its max_uses cap (based on actual member count)
+      - location is active
     """
     try:
         resp = conn.table("invite_codes").select("*").eq("code", code.strip()).eq("active", True).execute()
         if not resp.data:
             return None
         invite = resp.data[0]
-        if invite["used_count"] >= invite["max_uses"]:
+
+        # Check expiry if the column exists
+        expires_at = invite.get("expires_at")
+        if expires_at:
+            try:
+                exp_dt = datetime.datetime.fromisoformat(str(expires_at).replace("Z", ""))
+                if datetime.datetime.utcnow() > exp_dt:
+                    # Auto-deactivate expired code
+                    try:
+                        conn.table("invite_codes").update({"active": False}).eq("id", invite["id"]).execute()
+                    except Exception:
+                        pass
+                    return None
+            except Exception:
+                pass  # If we can't parse expiry, allow it
+
+        # Check location member cap (actual linked members vs max_uses)
+        actual_count = _count_location_members(invite["location_id"])
+        if actual_count >= invite["max_uses"]:
             return None
+
         # Check location is active
         loc_resp = conn.table("locations").select("id, active, name").eq("id", invite["location_id"]).execute()
         if not loc_resp.data or not loc_resp.data[0].get("active", True):
             return None
         invite["_location_name"] = loc_resp.data[0].get("name", "")
+        invite["_actual_member_count"] = actual_count
         return invite
     except Exception:
         return None
@@ -113,8 +160,10 @@ def validate_invite_code(code: str) -> Optional[dict]:
 
 def redeem_invite_code(code: str, user_id: str, user_email: str = "") -> Optional[dict]:
     """
-    Redeem an invite code: create membership + increment used_count.
-    Stores user_email in the membership row so it can be displayed in the admin UI.
+    Redeem an invite code:
+      - Validates the code (expiry + member cap + active)
+      - Creates a membership, storing user_email for admin display
+      - Immediately deactivates the code (single-use: one code = one person)
     Returns the membership dict or None on failure.
     """
     invite = validate_invite_code(code)
@@ -125,9 +174,9 @@ def redeem_invite_code(code: str, user_id: str, user_email: str = "") -> Optiona
     existing = get_user_memberships(user_id)
     for m in existing:
         if m.get("location_id") == invite["location_id"]:
-            return m  # Already a member, return existing membership
+            return m  # Already a member
 
-    # Build membership payload — always store user_email for admin display
+    # Build membership payload — store user_email for admin display
     payload = {
         "user_id": user_id,
         "org_id": invite["org_id"],
@@ -147,11 +196,11 @@ def redeem_invite_code(code: str, user_id: str, user_email: str = "") -> Optiona
     if not mem:
         return None
 
-    # Increment used_count
+    # ── Single-use: deactivate code immediately after redemption ──────────
     try:
-        conn.table("invite_codes").update({"used_count": invite["used_count"] + 1}).eq("id", invite["id"]).execute()
+        conn.table("invite_codes").update({"active": False}).eq("id", invite["id"]).execute()
     except Exception:
-        pass  # non-critical
+        pass  # non-critical — code will also expire via expires_at
 
     return mem
 
@@ -166,10 +215,30 @@ def get_org_restaurants(org_id: str) -> list:
 
 
 def get_invite_codes_for_location(location_id: str) -> list:
-    """Get all invite codes for a specific location."""
+    """
+    Get all invite codes for a specific location.
+    Auto-deactivates any codes that have passed their expires_at timestamp.
+    """
     try:
         resp = conn.table("invite_codes").select("*").eq("location_id", location_id).execute()
-        return resp.data or []
+        codes = resp.data or []
+
+        now = datetime.datetime.utcnow()
+        for c in codes:
+            expires_at = c.get("expires_at")
+            if c.get("active") and expires_at:
+                try:
+                    exp_dt = datetime.datetime.fromisoformat(str(expires_at).replace("Z", ""))
+                    if now > exp_dt:
+                        # Auto-deactivate in DB and mark locally
+                        try:
+                            conn.table("invite_codes").update({"active": False}).eq("id", c["id"]).execute()
+                        except Exception:
+                            pass
+                        c["active"] = False
+                except Exception:
+                    pass
+        return codes
     except Exception:
         return []
 
@@ -185,7 +254,7 @@ def deactivate_restaurant(location_id: str) -> bool:
 
 
 def reactivate_restaurant(location_id: str) -> bool:
-    """Undo soft-delete: set location.active = true. Invite codes stay deactivated (owner can generate new ones)."""
+    """Undo soft-delete: set location.active = true."""
     try:
         conn.table("locations").update({"active": True}).eq("id", location_id).execute()
         return True
@@ -199,26 +268,20 @@ def is_location_active(location_id: str) -> bool:
         resp = conn.table("locations").select("active").eq("id", location_id).execute()
         if resp.data:
             return resp.data[0].get("active", True)
-        return True  # default to active if not found
+        return True
     except Exception:
         return True
 
 
 def regenerate_invite_code(org_id: str, location_id: str, created_by: str, max_uses: int = 5) -> Optional[dict]:
     """
-    Generate a new invite code for a location (deactivates old ones).
-    The new code's used_count reflects the number of managers already linked,
-    so the Uses counter stays accurate and doesn't reset to 0/5.
+    Generate a fresh single-use invite code for a location.
+    - Deactivates all existing codes for the location first
+    - New code is valid for 30 minutes and deactivates after 1 redemption
+    - max_uses stays as the restaurant's manager seat cap (not redemption count)
+    - used_count is NOT stored on the code — Uses X/5 is derived from actual members
     """
-    # Count how many managers are already linked to this location
-    actual_member_count = 0
-    try:
-        resp = conn.table("user_memberships").select("id", count="exact").eq("location_id", location_id).execute()
-        actual_member_count = resp.count if resp.count is not None else len(resp.data or [])
-    except Exception:
-        pass
-
-    # Deactivate existing codes for this location
+    # Deactivate all existing codes for this location
     try:
         conn.table("invite_codes").update({"active": False}).eq("location_id", location_id).execute()
     except Exception:
@@ -233,9 +296,10 @@ def regenerate_invite_code(org_id: str, location_id: str, created_by: str, max_u
                 "code": code,
                 "role": "restaurant",
                 "max_uses": max_uses,
-                "used_count": actual_member_count,  # carry over existing member count
+                "used_count": 0,   # always 0 — actual count comes from user_memberships
                 "active": True,
                 "created_by": created_by,
+                "expires_at": _make_expires_at(),
             }
             resp = conn.table("invite_codes").insert(payload).execute()
             if resp.data:
@@ -257,11 +321,11 @@ def get_location_members(location_id: str) -> list:
 def get_member_email(user_id: str) -> str:
     """
     Try to fetch a user's email. Checks in this order:
-    1. user_memberships.user_email column (fastest, stored at redeem time)
+    1. user_memberships.user_email column (stored at redeem time — fastest)
     2. profiles table (standard Supabase pattern)
-    3. Returns shortened user_id as last resort fallback.
+    3. Shortened user_id as last resort fallback.
     """
-    # 1. Check user_memberships.user_email — stored when user redeems invite code
+    # 1. Check user_memberships.user_email
     try:
         resp = (
             conn.table("user_memberships")
@@ -276,7 +340,7 @@ def get_member_email(user_id: str) -> str:
     except Exception:
         pass
 
-    # 2. Try profiles table (common Supabase pattern)
+    # 2. Try profiles table
     try:
         resp = conn.table("profiles").select("email").eq("id", user_id).execute()
         if resp.data and resp.data[0].get("email"):
@@ -284,7 +348,7 @@ def get_member_email(user_id: str) -> str:
     except Exception:
         pass
 
-    # 3. Fallback: show partial user ID
+    # 3. Fallback
     return f"user-{str(user_id)[:8]}…"
 
 
