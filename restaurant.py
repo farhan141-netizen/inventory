@@ -679,14 +679,20 @@ st.markdown("""
     /* ===== Header ===== */
     .header {
         background: linear-gradient(135deg, #F97316 0%, #F59E0B 100%);
-        padding: 18px 24px;
-        border-radius: var(--radius);
+        padding: 8px 18px;
+        border-radius: 12px;
         color: white;
-        margin-bottom: 16px;
-        box-shadow: 0 4px 20px rgba(249,115,22,0.25);
+        margin-bottom: 8px;
+        box-shadow: 0 3px 12px rgba(249,115,22,0.22);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
     }
-    .header h1 { margin: 0; font-size: 1.4em; font-weight: 700; color: white !important; }
-    .header p  { margin: 4px 0 0 0; font-size: 0.85em; opacity: 0.85; color: white !important; }
+    .header-left h1 { margin: 0; font-size: 1.05em; font-weight: 700; color: white !important; }
+    .header-left p  { margin: 1px 0 0 0; font-size: 0.75em; opacity: 0.82; color: white !important; }
+    /* legacy selectors kept for safety */
+    .header h1 { margin: 0; font-size: 1.05em; font-weight: 700; color: white !important; }
+    .header p  { margin: 1px 0 0 0; font-size: 0.75em; opacity: 0.82; color: white !important; }
 
     /* ===== Tabs ===== */
     .stTabs [data-baseweb="tab-list"] {
@@ -1428,26 +1434,122 @@ _rest_read_only = st.session_state.get("read_only", False)
 if _rest_read_only:
     st.warning("⚠️ This restaurant has been deactivated by the warehouse owner. Read-only mode.")
 
-# --- HEADER ---
+# --- COMPACT HEADER with inline Refresh button ---
 _rest_name = st.session_state.get("restaurant_name", "Restaurant")
-st.markdown(f"""
-    <div class="header">
-        <h1>🍴 {_rest_name} | Operations Portal</h1>
-        <p>Inventory Management & Warehouse Requisitions</p>
-    </div>
-""", unsafe_allow_html=True)
-
-# --- REFRESH BUTTON ---
-if st.button("🔄 Refresh Data", key="refresh_all"):
-    for key in ["inventory"]:
-        if key in st.session_state:
-            del st.session_state[key]
-    st.rerun()
+_hcol_left, _hcol_right = st.columns([5, 1])
+with _hcol_left:
+    st.markdown(f"""
+        <div class="header">
+            <div class="header-left">
+                <h1>🍴 {_rest_name} | Operations Portal</h1>
+                <p>Inventory Management &amp; Warehouse Requisitions</p>
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
+with _hcol_right:
+    st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
+    if st.button("🔄 Refresh", key="refresh_all", use_container_width=True):
+        for key in ["inventory"]:
+            if key in st.session_state:
+                del st.session_state[key]
+        st.rerun()
 # --- TABS ---
 tab_inv, tab_req, tab_pending, tab_received, tab_history, tab_dash = st.tabs(["📋 Inventory Count", "🛒 Send Requisition", "🚚 Pending Orders", "📦 Received Items", "📊 History", "📊 Dashboard"])
 
 # ===================== INVENTORY TAB =====================
 with tab_inv:
+
+    # ── Daily Receipt Portal (compact) ────────────────────────────────────────
+    _today_day = datetime.datetime.now().day
+    _today_str = datetime.datetime.now().strftime("%d %b %Y")
+    _all_reqs_inv = load_from_sheet("restaurant_requisitions")
+    _rest_name_inv = st.session_state.get("restaurant_name", "")
+
+    # Compute today receipts
+    _recv_today_qty = 0.0
+    _recv_today_amt = 0.0
+    if not _all_reqs_inv.empty:
+        _r = _all_reqs_inv[
+            (_all_reqs_inv.get("Restaurant", pd.Series()) == _rest_name_inv) &
+            (_all_reqs_inv["Status"].isin(["Dispatched", "Completed"]))
+        ].copy() if "Restaurant" in _all_reqs_inv.columns else pd.DataFrame()
+        if not _r.empty and "RequestedDate" in _r.columns:
+            _r["_rd"] = pd.to_datetime(_r["RequestedDate"], errors="coerce").dt.day
+            _r_today = _r[_r["_rd"] == _today_day]
+            _recv_today_qty = pd.to_numeric(_r_today.get("DispatchQty", pd.Series()), errors="coerce").sum()
+
+    # Compute month receipts
+    _recv_month_qty = 0.0
+    if not _all_reqs_inv.empty and "Restaurant" in _all_reqs_inv.columns:
+        _rm = _all_reqs_inv[
+            (_all_reqs_inv["Restaurant"] == _rest_name_inv) &
+            (_all_reqs_inv["Status"].isin(["Dispatched", "Completed"]))
+        ].copy()
+        _recv_month_qty = pd.to_numeric(_rm.get("DispatchQty", pd.Series()), errors="coerce").sum()
+
+    _dr_title, _dr_expand, _dr_close = st.columns([5, 1, 1])
+    with _dr_title:
+        st.markdown(
+            f"<div style='font-size:12px;font-weight:700;color:#F97316;letter-spacing:0.04em;"
+            f"padding:4px 0 2px;border-bottom:2px solid rgba(249,115,22,0.15);'>"
+            f"📦 DAILY RECEIPT PORTAL &nbsp;·&nbsp; "
+            f"<span style='color:#64748B;font-weight:500;'>{_today_str}</span>"
+            f"&nbsp;&nbsp;|&nbsp;&nbsp;"
+            f"Today Received: <b style='color:#1E293B;'>{_recv_today_qty:.0f} units</b>"
+            f"&nbsp;&nbsp;|&nbsp;&nbsp;"
+            f"Month Total: <b style='color:#1E293B;'>{_recv_month_qty:.0f} units</b>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+    with _dr_expand:
+        if st.button("⛶ Explorer", key="receipt_portal_expand", use_container_width=True):
+            @st.dialog("📦 Daily Receipt Explorer", width="large")
+            def _show_receipt_explorer():
+                if _all_reqs_inv.empty or "Restaurant" not in _all_reqs_inv.columns:
+                    st.info("No receipt data."); return
+                _re = _all_reqs_inv[
+                    (_all_reqs_inv["Restaurant"] == _rest_name_inv) &
+                    (_all_reqs_inv["Status"].isin(["Dispatched", "Completed"]))
+                ].copy()
+                if _re.empty:
+                    st.info("No receipts yet."); return
+                _re["RequestedDate"] = pd.to_datetime(_re["RequestedDate"], errors="coerce")
+                _re = _re.dropna(subset=["RequestedDate"])
+                _re["Month"] = _re["RequestedDate"].dt.strftime("%Y-%m")
+                months = sorted(_re["Month"].unique(), reverse=True)
+                sel_month = st.selectbox("Select Month", months, key="re_month_sel")
+                _re_m = _re[_re["Month"] == sel_month]
+                _re_m = _re_m[["Item", "DispatchQty", "RequestedDate", "Status"]].copy()
+                _re_m["RequestedDate"] = _re_m["RequestedDate"].dt.strftime("%d/%m/%Y")
+                _re_m = _re_m.rename(columns={"DispatchQty": "Qty Received", "RequestedDate": "Date"})
+                st.dataframe(_re_m.sort_values("Date", ascending=False), use_container_width=True, hide_index=True)
+                st.caption(f"Total items: {len(_re_m)} | Total qty: {pd.to_numeric(_re_m['Qty Received'], errors='coerce').sum():.0f}")
+            _show_receipt_explorer()
+    with _dr_close:
+        if st.button("📅 Month Close", key="receipt_portal_close", use_container_width=True):
+            @st.dialog("📅 Month Close", width="small")
+            def _show_month_close_confirm():
+                st.warning("This will reset Opening Stock to current Closing Stock and clear all day columns.")
+                if st.button("✅ Confirm Month Close", type="primary", use_container_width=True, key="mc_confirm"):
+                    inv = st.session_state.inventory.copy()
+                    inv["Opening Stock"] = pd.to_numeric(inv.get("Closing Stock", 0), errors="coerce").fillna(0)
+                    for _d in [str(i) for i in range(1, 32)]:
+                        if _d in inv.columns:
+                            inv[_d] = 0.0
+                    inv["Total Received"] = 0.0
+                    inv["Consumption"]    = 0.0
+                    inv = recalculate_inventory(inv)
+                    st.session_state.inventory = inv
+                    save_to_sheet(inv, "rest_01_inventory")
+                    st.success("✅ Month closed! Opening Stock updated.")
+                    st.rerun()
+                if st.button("✖ Cancel", use_container_width=True, key="mc_cancel"):
+                    st.rerun()
+            _show_month_close_confirm()
+
+    st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
+
+    # ── Daily Stock Take ──────────────────────────────────────────────────────
     st.markdown('<div class="section-title">📊 Daily Stock Take</div>', unsafe_allow_html=True)
 
     if not st.session_state.inventory.empty:
@@ -1605,30 +1707,52 @@ with tab_req:
             else:
                 items = st.session_state.inventory
             
-            for item_idx, (_, row) in enumerate(items.head(12).iterrows()):
-                c1, c2, c3 = st.columns([3, 0.7, 0.7])
-                product_name = row['Product Name']
-                uom = row['UOM']
-                closing_stock = row.get('Closing Stock', 0)
-                
-                c1.write(f"**{product_name}** ({uom}) | Stock: {closing_stock}")
-                
-                qty = c2.number_input(
-                    "Qty", 
-                    min_value=0.0, 
-                    key=f"req_qty_{item_idx}_{search_item}",
-                    label_visibility="collapsed"
+            # Filter out CATEGORY_/SUPPLIER_ meta rows from requisition list
+            items = items[
+                ~items["Product Name"].astype(str).str.startswith("CATEGORY_") &
+                ~items["Product Name"].astype(str).str.startswith("SUPPLIER_")
+            ]
+
+            for item_idx, (_, row) in enumerate(items.iterrows()):
+                product_name  = row["Product Name"]
+                uom           = row["UOM"]
+                closing_stock = row.get("Closing Stock", 0)
+
+                # Compact single-line layout: Name | − qty + | ➕
+                rc1, rc2, rc3, rc4, rc5 = st.columns([4, 0.5, 1.2, 0.5, 0.7])
+                rc1.markdown(
+                    f"<div style='font-size:13px;padding:6px 0;'>"
+                    f"<b>{product_name}</b> "
+                    f"<span style='color:#94A3B8;font-size:11px;'>({uom}) Stock: {float(closing_stock):.1f}</span>"
+                    f"</div>",
+                    unsafe_allow_html=True,
                 )
-                
-                if c3.button("➕", key=f"btn_add_{item_idx}_{search_item}", use_container_width=True):
-                    if qty > 0:
-                        st.session_state.cart.append({
-                            'name': product_name, 
-                            'qty': qty, 
-                            'uom': uom
-                        })
-                        st.toast(f"✅ Added {product_name}")
+                with rc2:
+                    if st.button("−", key=f"req_dec_{item_idx}_{search_item}", use_container_width=True):
+                        _k = f"req_qty_val_{item_idx}_{search_item}"
+                        st.session_state[_k] = max(0.0, st.session_state.get(_k, 0.0) - 1.0)
                         st.rerun()
+                with rc3:
+                    _qty_key = f"req_qty_val_{item_idx}_{search_item}"
+                    qty = st.number_input(
+                        "q", min_value=0.0, step=1.0,
+                        value=st.session_state.get(_qty_key, 0.0),
+                        key=f"req_qty_{item_idx}_{search_item}",
+                        label_visibility="collapsed",
+                    )
+                    st.session_state[_qty_key] = qty
+                with rc4:
+                    if st.button("+", key=f"req_inc_{item_idx}_{search_item}", use_container_width=True):
+                        _k = f"req_qty_val_{item_idx}_{search_item}"
+                        st.session_state[_k] = st.session_state.get(_k, 0.0) + 1.0
+                        st.rerun()
+                with rc5:
+                    if st.button("➕", key=f"btn_add_{item_idx}_{search_item}", use_container_width=True):
+                        if qty > 0:
+                            st.session_state.cart.append({"name": product_name, "qty": qty, "uom": uom})
+                            st.session_state[f"req_qty_val_{item_idx}_{search_item}"] = 0.0
+                            st.toast(f"✅ Added {product_name}")
+                            st.rerun()
 
     with col_r:
         st.markdown('<div class="section-title">🛒 Cart</div>', unsafe_allow_html=True)
@@ -1703,110 +1827,107 @@ with tab_req:
 
 # ===================== PENDING ORDERS TAB =====================
 with tab_pending:
-    st.markdown('<div class="section-title">🚚 Pending Orders Status (All Remaining Items)</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">🚚 Pending Orders</div>', unsafe_allow_html=True)
     all_reqs = load_from_sheet("restaurant_requisitions")
-    
+
     if not all_reqs.empty:
-        # Ensure FollowupSent column exists
         if "FollowupSent" not in all_reqs.columns:
             all_reqs["FollowupSent"] = False
-        
-        # Calculate remaining qty for each row
-        all_reqs["Remaining"] = all_reqs["Qty"] - all_reqs["DispatchQty"]
-        
-        # Show ALL items where remaining qty > 0 (regardless of status)
-        my_pending = all_reqs[(all_reqs["Restaurant"] == st.session_state.get("restaurant_name", "")) & (all_reqs["Remaining"] > 0)]
-        
+        all_reqs["Remaining"] = (
+            pd.to_numeric(all_reqs["Qty"], errors="coerce").fillna(0) -
+            pd.to_numeric(all_reqs["DispatchQty"], errors="coerce").fillna(0)
+        )
+        my_pending = all_reqs[
+            (all_reqs["Restaurant"] == st.session_state.get("restaurant_name", "")) &
+            (all_reqs["Remaining"] > 0)
+        ].copy()
+
         if not my_pending.empty:
-            # Convert RequestedDate safely
-            my_pending = my_pending.copy()
-            my_pending["RequestedDate"] = pd.to_datetime(my_pending["RequestedDate"], errors='coerce')
-            my_pending = my_pending[my_pending["RequestedDate"].notna()]
-            
-            if not my_pending.empty:
-                my_pending = my_pending.sort_values("RequestedDate", ascending=False)
-                unique_dates = sorted(my_pending["RequestedDate"].unique(), reverse=True)
-                
-                st.metric("Total Items Pending", len(my_pending))
-                
-                for req_date in unique_dates:
-                    try:
-                        date_str = pd.Timestamp(req_date).strftime("%d/%m/%Y")
-                    except:
-                        date_str = "Unknown Date"
-                    
-                    date_reqs = my_pending[my_pending["RequestedDate"] == req_date]
-                    
-                    with st.expander(f"📅 {date_str} ({len(date_reqs)} items)", expanded=False):
-                        for idx, row in date_reqs.iterrows():
-                            item_name = row["Item"]
-                            req_qty = float(row["Qty"])
-                            dispatch_qty = float(row["DispatchQty"])
-                            remaining_qty = float(row["Remaining"])
-                            status = row["Status"]
-                            req_id = row["ReqID"]
-                            followup_sent = row.get("FollowupSent", False)
-                            
-                            # Show status indicator
-                            if status == "Pending":
-                                status_indicator = "🟡"
-                                status_text = "Pending"
-                                bg_class = "status-pending"
-                            elif status == "Dispatched":
-                                status_indicator = "🟠"
-                                status_text = "Partial Delivery"
-                                bg_class = "status-dispatched"
-                            else:
-                                status_indicator = "🟢"
-                                status_text = "Completed"
-                                bg_class = "status-completed"
-                            
-                            followup_indicator = "⚠️ Follow-up Sent" if followup_sent else "⏳ No Follow-up"
-                            
-                            # Create item box with buttons inside
-                            col_item, col_fup, col_complete = st.columns([2, 1, 1])
-                            
-                            with col_item:
-                                st.markdown(f"""
-                                <div class="req-item {bg_class}">
-                                    <div class="req-item-content">
-                                        <b>{status_indicator} {item_name}</b><br>
-                                        Req:{req_qty} | Got:{dispatch_qty} | Rem:{remaining_qty}<br>
-                                        <small>{status_text} | {followup_indicator}</small>
-                                    </div>
-                                </div>
-                                """, unsafe_allow_html=True)
-                            
-                            with col_fup:
-                                if st.button(f"🚩", key=f"followup_{idx}_{req_id}", use_container_width=True, help="Request Follow-up"):
-                                    try:
-                                        all_reqs.at[idx, "FollowupSent"] = True
-                                        all_reqs.at[idx, "Timestamp"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                                        save_to_sheet(all_reqs, "restaurant_requisitions")
-                                        st.success(f"✅ Follow-up sent!")
-                                        st.rerun()
-                                    except Exception as e:
-                                        st.error(f"❌ Error: {str(e)}")
-                            
-                            with col_complete:
-                                if st.button(f"✅", key=f"complete_{idx}_{req_id}", use_container_width=True, help="Mark Complete"):
-                                    try:
-                                        # Only if all items are received (remaining = 0)
-                                        if remaining_qty <= 0:
-                                            all_reqs.at[idx, "Status"] = "Completed"
-                                            save_to_sheet(all_reqs, "restaurant_requisitions")
-                                            st.success(f"✅ Marked complete!")
-                                            st.rerun()
-                                        else:
-                                            st.warning(f"⚠️ Still {remaining_qty} units pending.")
-                                    except Exception as e:
-                                        st.error(f"❌ Error: {str(e)}")
+            my_pending["RequestedDate"] = pd.to_datetime(my_pending["RequestedDate"], errors="coerce")
+            my_pending = my_pending.dropna(subset=["RequestedDate"])
+            my_pending = my_pending.sort_values("RequestedDate", ascending=False)
+
+            # Group by MONTH (not day) to avoid 30+ expanders
+            my_pending["_month"] = my_pending["RequestedDate"].dt.strftime("%B %Y")
+            my_pending["_month_sort"] = my_pending["RequestedDate"].dt.strftime("%Y-%m")
+            unique_months = my_pending.sort_values("_month_sort", ascending=False)["_month"].unique()
+
+            _p_col1, _p_col2 = st.columns([3, 1])
+            _p_col1.metric("Total Items Pending", len(my_pending))
+            with _p_col2:
+                _pend_view = st.selectbox("View by", ["Month", "Week", "Day"], key="pend_view_by", label_visibility="collapsed")
+
+            if _pend_view == "Month":
+                group_fmt   = "%B %Y"
+                sort_fmt    = "%Y-%m"
+            elif _pend_view == "Week":
+                group_fmt   = "Week %W · %Y"
+                sort_fmt    = "%Y-W%W"
             else:
-                st.success("✅ All items received! No pending orders.")
+                group_fmt   = "%d/%m/%Y"
+                sort_fmt    = "%Y-%m-%d"
+
+            my_pending["_grp"]      = my_pending["RequestedDate"].dt.strftime(group_fmt)
+            my_pending["_grp_sort"] = my_pending["RequestedDate"].dt.strftime(sort_fmt)
+            unique_grps = my_pending.sort_values("_grp_sort", ascending=False)["_grp"].unique()
+
+            for grp in unique_grps:
+                grp_reqs = my_pending[my_pending["_grp"] == grp]
+                with st.expander(f"📅 {grp}  ·  {len(grp_reqs)} item(s)", expanded=False):
+                    for idx, row in grp_reqs.iterrows():
+                        item_name     = row["Item"]
+                        req_qty       = float(row["Qty"])
+                        dispatch_qty  = float(row["DispatchQty"])
+                        remaining_qty = float(row["Remaining"])
+                        status        = row["Status"]
+                        req_id        = row["ReqID"]
+                        followup_sent = row.get("FollowupSent", False)
+                        date_str      = pd.Timestamp(row["RequestedDate"]).strftime("%d/%m")
+
+                        if status == "Pending":
+                            si, sc, bc = "🟡", "Pending",          "status-pending"
+                        elif status == "Dispatched":
+                            si, sc, bc = "🟠", "Partial",          "status-dispatched"
+                        else:
+                            si, sc, bc = "🟢", "Completed",        "status-completed"
+
+                        # Compact single row: status badge | item info | 🚩 | ✅
+                        pc1, pc2, pc3, pc4 = st.columns([0.5, 4, 0.6, 0.6])
+                        with pc1:
+                            st.markdown(f"<div style='font-size:18px;padding:4px 0;text-align:center;'>{si}</div>", unsafe_allow_html=True)
+                        with pc2:
+                            _fup_badge = " ⚠️" if followup_sent else ""
+                            st.markdown(
+                                f"<div style='font-size:12px;padding:2px 0;line-height:1.4;'>"
+                                f"<b>{item_name}</b>{_fup_badge} "
+                                f"<span style='color:#94A3B8;'>{date_str} · Req:{req_qty:.0f} Got:{dispatch_qty:.0f} Rem:{remaining_qty:.0f} · {sc}</span>"
+                                f"</div>",
+                                unsafe_allow_html=True,
+                            )
+                        with pc3:
+                            if st.button("🚩", key=f"followup_{idx}_{req_id}", use_container_width=True, help="Follow-up"):
+                                try:
+                                    all_reqs.at[idx, "FollowupSent"] = True
+                                    all_reqs.at[idx, "Timestamp"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                    save_to_sheet(all_reqs, "restaurant_requisitions")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(str(e))
+                        with pc4:
+                            if st.button("✅", key=f"complete_{idx}_{req_id}", use_container_width=True, help="Mark Complete"):
+                                try:
+                                    if remaining_qty <= 0:
+                                        all_reqs.at[idx, "Status"] = "Completed"
+                                        save_to_sheet(all_reqs, "restaurant_requisitions")
+                                        st.rerun()
+                                    else:
+                                        st.warning(f"⚠️ {remaining_qty:.0f} units still pending.")
+                                except Exception as e:
+                                    st.error(str(e))
         else:
-            st.success("✅ All items received! No pending orders.")
+            st.success("✅ No pending orders!")
     else:
-        st.info("📭 No orders found. Submit your first requisition!")
+        st.info("📭 No orders found.")
 
 # ===================== RECEIVED ITEMS TAB =====================
 with tab_received:
@@ -1949,90 +2070,83 @@ with tab_received:
 # ===================== HISTORY TAB =====================
 with tab_history:
     st.markdown('<div class="section-title">📊 Requisition History</div>', unsafe_allow_html=True)
-    
     all_reqs = load_from_sheet("restaurant_requisitions")
-    
+
     if not all_reqs.empty:
-        my_history = all_reqs[all_reqs["Restaurant"] == st.session_state.get("restaurant_name", "")]
-        
+        my_history = all_reqs[all_reqs["Restaurant"] == st.session_state.get("restaurant_name", "")].copy()
+
         if not my_history.empty:
-            # Filters
-            col1, col2, col3 = st.columns(3)
-            
-            with col1:
-                filter_status = st.multiselect("Filter by Status", ["Pending", "Dispatched", "Completed"], default=["Pending", "Dispatched", "Completed"], key="hist_status")
-            
-            with col2:
-                filter_item = st.text_input("Filter by Item", placeholder="Type item name...", key="hist_item").lower()
-            
-            with col3:
-                sort_by = st.selectbox("Sort by", ["Latest First", "Oldest First", "Item Name"], key="hist_sort")
-            
-            # Apply filters
+            # Compact filter row
+            hf1, hf2, hf3, hf4 = st.columns([1.8, 1.8, 1.2, 1.2])
+            with hf1:
+                filter_status = st.multiselect("Status", ["Pending", "Dispatched", "Completed"],
+                                               default=["Pending", "Dispatched", "Completed"],
+                                               key="hist_status", label_visibility="collapsed")
+            with hf2:
+                filter_item = st.text_input("Item", placeholder="Search item…", key="hist_item", label_visibility="collapsed").lower()
+            with hf3:
+                sort_by = st.selectbox("Sort", ["Latest First", "Oldest First", "Item Name"],
+                                       key="hist_sort", label_visibility="collapsed")
+            with hf4:
+                hist_view = st.selectbox("Group", ["Month", "Week", "Day"],
+                                         key="hist_view_by", label_visibility="collapsed")
+
             filtered_history = my_history[my_history["Status"].isin(filter_status)]
-            
             if filter_item:
                 filtered_history = filtered_history[filtered_history["Item"].str.lower().str.contains(filter_item, na=False)]
-            
-            # Convert RequestedDate safely
             filtered_history = filtered_history.copy()
-            filtered_history["RequestedDate"] = pd.to_datetime(filtered_history["RequestedDate"], errors='coerce')
-            filtered_history = filtered_history[filtered_history["RequestedDate"].notna()]
-            
+            filtered_history["RequestedDate"] = pd.to_datetime(filtered_history["RequestedDate"], errors="coerce")
+            filtered_history = filtered_history.dropna(subset=["RequestedDate"])
+
             if not filtered_history.empty:
-                # Sort
                 if sort_by == "Latest First":
                     filtered_history = filtered_history.sort_values("RequestedDate", ascending=False)
                 elif sort_by == "Oldest First":
                     filtered_history = filtered_history.sort_values("RequestedDate", ascending=True)
                 else:
                     filtered_history = filtered_history.sort_values("Item", ascending=True)
-                
-                st.metric("Total Records", len(filtered_history))
-                
-                # Group by date
-                unique_dates = sorted(filtered_history["RequestedDate"].unique(), reverse=True)
-                
-                for req_date in unique_dates:
-                    try:
-                        date_str = pd.Timestamp(req_date).strftime("%d/%m/%Y")
-                    except:
-                        date_str = "Unknown Date"
-                    
-                    date_hist = filtered_history[filtered_history["RequestedDate"] == req_date]
-                    
-                    with st.expander(f"📅 {date_str} ({len(date_hist)} items)", expanded=False):
-                        for hist_idx, (_, row) in enumerate(date_hist.iterrows()):
-                            item_name = row["Item"]
-                            req_qty = float(row["Qty"])
+
+                # Group format
+                if hist_view == "Month":
+                    grp_fmt  = "%B %Y";  sort_fmt = "%Y-%m"
+                elif hist_view == "Week":
+                    grp_fmt  = "Week %W · %Y"; sort_fmt = "%Y-W%W"
+                else:
+                    grp_fmt  = "%d/%m/%Y"; sort_fmt = "%Y-%m-%d"
+
+                filtered_history["_grp"]      = filtered_history["RequestedDate"].dt.strftime(grp_fmt)
+                filtered_history["_grp_sort"] = filtered_history["RequestedDate"].dt.strftime(sort_fmt)
+                unique_grps = filtered_history.sort_values("_grp_sort", ascending=False)["_grp"].unique()
+
+                st.caption(f"{len(filtered_history)} record(s) across {len(unique_grps)} {hist_view.lower()}(s)")
+
+                for grp in unique_grps:
+                    grp_hist = filtered_history[filtered_history["_grp"] == grp]
+                    with st.expander(f"📅 {grp}  ·  {len(grp_hist)} item(s)", expanded=False):
+                        for _, row in grp_hist.iterrows():
+                            item_name    = row["Item"]
+                            req_qty      = float(row["Qty"])
                             dispatch_qty = float(row["DispatchQty"])
-                            status = row["Status"]
-                            timestamp = row.get("Timestamp", "N/A")
-                            remaining = req_qty - dispatch_qty
-                            followup = row.get("FollowupSent", False)
-                            
-                            # Color based on status
+                            status       = row["Status"]
+                            remaining    = req_qty - dispatch_qty
+                            followup     = row.get("FollowupSent", False)
+                            date_str     = pd.Timestamp(row["RequestedDate"]).strftime("%d/%m")
+
                             if status == "Pending":
-                                status_color = "🟡"
-                                box_class = "status-pending"
+                                si = "🟡"
                             elif status == "Dispatched":
-                                status_color = "🟠"
-                                box_class = "status-dispatched"
-                            else:  # Completed
-                                status_color = "🟢"
-                                box_class = "status-completed"
-                            
-                            followup_text = "⚠️ Follow-up Sent" if followup else ""
-                            
-                            st.markdown(f"""
-                            <div class="req-item {box_class}">
-                                <div class="req-item-content">
-                                    <b>{status_color} {item_name}</b><br>
-                                    Req:{req_qty} | Got:{dispatch_qty} | Rem:{remaining}<br>
-                                    <small>Status: {status} | {timestamp} | {followup_text}</small>
-                                </div>
-                            </div>
-                            """, unsafe_allow_html=True)
+                                si = "🟠"
+                            else:
+                                si = "🟢"
+
+                            _fup = " ⚠️" if followup else ""
+                            st.markdown(
+                                f"<div style='font-size:12px;padding:3px 0;border-bottom:1px solid #F1F5F9;'>"
+                                f"{si} <b>{item_name}</b>{_fup} "
+                                f"<span style='color:#94A3B8;'>{date_str} · Req:{req_qty:.0f} Got:{dispatch_qty:.0f} Rem:{remaining:.0f} · {status}</span>"
+                                f"</div>",
+                                unsafe_allow_html=True,
+                            )
             else:
                 st.info("📭 No records match your filters")
         else:
