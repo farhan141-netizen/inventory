@@ -1775,32 +1775,38 @@ with tab_req:
                 ~items["Product Name"].astype(str).str.startswith("SUPPLIER_")
             ]
 
-            for item_idx, (_, row) in enumerate(items.iterrows()):
-                product_name  = row["Product Name"]
-                uom           = row["UOM"]
-                closing_stock = row.get("Closing Stock", 0)
+            # Build requisition table with data_editor — proper grid, no misalignment
+            _req_df = items[["Product Name", "UOM", "Closing Stock"]].copy().reset_index(drop=True)
+            _req_df = _req_df.rename(columns={"Closing Stock": "Stock"})
+            _req_df["Qty"] = 0.0
+            _req_df["Add"] = False
 
-                # Clean 3-column: text | qty input | ➕  (no − + buttons that misalign)
-                rc1, rc2, rc3 = st.columns([4, 1.2, 0.7])
-                rc1.markdown(
-                    f"<div style='font-size:12px;padding:4px 0;border-bottom:1px solid #F1F5F9;line-height:1.5;'>"
-                    f"<b>{product_name}</b> "
-                    f"<span style='color:#94A3B8;font-size:11px;'>({uom}) · Stock: {float(closing_stock):.1f}</span>"
-                    f"</div>",
-                    unsafe_allow_html=True,
-                )
-                with rc2:
-                    qty = st.number_input(
-                        "q", min_value=0.0, step=1.0, value=0.0,
-                        key=f"req_qty_{item_idx}_{search_item}",
-                        label_visibility="collapsed",
-                    )
-                with rc3:
-                    if st.button("➕", key=f"btn_add_{item_idx}_{search_item}", use_container_width=True):
-                        if qty > 0:
-                            st.session_state.cart.append({"name": product_name, "qty": qty, "uom": uom})
-                            st.toast(f"✅ Added {product_name}")
-                            st.rerun()
+            _edited_req = st.data_editor(
+                _req_df,
+                use_container_width=True,
+                hide_index=True,
+                key=f"req_editor_{search_item}",
+                column_config={
+                    "Product Name": st.column_config.TextColumn("Product", width=220),
+                    "UOM":          st.column_config.TextColumn("UOM",     width=50),
+                    "Stock":        st.column_config.NumberColumn("Stock",  width=70,  format="%.1f"),
+                    "Qty":          st.column_config.NumberColumn("Qty",    width=80,  min_value=0.0, step=1.0),
+                    "Add":          st.column_config.CheckboxColumn("Add ➕", width=60),
+                },
+                disabled=["Product Name", "UOM", "Stock"],
+                height=min(600, 40 + len(_req_df) * 35),
+            )
+
+            # Process checked rows
+            _added = _edited_req[(_edited_req["Add"] == True) & (_edited_req["Qty"] > 0)]
+            if not _added.empty:
+                for _, _ar in _added.iterrows():
+                    st.session_state.cart.append({
+                        "name": _ar["Product Name"],
+                        "qty":  float(_ar["Qty"]),
+                        "uom":  _ar["UOM"],
+                    })
+                st.rerun()
 
     with col_r:
         st.markdown('<div class="section-title">🛒 Cart</div>', unsafe_allow_html=True)
@@ -1922,48 +1928,72 @@ with tab_pending:
             for grp in unique_grps:
                 grp_reqs = my_pending[my_pending["_grp"] == grp]
                 with st.expander(f"📅 {grp}  ·  {len(grp_reqs)} item(s)", expanded=False):
+                    # Build data_editor table for clean grid alignment
+                    _pend_rows = []
+                    _pend_meta = []
                     for idx, row in grp_reqs.iterrows():
-                        item_name     = row["Item"]
-                        req_qty       = float(row["Qty"])
-                        dispatch_qty  = float(row["DispatchQty"])
-                        remaining_qty = float(row["Remaining"])
-                        status        = row["Status"]
-                        req_id        = row["ReqID"]
-                        followup_sent = row.get("FollowupSent", False)
-                        date_str      = pd.Timestamp(row["RequestedDate"]).strftime("%d/%m")
+                        _pname   = row["Item"]
+                        _rqty    = float(row["Qty"])
+                        _dqty    = float(row["DispatchQty"])
+                        _rem     = float(row["Remaining"])
+                        _status  = row["Status"]
+                        _req_id  = row["ReqID"]
+                        _fup     = bool(row.get("FollowupSent", False))
+                        _dstr    = pd.Timestamp(row["RequestedDate"]).strftime("%d/%m")
+                        _si      = "🟡" if _status == "Pending" else ("🟠" if _status == "Dispatched" else "🟢")
+                        _sc      = "Pending" if _status == "Pending" else ("Partial" if _status == "Dispatched" else "Completed")
+                        _pend_rows.append({
+                            "":          _si,
+                            "Item":      _pname,
+                            "Date":      _dstr,
+                            "Req":       _rqty,
+                            "Got":       _dqty,
+                            "Rem":       _rem,
+                            "Status":    _sc,
+                            "Follow-up": _fup,
+                            "Done ✅":   False,
+                        })
+                        _pend_meta.append((idx, _rem, _req_id))
 
-                        si = "🟡" if status == "Pending" else ("🟠" if status == "Dispatched" else "🟢")
-                        sc = "Pending" if status == "Pending" else ("Partial" if status == "Dispatched" else "Completed")
-                        _fup = " ⚠️" if followup_sent else ""
-
-                        _tc1, _tc2, _tc3 = st.columns([6, 0.55, 0.55])
-                        _tc1.markdown(
-                            f"<div style='font-size:12px;padding:3px 0;border-bottom:1px solid #F1F5F9;line-height:1.5;'>"
-                            f"{si} <b>{item_name}</b>{_fup} "
-                            f"<span style='color:#94A3B8;'>{date_str} · Req:{req_qty:.0f} Got:{dispatch_qty:.0f} Rem:{remaining_qty:.0f} · {sc}</span>"
-                            f"</div>",
-                            unsafe_allow_html=True,
-                        )
-                        with _tc2:
-                            if st.button("🚩", key=f"followup_{idx}_{req_id}", use_container_width=True, help="Follow-up"):
-                                try:
-                                    all_reqs.at[idx, "FollowupSent"] = True
-                                    all_reqs.at[idx, "Timestamp"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    _pend_df = pd.DataFrame(_pend_rows)
+                    _edited_pend = st.data_editor(
+                        _pend_df,
+                        use_container_width=True,
+                        hide_index=True,
+                        key=f"pend_editor_{grp}",
+                        column_config={
+                            "":          st.column_config.TextColumn("",         width=28),
+                            "Item":      st.column_config.TextColumn("Item",     width=200),
+                            "Date":      st.column_config.TextColumn("Date",     width=55),
+                            "Req":       st.column_config.NumberColumn("Req",    width=50, format="%.0f"),
+                            "Got":       st.column_config.NumberColumn("Got",    width=50, format="%.0f"),
+                            "Rem":       st.column_config.NumberColumn("Rem",    width=50, format="%.0f"),
+                            "Status":    st.column_config.TextColumn("Status",   width=75),
+                            "Follow-up": st.column_config.CheckboxColumn("🚩 FU", width=55),
+                            "Done ✅":   st.column_config.CheckboxColumn("✅ Done", width=65),
+                        },
+                        disabled=["", "Item", "Date", "Req", "Got", "Rem", "Status"],
+                        height=min(500, 42 + len(_pend_df) * 36),
+                    )
+                    for _pi, (_pidx, _prem, _prid) in enumerate(_pend_meta):
+                        if _edited_pend.at[_pi, "Follow-up"] and not _pend_rows[_pi]["Follow-up"]:
+                            try:
+                                all_reqs.at[_pidx, "FollowupSent"] = True
+                                all_reqs.at[_pidx, "Timestamp"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                save_to_sheet(all_reqs, "restaurant_requisitions")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(str(e))
+                        if _edited_pend.at[_pi, "Done ✅"]:
+                            try:
+                                if _prem <= 0:
+                                    all_reqs.at[_pidx, "Status"] = "Completed"
                                     save_to_sheet(all_reqs, "restaurant_requisitions")
                                     st.rerun()
-                                except Exception as e:
-                                    st.error(str(e))
-                        with _tc3:
-                            if st.button("✅", key=f"complete_{idx}_{req_id}", use_container_width=True, help="Mark Complete"):
-                                try:
-                                    if remaining_qty <= 0:
-                                        all_reqs.at[idx, "Status"] = "Completed"
-                                        save_to_sheet(all_reqs, "restaurant_requisitions")
-                                        st.rerun()
-                                    else:
-                                        st.warning(f"⚠️ {remaining_qty:.0f} units still pending.")
-                                except Exception as e:
-                                    st.error(str(e))
+                                else:
+                                    st.warning(f"⚠️ {_prem:.0f} units still pending.")
+                            except Exception as e:
+                                st.error(str(e))
         else:
             st.success("✅ No pending orders!")
     else:
@@ -2019,84 +2049,89 @@ with tab_received:
                     # Mark this expander as open while we render items inside it
                     st.session_state["_recv_open_dates"].add(date_str)
 
+                    # Build a data_editor table for this date group — proper grid alignment
+                    _recv_rows = []
+                    _recv_meta = []  # (original_idx, dispatch_qty, accept_amount, item_name, remaining_qty)
                     for recv_idx, (original_idx, row) in enumerate(date_reqs.iterrows()):
-                        item_name    = row["Item"]
-                        dispatch_qty = float(row["DispatchQty"])
-                        req_qty      = float(row["Qty"])
-                        req_id       = row["ReqID"]
-                        accepted_qty = float(row.get("AcceptedQty", 0)) if pd.notna(row.get("AcceptedQty", 0)) else 0.0
-                        accept_amount = dispatch_qty - accepted_qty   # qty still to accept this round
-                        # remaining = original qty not yet dispatched at all
-                        remaining_qty = req_qty - dispatch_qty
+                        _iname    = row["Item"]
+                        _dqty     = float(row["DispatchQty"])
+                        _rqty     = float(row["Qty"])
+                        _accqty   = float(row.get("AcceptedQty", 0)) if pd.notna(row.get("AcceptedQty", 0)) else 0.0
+                        _toacc    = _dqty - _accqty
+                        _rem      = _rqty - _dqty
+                        _status   = "✅ Done" if _toacc <= 0 else "🟡 Pending"
+                        _recv_rows.append({
+                            "Item":     _iname,
+                            "Req":      _rqty,
+                            "Disp":     _dqty,
+                            "Accepted": _accqty,
+                            "To Accept":_toacc,
+                            "Status":   _status,
+                            "Accept ✅": False,
+                            "Reject ❌": False,
+                        })
+                        _recv_meta.append((original_idx, _dqty, _toacc, _iname, _rem))
 
-                        status_indicator = "🟢" if accept_amount <= 0 else "🟡"
-
-                        _ri_c1, _ri_c2, _ri_c3 = st.columns([6, 0.55, 0.55])
-                        _ri_c1.markdown(
-                            f"<div style='font-size:12px;padding:3px 0;border-bottom:1px solid #F1F5F9;line-height:1.5;'>"
-                            f"{status_indicator} <b>{item_name}</b> "
-                            f"<span style='color:#94A3B8;'>Req:{req_qty:.0f} Disp:{dispatch_qty:.0f} Acc:{accepted_qty:.0f} ToAcc:{accept_amount:.0f}</span>"
-                            f"</div>",
-                            unsafe_allow_html=True,
+                    _recv_df = pd.DataFrame(_recv_rows)
+                    if not _rest_read_only:
+                        _edited_recv = st.data_editor(
+                            _recv_df,
+                            use_container_width=True,
+                            hide_index=True,
+                            key=f"recv_editor_{date_str}",
+                            column_config={
+                                "Item":      st.column_config.TextColumn("Item",       width=200),
+                                "Req":       st.column_config.NumberColumn("Req",      width=55,  format="%.0f"),
+                                "Disp":      st.column_config.NumberColumn("Disp",     width=55,  format="%.0f"),
+                                "Accepted":  st.column_config.NumberColumn("Accepted", width=70,  format="%.0f"),
+                                "To Accept": st.column_config.NumberColumn("To Accept",width=75,  format="%.0f"),
+                                "Status":    st.column_config.TextColumn("Status",     width=90),
+                                "Accept ✅": st.column_config.CheckboxColumn("Accept", width=60),
+                                "Reject ❌": st.column_config.CheckboxColumn("Reject", width=60),
+                            },
+                            disabled=["Item", "Req", "Disp", "Accepted", "To Accept", "Status"],
+                            height=min(500, 42 + len(_recv_df) * 36),
                         )
-
-                        with _ri_c2:
-                            if accept_amount <= 0:
-                                st.caption("✅")
-                            elif _rest_read_only:
-                                st.caption("🔒")
-                            else:
-                                if st.button("✅", key=f"accept_{recv_idx}_{req_id}", use_container_width=True, help="Accept & Add to Inventory"):
-                                    try:
-                                        # Mark accepted qty = full dispatch qty for this row
-                                        all_reqs.at[original_idx, "AcceptedQty"] = dispatch_qty
-
-                                        # Only mark Completed if NOTHING more is remaining to dispatch
-                                        if remaining_qty <= 0:
-                                            all_reqs.at[original_idx, "Status"] = "Completed"
-
-                                        # Add to restaurant inventory → today's day column
-                                        today   = datetime.datetime.now().day
-                                        day_col = str(today)
-                                        item_name_clean = item_name.strip().lower()
-                                        inv_match = st.session_state.inventory[
-                                            st.session_state.inventory["Product Name"].str.strip().str.lower() == item_name_clean
-                                        ]
-                                        if not inv_match.empty:
-                                            idx_val = inv_match.index[0]
-                                            if day_col in st.session_state.inventory.columns:
-                                                st.session_state.inventory[day_col] = pd.to_numeric(
-                                                    st.session_state.inventory[day_col], errors="coerce"
-                                                ).fillna(0.0)
-                                            current_day_qty = float(
-                                                st.session_state.inventory.at[idx_val, day_col]
-                                            ) if pd.notna(st.session_state.inventory.at[idx_val, day_col]) else 0.0
-                                            st.session_state.inventory.at[idx_val, day_col] = current_day_qty + accept_amount
-                                            st.session_state.inventory = recalculate_inventory(st.session_state.inventory)
-                                        else:
-                                            st.warning(f"⚠️ '{item_name}' not found in inventory.")
-
-                                        save_to_sheet(all_reqs, "restaurant_requisitions")
-                                        save_to_sheet(st.session_state.inventory, "rest_01_inventory")
-                                        st.success(f"✅ Accepted {accept_amount:.0f} units of {item_name}!")
-                                        # Do NOT rerun — keep the expander open
-                                        # Just reload data on next interaction
-
-                                    except Exception as e:
-                                        st.error(f"❌ Error: {str(e)}")
-
-                        with _ri_c3:
-                            if _rest_read_only:
-                                st.caption("🔒")
-                            elif st.button("❌", key=f"reject_{recv_idx}_{req_id}", use_container_width=True, help="Reject"):
+                        # Process Accept checkboxes
+                        for _ri, (_oix, _dqty, _toacc, _iname, _rem) in enumerate(_recv_meta):
+                            if _edited_recv.at[_ri, "Accept ✅"] and _toacc > 0:
                                 try:
-                                    all_reqs.at[original_idx, "Status"]      = "Pending"
-                                    all_reqs.at[original_idx, "DispatchQty"] = 0
-                                    all_reqs.at[original_idx, "AcceptedQty"] = 0.0
+                                    all_reqs.at[_oix, "AcceptedQty"] = _dqty
+                                    if _rem <= 0:
+                                        all_reqs.at[_oix, "Status"] = "Completed"
+                                    _day_col = str(datetime.datetime.now().day)
+                                    _clean   = _iname.strip().lower()
+                                    _imatch  = st.session_state.inventory[
+                                        st.session_state.inventory["Product Name"].str.strip().str.lower() == _clean
+                                    ]
+                                    if not _imatch.empty:
+                                        _ix2 = _imatch.index[0]
+                                        st.session_state.inventory[_day_col] = pd.to_numeric(
+                                            st.session_state.inventory.get(_day_col, 0), errors="coerce"
+                                        ).fillna(0.0)
+                                        _cur = float(st.session_state.inventory.at[_ix2, _day_col]) if pd.notna(st.session_state.inventory.at[_ix2, _day_col]) else 0.0
+                                        st.session_state.inventory.at[_ix2, _day_col] = _cur + _toacc
+                                        st.session_state.inventory = recalculate_inventory(st.session_state.inventory)
                                     save_to_sheet(all_reqs, "restaurant_requisitions")
-                                    st.warning("❌ Returned to pending")
+                                    save_to_sheet(st.session_state.inventory, "rest_01_inventory")
+                                    st.rerun()
                                 except Exception as e:
-                                    st.error(f"❌ Error: {str(e)}")
+                                    st.error(f"❌ {e}")
+                            if _edited_recv.at[_ri, "Reject ❌"]:
+                                try:
+                                    all_reqs.at[_oix, "Status"]      = "Pending"
+                                    all_reqs.at[_oix, "DispatchQty"] = 0
+                                    all_reqs.at[_oix, "AcceptedQty"] = 0.0
+                                    save_to_sheet(all_reqs, "restaurant_requisitions")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"❌ {e}")
+                    else:
+                        st.dataframe(
+                            _recv_df[["Item", "Req", "Disp", "Accepted", "To Accept", "Status"]],
+                            use_container_width=True, hide_index=True,
+                            height=min(500, 42 + len(_recv_df) * 36),
+                        )
         else:
             # Clear open-dates state when nothing to show
             st.session_state["_recv_open_dates"] = set()
