@@ -4684,18 +4684,74 @@ with tab_restaurants:
                 # ── Restaurant Action Buttons ────────────────────────────
                 btn_c1, btn_c2, btn_c3 = st.columns(3)
                 with btn_c1:
-                    if st.button("🔄 Regenerate Code", key=f"regen_{_lid}", use_container_width=True):
-                        _new_code = regenerate_invite_code(
-                            org_id=_mgr_org_id,
-                            location_id=_lid,
-                            created_by=_mgr_user_id,
-                        )
-                        if _new_code:
-                            st.success(f"✅ New code: **{_new_code['code']}**")
-                            st.cache_data.clear()
+                    _regen_confirm_key = f"regen_confirm_{_lid}"
+                    _regen_timer_key   = f"regen_timer_{_lid}"
+
+                    # State: 0 = idle, 1 = counting down, 2 = ready to confirm
+                    _regen_state = st.session_state.get(_regen_confirm_key, 0)
+
+                    if _regen_state == 0:
+                        # Normal button — first click starts the 2-min timer
+                        if st.button("🔄 Regenerate Code", key=f"regen_{_lid}", use_container_width=True):
+                            import time as _time
+                            st.session_state[_regen_confirm_key] = 1
+                            st.session_state[_regen_timer_key] = _time.time()
+                            st.rerun()
+
+                    elif _regen_state == 1:
+                        # Counting down — show remaining seconds
+                        import time as _time
+                        _elapsed = _time.time() - st.session_state.get(_regen_timer_key, _time.time())
+                        _remaining = max(0, 120 - int(_elapsed))
+                        if _remaining > 0:
+                            st.markdown(
+                                f"<div style='text-align:center;font-size:12px;color:#F59E0B;"
+                                f"font-weight:600;padding:8px;border:1px solid #F59E0B44;"
+                                f"border-radius:10px;background:#FFFBEB;'>"
+                                f"⏳ Wait {_remaining}s to confirm regenerate…</div>",
+                                unsafe_allow_html=True,
+                            )
+                            # Cancel button
+                            if st.button("✖ Cancel", key=f"regen_cancel_{_lid}", use_container_width=True):
+                                st.session_state[_regen_confirm_key] = 0
+                                st.rerun()
+                            # Auto-advance when timer expires
+                            import time as _time2
+                            _time2.sleep(1)
                             st.rerun()
                         else:
-                            st.error("❌ Failed to regenerate code.")
+                            st.session_state[_regen_confirm_key] = 2
+                            st.rerun()
+
+                    elif _regen_state == 2:
+                        # Timer expired — show final confirm button
+                        st.markdown(
+                            "<div style='text-align:center;font-size:12px;color:#EF4444;"
+                            "font-weight:600;padding:4px 8px;border:1px solid #EF444444;"
+                            "border-radius:10px;background:#FEF2F2;margin-bottom:4px;'>"
+                            "⚠️ Current code will be deactivated!</div>",
+                            unsafe_allow_html=True,
+                        )
+                        rc1, rc2 = st.columns(2)
+                        with rc1:
+                            if st.button("✅ Confirm", key=f"regen_do_{_lid}", use_container_width=True, type="primary"):
+                                _new_code = regenerate_invite_code(
+                                    org_id=_mgr_org_id,
+                                    location_id=_lid,
+                                    created_by=_mgr_user_id,
+                                )
+                                st.session_state[_regen_confirm_key] = 0
+                                if _new_code:
+                                    st.success(f"✅ New code: **{_new_code['code']}**")
+                                    st.cache_data.clear()
+                                    st.rerun()
+                                else:
+                                    st.error("❌ Failed to regenerate code.")
+                        with rc2:
+                            if st.button("✖ Cancel", key=f"regen_cancel2_{_lid}", use_container_width=True):
+                                st.session_state[_regen_confirm_key] = 0
+                                st.rerun()
+
                 with btn_c2:
                     if _lactive:
                         if st.button("🔒 Deactivate", key=f"deact_{_lid}", use_container_width=True):
